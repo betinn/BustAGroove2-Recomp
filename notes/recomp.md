@@ -325,7 +325,37 @@ Ajustes:
 resolvido para a janela), `geometry_correction`/`perspective_texturing` (PGXP), `texture_filtering = "xbr"`
 (o log imprime "bilinear" para qualquer filtro ≠ nearest), `antialiasing_mode = "fxaa"`, `dithering = "off"`,
 `render_thread = true`, `vsync = "on"`, presets `[quality.*]` (chaves permitidas: ver QUALITY_PRESETS.md —
-`antialiasing_mode` não é preset; `antialiasing` bool é). `settings.toml` ao lado do exe:
+`antialiasing_mode` não é preset; `antialiasing` bool é). Superado por §11 (9x, sem FXAA, 16:9). `settings.toml` ao lado do exe:
 `fullscreen = 1` (sem borda 1920×1080 confirmado), `window_width = 1920`. `Jogar.bat` lança com o disco.
 Capturas: `tools/recomp/logs/cap-1080p-*.png`. Backups: `releases/BAG2-recomp-estavel-2026-10-23`
 (intacto) e `releases/BAG2-recomp-1080p-2026-10-23`.
+
+## 11. Widescreen 16:9 nativo + 9x (2026-10-23)
+Nitidez: `internal_resolution = "4k"` (9x de 240 = 2160 linhas, resolvido para 1080p = supersampling 2x por
+eixo), `antialiasing_mode = "off"` (FXAA só borrava), PGXP e xBR mantidos. Teto da nitidez por renderização:
+os polígonos já têm borda perfeita; o que resta serrilhado/borrado são as **texturas** (TIM de 4/8 bpp,
+64–256 px) e os **sprites 2D** do HUD/menus, que são bitmaps nativos. O próximo degrau é o pacote de texturas
+HD do runtime (`psx.enhancement.hd-textures`, formato DuckStation): ativar "Dump textures", jogar, ampliar os
+PNG de `mods/texture-packs/SLUS-01159/dumps` (ESRGAN/xBR) mantendo nome, proporção e múltiplo inteiro, e
+colocar em `replacements/` com "Load replacements" (só OpenGL; `docs/HD_TEXTURE_PACKS.md`).
+
+Widescreen: `aspect_ratio = "16:9"` sozinho é recusado ("widescreen is mod-owned on PSX; clamping ... -> 4:3").
+É preciso um plugin estático do jogo (`src/bag2_mods.c`: `psx_mod_set_fixed_display_aspect(16,9)` registrado
+por `PSX_MOD_CONSTRUCTOR` + `psx_mod_register_activation_plugin("bag2.widescreen", ...)`) ligado por um pacote
+de mod (`mods/preloaded/packages/bag2.enhancement.widescreen/1.0.0/manifest.toml`, format 5, feature
+`default_enabled = true`), apontado no CMake por `PRELOADED_MODS_DIR` + `target_sources`. Modo "native-wide":
+a área de desenho cresce 320 → 426 px (offset 53 via draw_offset), o GTE projeta mais mundo nas laterais,
+nada é esticado. **`[widescreen] gte_game_mode = true` é obrigatório**: sem ele o classificador de cena
+só reconhece "jogo" por `sprite_tag_funcs` e a partida alternava entre 16:9 e 4:3 pillarbox a cada poucos
+quadros. Com ele, qualquer quadro com ≥3 vértices projetados pelo GTE (histerese 45 quadros) é jogo;
+menus 2D, FMV (STR) e BIOS ficam em 4:3 centralizado automaticamente. `hud_sprt_squash`/`auto_ui_squash`
+com `auto_ui_anchor = "edges"` ancoram as barras HEAT/HIRO nos cantos da tela larga.
+Verificado em partida (palco de boate: colunas de luzes extras nas laterais, personagens em proporção
+correta, HUD nos cantos; seleção de personagem e abertura em 4:3). Limite: em câmeras muito próximas
+da borda do palco aparece o fim da geometria autoral (preto) — não há mais cena para revelar.
+Capturas: `tools/recomp/logs/cap-ws-{stage,closeup,menu43}.jpg`. Release:
+`releases/BAG2-recomp-widescreen-2026-10-23`. Não usar `[widescreen.cull] auto_screen_x` por enquanto
+(exige regen do código; o jogo não mostrou pop-in de polígonos nas bordas).
+
+Captura de tela: `PrintWindow` e `CopyFromScreen` voltam preto com a janela GL sem borda; o que funciona é
+a captura de tela do app (DXGI). Sempre `Stop-Process -Name Bust_A_Groove_2_Recompiled` depois dos testes.

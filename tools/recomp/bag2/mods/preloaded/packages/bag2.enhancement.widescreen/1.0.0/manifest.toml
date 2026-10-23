@@ -1,0 +1,23 @@
+format_version = 5
+id = "bag2.enhancement.widescreen"
+version = "1.0.0"
+name = "Widescreen 16:9 (campo de visão largo)"
+author = "BustAGroove2Web"
+description = "Renderiza o mundo 3D em 16:9 revelando mais cena nas laterais (projeção GTE mais larga, sem esticar). HUD, menus, BIOS e FMV continuam em 4:3 centralizados."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-01159"
+
+[[feature]]
+id = "widescreen"
+name = "Widescreen 16:9"
+description = "Ativo por padrão. Desligue para o 4:3 original."
+group = "Visual"
+default_enabled = true
+
+[[plugin]]
+feature = "widescreen"
+id = "bag2.widescreen"

@@ -21,7 +21,7 @@ set(PSX_NETPLAY   OFF CACHE BOOL "" FORCE)
 include("${PSXRECOMP_ROOT}/runtime/runtime.cmake")
 
 psxrecomp_add_game_runtime(psx-runtime
-    PRELOADED_MODS_DIR NONE
+    PRELOADED_MODS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded"
     WINDOW_TITLE "Bust A Groove 2 Recompiled"
     DEFAULT_GAME_CONFIG_PATH "game.toml"
     MAX_PLAYERS 2
@@ -51,7 +51,10 @@ if(_bag2_ov_n GREATER 0)
     endforeach()
 endif()
 
-foreach(_cfg game.toml)
+# Plugins estaticos do jogo (widescreen 16:9), selecionados pelo pacote em mods/preloaded.
+target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_mods.c")
+
+foreach(_cfg game.toml settings.toml)
     add_custom_command(TARGET psx-runtime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/${_cfg}" "$<TARGET_FILE_DIR:psx-runtime>/${_cfg}"

@@ -31,3 +31,6 @@ tools/recomp/aot/work/
 tools/recomp/bag2/bios/
 tools/recomp/aot/work-static/
 releases/
+
+# memory cards do jogo (dados do usuario)
+saves/
