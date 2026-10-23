@@ -1,9 +1,0 @@
-EXE:      ../../../extracted/disc/SLUS_011.59 (SLUS-01159)
-Entry:    0x80038270
-Load:     0x80010000
-Text:     0x4E800 (314 KB)
-Stack:    0x801FFFF0
-Seeds:    631 JAL targets -> seeds/functions.txt
-Wrote ../logs/game.toml.autogen
-Wrote 632 seeds to seeds/functions.txt
-EXIT 0

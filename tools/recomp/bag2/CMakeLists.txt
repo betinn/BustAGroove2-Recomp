@@ -8,6 +8,13 @@ endif()
 
 project(BustAGroove2Recomp LANGUAGES C CXX)
 
+# O runtime e o C gerado sao C99/C++17. GCC 16 compila C++ como gnu++20 por padrao e ai
+# path::u8string() vira std::u8string e gpu_hd_textures.cpp / duckstation_texture_pack.cpp
+# nao compilam. runtime/CMakeLists.txt do framework e o RepsiMan fixam 17 do mesmo jeito.
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # Sem launcher recomp-ui (submódulo não baixado), sem netplay, sem wizard.
 set(PSX_RECOMP_UI OFF CACHE BOOL "" FORCE)
 set(PSX_NETPLAY   OFF CACHE BOOL "" FORCE)

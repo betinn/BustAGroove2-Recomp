@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BAG2 Mídia</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      main { padding: 12px 16px; display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+      select, button { font-size: 14px; }
+      #channels { width: 100%; height: 240px; }
+      #video { width: 100%; max-width: 640px; aspect-ratio: 4 / 3; background: #000; image-rendering: pixelated; }
+      .row { margin: 8px 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>BAG2 Mídia</h1>
+      <p>Música CD-XA ADPCM e abertura STR/MDEC decodificadas em JavaScript, direto da imagem do disco.</p>
+      <div id="controls">
+        <label>Disco (.bin): <input type="file" id="bin" accept=".bin" /></label>
+        <span id="status"></span>
+      </div>
+    </header>
+    <main>
+      <div>
+        <div class="row"><label>Arquivo XA <select id="xafile"></select></label> <button id="scan">Listar canais</button></div>
+        <select id="channels" size="10"></select>
+        <div class="row"><button id="playxa">Tocar canal</button> <button id="stop">Parar</button> <span id="xainfo"></span></div>
+        <hr />
+        <div class="row"><button id="playstr">Tocar abertura (BUST2_OP.STR)</button> <span id="strinfo"></span></div>
+      </div>
+      <canvas id="video" width="320" height="240"></canvas>
+    </main>
+    <script type="module" src="/src/media/main.ts"></script>
+  </body>
+</html>

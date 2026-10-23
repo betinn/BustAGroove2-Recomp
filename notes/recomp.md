@@ -136,3 +136,54 @@ python3 web/serve.py   # http://127.0.0.1:8080/Pepsiman_Recompiled.html
 - Para o BAG2 web, o caminho mais curto é **usar o fork kem0x** (ou portar os
   blocos `if(EMSCRIPTEN)` dele para o upstream, que já avançou bastante) e
   copiar `web/shell.html` + `web/serve.py` do RepsiMan como base do shell.
+
+## 5. Estado nesta máquina (2026-10-22)
+
+Toolchain instalada (nada exigiu admin, exceto o que ficou pendente):
+
+| Ferramenta | Versão | Onde | Como |
+|---|---|---|---|
+| GCC MinGW-w64 UCRT (WinLibs) | 16.2.0 (posix/seh, r2) | `C:\tools\winlibs\mingw64\bin` | zip baixado e verificado pelo winget (`BrechtSanders.WinLibs.POSIX.UCRT`, SHA256 `D5DBAFC4A170…276A`), extraído à mão porque o winget ficou preso atrás de um prompt UAC |
+| CMake | 4.4.4 (Kitware) | `%APPDATA%\Python\Python314\Scripts\cmake.exe` | `pip install --user cmake ninja` |
+| Ninja | 1.13.2 | idem | idem |
+| Emscripten (emsdk) | 6.0.13 | `C:\tools\emsdk` (`emsdk_env.bat`) | `git clone` + `emsdk install/activate latest` |
+| PSXRecomp | commit `31df2e1e` (2026-10-22) | `C:\tools\psxrecomp` | `git clone --recursive` |
+| Python | 3.14 | já havia | — |
+
+Pendente/observações:
+- `winget install Kitware.CMake` (MSI) ficou **esperando o UAC** (`consent.exe`); o
+  cmake do pip resolve. O MSYS2 também foi baixado pelo winget
+  (`%LOCALAPPDATA%\Temp\WinGet\MSYS2.MSYS2.20260611\`) mas não foi instalado — não
+  é necessário.
+- O WinLibs traz um `cmake.exe` 4.4.3 próprio (GnuTLS, sem CA bundle) que falha
+  em todo download do FetchContent ("SSL peer certificate ... not OK"). Por isso
+  `tools/recomp/env.ps1` põe o cmake do pip ANTES no PATH.
+- O clone foi feito com `core.autocrlf=true` (CRLF): os testes Python que
+  inspecionam o código-fonte do framework quebram por isso (12/154 falhas no
+  `ctest` do recompiler — `gl_internal_scale_guards`, `overlay_*`,
+  `interp_refused_game_text` etc., todos "substring not found"). Os emissores em si
+  funcionam. Para zerar: reclonar com `git -c core.autocrlf=false clone ...`.
+- Não há SCPH1001.BIN: o runtime linka só o backend OpenBIOS (avisa
+  "BIOS backends skipped: SCPH1001"), o que é suportado.
+
+Arquivos deste repo:
+- `tools/recomp/env.ps1` — PATH/CC/CXX da toolchain.
+- `tools/recomp/build.ps1` — passos 1-4 reproduzíveis (`-Step framework|bios|game|runtime|all`, `-Run`).
+- `tools/recomp/bag2/game.toml` — config do jogo (ver §2); `bios_config` aponta
+  para `C:/tools/psxrecomp/bios/OpenBIOS.toml` (sem isso o `psxrecomp-game`
+  aborta com "no BIOS profile found").
+- `tools/recomp/bag2/CMakeLists.txt` — projeto de jogo (`psxrecomp_add_game_runtime`, sem recomp-ui/netplay).
+- `tools/recomp/bag2/seeds/functions.txt` — 632 seeds do `psxrecomp-toml` (631 alvos de JAL + entry). Os endereços conhecidos 0x80035DC4 (BPE) e 0x8001F7E0 (instalador de overlay) já estão lá.
+- `tools/recomp/logs/*.log` — saída de cada passo.
+
+Resultados:
+- `recompiler/build`: **OK** (psxrecomp-game/-bios/-toml/-analyze/psxrecomp.exe; só um aviso do ld ".rsrc merge failure: multiple non-default manifests").
+- `regen_bios.sh --config bios/OpenBIOS.toml`: **OK** — 651 funções emitidas, 4 puladas (opcodes 0x2F/funct 0x3C), 3990 entradas de dispatch.
+- `psxrecomp-game --config game.toml` (SLUS_011.59): **OK em 0,5 s** — 1042 funções
+  descobertas (+24 entradas por pré-passo = 1066), 29519 blocos básicos, 893
+  loops, 22 shards (`SLUS_011.59_full_00..21.c`, 785 411 linhas, ~27 MB) +
+  `SLUS_011.59_dispatch.c` (1065 entradas) + `SLUS_011.59_decls.h`. 14 avisos
+  "out-of-function branch ... emitting fallthrough" (normal em código de
+  compilador antigo; candidatos a seeds extras se algo quebrar).
+- Configure do runtime do jogo (`tools/recomp/bag2/build`): **OK** (SDL3 3.4.10
+  baixado e compilado junto, backend OpenBIOS + C do jogo linkados).

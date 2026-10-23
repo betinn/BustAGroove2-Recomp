@@ -185,7 +185,7 @@ function rebuild() {
   renderer.setGeometry(buildGeometry(model));
 }
 
-let angle = 0, pitch = 0, dist = 1.3, dragging = false, lastX = 0, lastY = 0;
+let angle = 0, pitch = 0, dist = 2.0, dragging = false, lastX = 0, lastY = 0;
 canvas.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointerup', () => dragging = false);
 canvas.addEventListener('pointermove', e => { if (!dragging) return; angle += (e.clientX - lastX) * 0.01; pitch += (e.clientY - lastY) * 0.01; lastX = e.clientX; lastY = e.clientY; });
