@@ -1,0 +1,25 @@
+# Game data never enters the repo (copyright). Load it locally from disk.
+*.bin
+*.cue
+*.iso
+*.img
+*.chd
+*.XA
+*.xa
+*.STR
+*.str
+SLUS_*
+SCUS_*
+SLES_*
+extracted/
+bios/
+# tooling
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.vite/
+web/public/emulatorjs/
+web/.disc.json
+ghidra/project/
+ghidra/out/

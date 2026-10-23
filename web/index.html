@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bust A Groove 2 Web</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Bust A Groove 2 Web</h1>
+      <p>Baseline: emulador PS1 em WebAssembly (EmulatorJS). Selecione o <code>.bin</code> do disco (fica só no navegador).</p>
+      <div id="controls">
+        <label>Disco (.bin): <input type="file" id="bin" accept=".bin,.cue,.iso,.chd,.pbp" multiple /></label>
+        <label>Core:
+          <select id="core">
+            <option value="pcsx_rearmed">pcsx_rearmed (HLE BIOS, rápido)</option>
+            <option value="mednafen_psx_hw">mednafen_psx_hw (Beetle, preciso)</option>
+          </select>
+        </label>
+        <label>BIOS (opcional): <input type="file" id="bios" accept=".bin" /></label>
+        <button id="boot" disabled>Boot</button>
+      </div>
+      <p id="status"></p>
+    </header>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
