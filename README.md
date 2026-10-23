@@ -23,18 +23,26 @@ Feito:
 - **Ghidra headless** (`ghidra/run.sh`): exe importado com `ghidra_psx_ldr`, assinaturas PsyQ nomearam 906
   funções de lib; restam 348 funções de código do jogo (107 KB). Pseudo-C completo em `ghidra/out/decomp.c`.
 - Detalhes em [notes/formats.md](notes/formats.md); plano e guia de leitura em [notes/roadmap.md](notes/roadmap.md).
+- **Baseline jogável no navegador** (`web/index.html`): EmulatorJS self-hosted em `web/public/emulatorjs/`
+  (não versionado; gere com `tools/setup_emulatorjs.py <release.7z>`), core `pcsx_rearmed` com HLE BIOS
+  (sem arquivo de BIOS). O `.bin` entra por seletor de arquivo ou, em dev, por `/?dev`. O jogo boota e roda.
+  O core `mednafen_psx_hw` exige BIOS real (`scph5501.bin`).
+- **Viewer WebGPU** (`web/viewer.html`): lê o `.bin`, abre o `BUST2.BIN`, decodifica modelo (esqueleto +
+  32 tipos de primitiva), texturas (VRAM 1024×512 emulada, amostragem 4/8/16 bpp + CLUT no shader) e
+  **animações** (streams delta de 12 bits) de qualquer personagem. Formato em [notes/model-format.md](notes/model-format.md).
+- **Mídia** (`web/media.html`): música CD-XA ADPCM e abertura STR/MDEC decodificadas em TypeScript,
+  tocando via WebAudio/canvas. Formato em [notes/media-formats.md](notes/media-formats.md).
 
 Pendente (ordem sugerida):
-1. **Baseline jogável**: emulador PS1 em WASM (EmulatorJS + core `mednafen_psx` + OpenBIOS, sem BIOS
-   dumpada) carregando o `.bin` local. Serve de referência visual e para comparar comportamento.
-2. **Formatos próprios**: ~~modelos/animações~~ feitos; faltam step-charts (containers 15–50), eventos de
-   animação (footer), posicionamento exato de texturas na VRAM e matrizes de luz (código dos overlays).
-3. **Recompilação estática**: Ghidra + `ghidra_psx_ldr` + assinaturas PsyQ para separar libs Sony do
-   código do jogo; então PSXRecomp (MIPS → C → Emscripten → WASM), com GPU/SPU reimplementados em
+1. **Formatos próprios**: faltam step-charts (containers 15–50), eventos de animação (footer),
+   posicionamento exato de texturas na VRAM e matrizes de luz (código dos overlays `DBI_`).
+2. **Recompilação estática**: PSXRecomp (MIPS → C → Emscripten → WASM), com GPU/SPU reimplementados em
    WebGPU/WebAudio. Prova de conceito existente: "Pepsiman Recompiled" roda no navegador por esse caminho.
+   Estado em [notes/recomp.md](notes/recomp.md) e `tools/recomp/`.
 
-## Ferramentas instaladas / faltando
-Tem: Python 3.14 + capstone + py7zr, Node 24, Git, Ghidra 12.1.4 + ghidra_psx_ldr em `C:	ools`, JDK 21 portátil em `C:	ools`. Falta: Emscripten (emsdk), CMake, compilador C (workload C++ do VS 2022).
+## Ferramentas instaladas
+Python 3.14 + capstone + py7zr, Node 24, Git, Ghidra 12.1.4 + ghidra_psx_ldr em `C:\tools`, JDK 21
+(portátil em `C:\tools` e instalado via winget). Toolchain C/CMake/emsdk: ver [notes/recomp.md](notes/recomp.md).
 
 ## Uso
 ```bash
