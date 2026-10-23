@@ -33,6 +33,21 @@ psxrecomp_add_game_runtime(psx-runtime
     GAME_OVERLAY_STATIC_C "${CMAKE_CURRENT_SOURCE_DIR}/generated/overlays_static.c"
 )
 
+# runtime.cmake deveria globar as unidades overlays_static_NNNN.c ao lado do dispatcher, mas nesta
+# versao (31df2e1e) o glob nao as encontra no Windows; adiciona explicitamente.
+file(GLOB _bag2_ov_parts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generated/overlays_static_*.c")
+list(LENGTH _bag2_ov_parts _bag2_ov_n)
+message(STATUS "BAG2: ${_bag2_ov_n} unidades de overlay estatico")
+if(_bag2_ov_n GREATER 0)
+    get_target_property(_bag2_srcs psx-runtime SOURCES)
+    foreach(_p ${_bag2_ov_parts})
+        list(FIND _bag2_srcs "${_p}" _idx)
+        if(_idx EQUAL -1)
+            target_sources(psx-runtime PRIVATE "${_p}")
+        endif()
+    endforeach()
+endif()
+
 foreach(_cfg game.toml)
     add_custom_command(TARGET psx-runtime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

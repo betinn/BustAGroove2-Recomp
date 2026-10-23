@@ -33,12 +33,24 @@ Feito:
 - **Mídia** (`web/media.html`): música CD-XA ADPCM e abertura STR/MDEC decodificadas em TypeScript,
   tocando via WebAudio/canvas. Formato em [notes/media-formats.md](notes/media-formats.md).
 
-Pendente (ordem sugerida):
-1. **Formatos próprios**: faltam step-charts (containers 15–50), eventos de animação (footer),
-   posicionamento exato de texturas na VRAM e matrizes de luz (código dos overlays `DBI_`).
-2. **Recompilação estática**: PSXRecomp (MIPS → C → Emscripten → WASM), com GPU/SPU reimplementados em
-   WebGPU/WebAudio. Prova de conceito existente: "Pepsiman Recompiled" roda no navegador por esse caminho.
-   Estado em [notes/recomp.md](notes/recomp.md) e `tools/recomp/`.
+- **Jogo recompilado rodando no navegador** (`web/recomp.html`): o `SLUS_011.59` foi traduzido de MIPS
+  para C pelo PSXRecomp e compilado para WebAssembly (Emscripten, fork kem0x). OpenBIOS (MIT) no lugar
+  da BIOS da Sony, renderer software num canvas, SPU via Web Audio, teclado como controle. Boot, abertura,
+  menu, seleção de personagem e partida completa funcionam (~55–60 vblank/s). Overlays `DBI_` rodam no
+  interpretador MIPS do runtime. Build: `powershell -File tools\recomp\build-web.ps1`; detalhes em
+  [notes/recomp.md](notes/recomp.md) §7.
+- **Build nativo** (`tools/recomp/bag2/build/Bust_A_Groove_2_Recompiled.exe`): mesmo código em
+  OpenGL, 60 fps, com os 56 overlays únicos compilados antecipadamente a partir do disco
+  (`tools/recomp/aot/overlays.json`, notes §8).
+
+Pendente:
+1. Overlays estáticos também na build web (o dispatcher do fork kem0x não distingue overlays que
+   carregam no mesmo endereço; precisa portar o despacho com guarda de CRC do upstream ou o suporte
+   Emscripten do fork para o upstream).
+2. GPU em WebGPU no lugar do renderer software (desempenho e filtros); hoje o canvas recebe o
+   framebuffer do software.
+3. Formatos próprios ainda não decifrados: step-charts (containers 15–50), eventos de animação
+   (footer), matrizes de luz (código dos overlays).
 
 ## Ferramentas instaladas
 Python 3.14 + capstone + py7zr, Node 24, Git, Ghidra 12.1.4 + ghidra_psx_ldr em `C:\tools`, JDK 21
@@ -51,5 +63,5 @@ python tools/tim2png.py extracted/bust2 extracted/png
 python tools/exe_dis.py extracted/disc/SLUS_011.59 80035dc4 80035f60
 cd web && npm run dev
 ```
-Páginas em dev: `http://localhost:5173/?dev` (emulador), `/viewer.html?dev` (modelos), `/media.html?dev` (música/abertura).
+Páginas em dev: `http://localhost:5173/?dev` (emulador), `/recomp.html?dev` (**jogo recompilado em WASM**), `/viewer.html?dev` (modelos), `/media.html?dev` (música/abertura).
 `?dev` usa o caminho em `web/.disc.json`; sem ele, use o seletor de arquivo da página.
