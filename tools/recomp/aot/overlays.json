@@ -7,7 +7,7 @@
  "main_ram_bytes": "0x200000",
  "images": [
   {
-   "name": "main",
+   "name": "main-2",
    "method": "fixed_address_extents",
    "allow_missing": true,
    "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
@@ -21,7 +21,15 @@
      "sha256": "55a7c5cb42d705aaca432d4894af80b1786fde550897df5500f33223c6bd0ae6",
      "load_addr": "0x8008F6C0",
      "note": "DF2_ entry 2 (DBI_ header at 0x55800, bss 0xF4541)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "main-3",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -31,7 +39,29 @@
      "sha256": "34b2ac8e67367c31d064234089fdae54c58bebf3a7a3f3ace70170bc6bc5dd0e",
      "load_addr": "0x8008F6C0",
      "note": "DF2_ entry 3 (DBI_ header at 0x64000, bss 0x12FB73)"
+    }
+   ],
+   "excluded_ranges": [
+    {
+     "start": "0x80095580",
+     "end": "0x80097CC0",
+     "sha256": "81706059e0fa2f019c74e2275e6d22aacdc34c830ebd96f93cffb7ddc1ff811d",
+     "reason": "tables/data between the code and the tail function (0xFFFF/0 runs; audit flagged 0x800956B0..0x80095924 and 0x800960A4)"
     },
+    {
+     "start": "0x80097EC0",
+     "end": "0x8009A0C0",
+     "sha256": "cc2244f4c90220ae943679b69069851b26956a8b5c46e34d6822ee0daac41cb8",
+     "reason": "data region after the small code block at 0x80097CC0"
+    }
+   ]
+  },
+  {
+   "name": "main-4",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -41,7 +71,15 @@
      "sha256": "31cc154083a65698beea50d2ac790dcb9aecf9a3f75d3052aa9ea26efdc70650",
      "load_addr": "0x8008F6C0",
      "note": "DF2_ entry 4 (DBI_ header at 0x6F000, bss 0x12D70E)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "main-5",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -51,7 +89,15 @@
      "sha256": "5a2e3e5336e104e9565d209dc99608237db1739b3c81292eea2c78bd054638bb",
      "load_addr": "0x8008F6C0",
      "note": "DF2_ entry 5 (DBI_ header at 0x7E800, bss 0x125290)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "main-6",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -65,7 +111,7 @@
    ]
   },
   {
-   "name": "p1",
+   "name": "p1-87_1",
    "method": "fixed_address_extents",
    "allow_missing": true,
    "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
@@ -79,7 +125,15 @@
      "sha256": "ea0e5c6e6ec400cf3eeec4df75fb51ea3b8037974fffc26d5ac69d26110832d2",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 87/1 (DBI_ header at 0xA1D4B8, bss 0x410)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-89_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -89,7 +143,15 @@
      "sha256": "64eeb7e57ee069195d18480117a5b7072c0740901963679205aaef2d5a208b8c",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 89/1 (DBI_ header at 0xA804B8, bss 0x505)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-91_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -99,7 +161,15 @@
      "sha256": "ea4ea6fcc57153a85589057e80b86896d7becd8924f5282a6f0a68c1b5b83dac",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 91/1 (DBI_ header at 0xAED4C0, bss 0x931)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-93_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -109,7 +179,15 @@
      "sha256": "675c1daf5d9e3bde27dd3c67f11a46fbe4a49167cdc975a59c447d81766f6f9f",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 93/1 (DBI_ header at 0xB5CCC0, bss 0x15FE)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-95_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -119,7 +197,15 @@
      "sha256": "4b8328e7e7e666651ed91cb0f548b420d9ee74de899115e5f3e200ca4ea5569c",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 95/1 (DBI_ header at 0xBCFCC0, bss 0x181)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-97_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -129,7 +215,15 @@
      "sha256": "5b10e17a69c88587510936428ed769373bb117b5823aa69f801090a0fa67d07c",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 97/1 (DBI_ header at 0xC3ECC0, bss 0x6C1)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-99_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -139,7 +233,15 @@
      "sha256": "7b7de944161939158d1f5b38d0e3780a7b403b6323b7054970c8923179048eb6",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 99/1 (DBI_ header at 0xCAF4B8, bss 0x3CC)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-101_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -149,7 +251,15 @@
      "sha256": "d2a0da288cf072b41f5ac7854537b75ad8863346e183651d249c2403eee3d405",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 101/1 (DBI_ header at 0xD19CC0, bss 0x249)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-103_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -159,7 +269,15 @@
      "sha256": "22168662c2a4eeb21045b98627efef05daf24b52f978e424ea9696d5c47cc627",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 103/1 (DBI_ header at 0xD88CC0, bss 0x1BE2)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-105_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -169,7 +287,15 @@
      "sha256": "8ddb07602913c47bdd171349a9c18e31895516769f4fc3cd663c8f85ac67aa4a",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 105/1 (DBI_ header at 0xDFE4B8, bss 0x290)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-107_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -179,7 +305,15 @@
      "sha256": "f42cc3ee870c95650f0439f511dde446995a88654fccd00024057594276a7e83",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 107/1 (DBI_ header at 0xE644B8, bss 0xC55)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-109_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -189,7 +323,15 @@
      "sha256": "cc6e09befefc956258e230ac31f644b2b92eade1ff721a9794775f649c56ef33",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 109/1 (DBI_ header at 0xECBCB8, bss 0x3F8)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-111_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -199,7 +341,15 @@
      "sha256": "42792f43e6819996fcdf322101e28d2ad4fad6445d0bfa7b753f7194abe384b9",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 111/1 (DBI_ header at 0xF3F4B8, bss 0x4F8)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-113_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -209,7 +359,15 @@
      "sha256": "dab06e9299f7d241d2acad5f8a8ae88b9b9c00328b33bd3a7e5693e95d9b2b97",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 113/1 (DBI_ header at 0xFA84B8, bss 0xAD)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-115_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -219,7 +377,15 @@
      "sha256": "9bf8022dd5a415242635a35850c64507e503459494bff0800af4258656bb160a",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 115/1 (DBI_ header at 0xFFB4C0, bss 0x101)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-117_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -229,7 +395,15 @@
      "sha256": "e22899c014f385b25388fa70dfdddd94751cb68cea9cb326096be21b71df01af",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 117/1 (DBI_ header at 0x106A4C0, bss 0x516)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-119_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -239,7 +413,15 @@
      "sha256": "9fbe12eb93b154a9846b44fdee316af254a8f148ef859a4998eaee0203cd9b16",
      "load_addr": "0x801CC510",
      "note": "DF2_ entry 119/1 (DBI_ header at 0x10D44B8, bss 0x34E)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p1-121_1",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -253,7 +435,7 @@
    ]
   },
   {
-   "name": "p2",
+   "name": "p2-88_0",
    "method": "fixed_address_extents",
    "allow_missing": true,
    "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
@@ -267,7 +449,15 @@
      "sha256": "2759d0fc40a5049b2bb3ffcc5d3efdd2d2501d96156b9b262e9e73e707c9149b",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 88/0 (DBI_ header at 0xA50830, bss 0x410)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-90_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -277,7 +467,15 @@
      "sha256": "767d539659107928bc27132d66881ba688a9753243e5285a501e5af28a971c2d",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 90/0 (DBI_ header at 0xAB3830, bss 0x505)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-92_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -287,7 +485,15 @@
      "sha256": "d56387686224f3fa9b6e553a2f6fe80b79643d29cddd5fda3a276d3d2d13e5f6",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 92/0 (DBI_ header at 0xB25038, bss 0x931)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-94_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -297,7 +503,15 @@
      "sha256": "2226957d85626c3c3db489912ddf55850c05b901998984425a6af8da56796622",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 94/0 (DBI_ header at 0xB96838, bss 0x15FE)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-96_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -307,7 +521,15 @@
      "sha256": "28618809dec92eef213534644e4b3c3c63f880463b855bbf87dc410e049e2d9e",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 96/0 (DBI_ header at 0xC08038, bss 0x181)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-98_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -317,7 +539,15 @@
      "sha256": "60f2271135a40c854772cb1c2b9d66ce76936c7e83a8d5aa0858bacc96fc3447",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 98/0 (DBI_ header at 0xC77038, bss 0x6C1)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-100_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -327,7 +557,15 @@
      "sha256": "d4b10628d09e1866142500ccf19874e14d4aa88a27b81e54492d0ee486acf45f",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 100/0 (DBI_ header at 0xCE6830, bss 0x3CC)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-102_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -337,7 +575,15 @@
      "sha256": "aeccfb791fe3a314a9556e534a9968468d4878ccb82d943739058c1a4977bd95",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 102/0 (DBI_ header at 0xD51838, bss 0x249)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-104_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -347,7 +593,15 @@
      "sha256": "79612fbd9e9a41672b25749588f99260455d966dc377dc21e9e8ff544aab45b1",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 104/0 (DBI_ header at 0xDC0838, bss 0x1BE2)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-106_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -357,7 +611,15 @@
      "sha256": "9d132a45d52fc258c6506ff982370b5846943c941ba9d80937d8aa5016e43cdd",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 106/0 (DBI_ header at 0xE31830, bss 0x290)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-108_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -367,7 +629,15 @@
      "sha256": "60d5f78bf41c741274dba6b1d3e48a6692290abe6b5ae56133d2b4756ed7527e",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 108/0 (DBI_ header at 0xE98830, bss 0xC55)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-110_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -377,7 +647,15 @@
      "sha256": "dbbd155156979a9e1ef92690f5c4d98567ca0661292d53dafb01f0c8ddf86959",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 110/0 (DBI_ header at 0xF03030, bss 0x3F8)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-112_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -387,7 +665,15 @@
      "sha256": "a0e8dccdd156c77e6cfe25f8416d1f75642ef0ed665716fe9894a5aab2a7f686",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 112/0 (DBI_ header at 0xF75030, bss 0x4F8)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-114_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -397,7 +683,15 @@
      "sha256": "04fb32ba28934ec2d2aad3dd3c0eeace7d3a402efd82d2596702523e08ba3b19",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 114/0 (DBI_ header at 0xFD2030, bss 0xAD)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-116_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -407,7 +701,15 @@
      "sha256": "180145b2655004ca2bf041c70320a2fb91439261af13a3d3dec025e5c7827ef6",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 116/0 (DBI_ header at 0x1034038, bss 0x101)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-118_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -417,7 +719,15 @@
      "sha256": "a2f4e6da6177be84c0bc12aeb1e8d63492062b2ca9c7854091eed428be9c5111",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 118/0 (DBI_ header at 0x109F838, bss 0x516)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-120_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -427,7 +737,15 @@
      "sha256": "5f8e672878a12813b26a9f86d051bb81f49e4af4111eb17a32a6395512acc818",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 120/0 (DBI_ header at 0x1109030, bss 0x34E)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-122_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -437,7 +755,15 @@
      "sha256": "04cc1f2e661994c34c9a25cca1348785b7127179a0f32326f728f7e85fcd4ff3",
      "load_addr": "0x801D3B64",
      "note": "DF2_ entry 122/0 (DBI_ header at 0x1171830, bss 0x9F1)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "p2-252_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -451,7 +777,7 @@
    ]
   },
   {
-   "name": "stage",
+   "name": "stage-231_0",
    "method": "fixed_address_extents",
    "allow_missing": true,
    "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
@@ -465,7 +791,15 @@
      "sha256": "b7961222e7f14688ec790ad85db51ff435823bf22efe4ec7a06530c341307f76",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 231/0 (DBI_ header at 0x2FC4870, bss 0x1B3E)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-232_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -475,7 +809,15 @@
      "sha256": "3f8f2b190c084a2b5b28d47fd7af0c1f4d580b174d2b9f5d9f40b6d7fb83b43d",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 232/0 (DBI_ header at 0x3030060, bss 0x4ED)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-233_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -485,7 +827,15 @@
      "sha256": "11faffe2ad3c16e232dfedec5542cbbf0528b4aab7b456884909db792657508e",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 233/0 (DBI_ header at 0x3094860, bss 0x2CE1)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-234_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -495,7 +845,15 @@
      "sha256": "29f5c1b21a29b0e51f6cd62cfa5bf10e57b9e7d30cd2e5af6f8a947735b05015",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 234/0 (DBI_ header at 0x3107870, bss 0x1364)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-235_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -505,7 +863,15 @@
      "sha256": "5e407ac088c891ef96a5878695f5dd925bdc1fa98b45c9aac55fb5ea8c9eacff",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 235/0 (DBI_ header at 0x317B060, bss 0x220D)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-236_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -515,7 +881,15 @@
      "sha256": "036f2818eae0399d6d544e29bfec1231ee34266ddd2525c2bec9b46d2fbacc94",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 236/0 (DBI_ header at 0x31EC858, bss 0x144A)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-237_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -525,7 +899,15 @@
      "sha256": "7436fb91a8d5774c39368ea85e575b4b4c590740827c0b5f12a60f039da94cf9",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 237/0 (DBI_ header at 0x325C898, bss 0x29C0)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-238_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -535,7 +917,15 @@
      "sha256": "5d6b540f88312e49d04d7da771095e7600ded4753df679760ec07c2677f390f4",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 238/0 (DBI_ header at 0x32D2068, bss 0x2AFC)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-241_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -545,7 +935,15 @@
      "sha256": "df0ed32b42e2b2c88f1944d4a1012a4746927155de98cca55d71589b7904801b",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 241/0 (DBI_ header at 0x344D858, bss 0x3ACC)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-242_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -555,7 +953,15 @@
      "sha256": "072796043ebc87a13f107fd39d8b344f07ca4ab9d48a9aa20d75aab187838800",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 242/0 (DBI_ header at 0x34B4868, bss 0x2476)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-243_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -565,7 +971,15 @@
      "sha256": "e931e2b456ff3ee7e0b0158b755d6a42c1c2cb2daa4df96e0ade8b4ba6355e9f",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 243/0 (DBI_ header at 0x3529078, bss 0x31F4)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-244_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,
@@ -575,7 +989,15 @@
      "sha256": "92aded1824eb78d734d08d98dc80f26a985cfe676a4477fd292777915789bd5f",
      "load_addr": "0x801DB1B8",
      "note": "DF2_ entry 244/0 (DBI_ header at 0x3591858, bss 0x25AA)"
-    },
+    }
+   ]
+  },
+  {
+   "name": "stage-245_0",
+   "method": "fixed_address_extents",
+   "allow_missing": true,
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
     {
      "file": "BUST2.BIN",
      "file_offset": 0,

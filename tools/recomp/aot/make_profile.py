@@ -29,25 +29,41 @@ classes = {
     'p2': ('0x801D3B64', 'Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64'),
     'stage': ('0x801DB1B8', 'Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8'),
 }
+# Data regions inside overlays that the recompiler would otherwise decode as code (audit fails with
+# UNSUPPORTED_INSTRUCTION). Keyed by DF2_ entry path; ranges are 4-byte aligned guest addresses.
+EXCLUDED = {
+    '3': [
+        ('0x80095580', '0x80097CC0', '81706059e0fa2f019c74e2275e6d22aacdc34c830ebd96f93cffb7ddc1ff811d', 'tables/data between the code and the tail function (0xFFFF/0 runs; audit flagged 0x800956B0..0x80095924 and 0x800960A4)'),
+        ('0x80097EC0', '0x8009A0C0', 'cc2244f4c90220ae943679b69069851b26956a8b5c46e34d6822ee0daac41cb8', 'data region after the small code block at 0x80097CC0'),
+    ],
+}
+
 images = []
 for cls, (addr, why) in classes.items():
-    extents = []
     seen = set()   # identical payloads at the same destination (e.g. containers 159..194 duplicate 87..122)
     for d in sorted((d for d in inv if d['base'] == cls), key=lambda d: d['abs_off']):
         if d['sha256'] in seen:
             continue
         seen.add(d['sha256'])
-        extents.append({
-            'file': 'BUST2.BIN',
-            'file_offset': 0,
-            'base': 0,
-            'address': f"0x{d['payload_off']:X}",
-            'size': f"0x{d['payload_size']:X}",
-            'sha256': d['sha256'],
-            'load_addr': addr,
-            'note': f"DF2_ entry {d['path']} (DBI_ header at 0x{d['abs_off']:X}, bss 0x{d['bss']:X})",
-        })
-    images.append({'name': cls, 'method': 'fixed_address_extents', 'allow_missing': True, 'reason': why, 'extents': extents})
+        item = {
+            'name': f"{cls}-{d['path'].replace('/', '_')}",
+            'method': 'fixed_address_extents',
+            'allow_missing': True,
+            'reason': why,
+            'extents': [{
+                'file': 'BUST2.BIN',
+                'file_offset': 0,
+                'base': 0,
+                'address': f"0x{d['payload_off']:X}",
+                'size': f"0x{d['payload_size']:X}",
+                'sha256': d['sha256'],
+                'load_addr': addr,
+                'note': f"DF2_ entry {d['path']} (DBI_ header at 0x{d['abs_off']:X}, bss 0x{d['bss']:X})",
+            }],
+        }
+        if d['path'] in EXCLUDED:
+            item['excluded_ranges'] = [{'start': a, 'end': b, 'sha256': h, 'reason': r} for a, b, h, r in EXCLUDED[d['path']]]
+        images.append(item)
 
 profile = {
     'schema': 'psxrecomp AOT methods v1',
@@ -64,4 +80,4 @@ profile = {
     'static_output': 'generated/overlays_static.c',
 }
 json.dump(profile, open(out_path, 'w'), indent=1)
-print(f'{sum(len(i["extents"]) for i in images)} unique extents of {len(inv)} blocks in {len(images)} images; disc sha256 {disc_sha}; -> {out_path}')
+print(f'{len(images)} unique images of {len(inv)} blocks; disc sha256 {disc_sha}; -> {out_path}')
