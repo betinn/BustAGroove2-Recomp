@@ -31,7 +31,7 @@ if ($Step -in 'bios','all') {
     # 2. C do OpenBIOS (generated/OpenBIOS_*.c no framework). Precisa de bash (Git for Windows).
     Invoke-Logged 'regen_bios' {
         $env:PATH = "C:\tools\winlibs\mingw64\bin;$env:APPDATA\Python\Python314\Scripts;$env:PATH"
-        & "C:\Program Files\Git\bin\bash.exe" -lc "cd '$($fw -replace '\','/')' && PATH='/c/tools/winlibs/mingw64/bin:/c/Users/sem-m/AppData/Roaming/Python/Python314/Scripts:'`$PATH bash tools/regen_bios.sh --config bios/OpenBIOS.toml"
+        & "C:\Program Files\Git\bin\bash.exe" -lc "cd '$($fw -replace '\\','/')' && PATH='/c/tools/winlibs/mingw64/bin:/c/Users/sem-m/AppData/Roaming/Python/Python314/Scripts:'`$PATH bash tools/regen_bios.sh --config bios/OpenBIOS.toml"
     }
 }
 if ($Step -in 'game','all') {
@@ -47,7 +47,7 @@ if ($Step -in 'game','all') {
 if ($Step -in 'runtime','all') {
     # 4. Runtime nativo do jogo (SDL3 é baixado e compilado na primeira vez)
     Invoke-Logged 'bag2-runtime-build' {
-        cmake -S $proj -B "$proj\build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPSXRECOMP_ROOT=($fw -replace '\','/') -DPSX_RECOMP_UI=OFF -DPSX_ENABLE_VULKAN=OFF
+        cmake -S $proj -B "$proj\build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPSXRECOMP_ROOT=($fw -replace '\\','/') -DPSX_RECOMP_UI=OFF -DPSX_ENABLE_VULKAN=OFF
         if ($LASTEXITCODE -eq 0) { cmake --build "$proj\build" --target psx-runtime }
     }
 }

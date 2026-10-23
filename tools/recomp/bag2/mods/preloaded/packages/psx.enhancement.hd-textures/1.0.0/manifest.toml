@@ -1,0 +1,52 @@
+# Sobrescreve o manifesto embutido do framework (mesmo id e versão) para o pacote de texturas HD
+# do Bust A Groove 2 vir ligado por padrão (docs/MOD_PACKAGES.md: o título pode sobrepor um builtin).
+# A pasta do pacote é mods/texture-packs/SLUS-01159 ao lado do exe (padrão gerado pelo runtime):
+# replacements/ = PNG ampliados (tools/hd_textures.py), dumps/ = originais capturados.
+# Só o OpenGL exibe as substituições. Para capturar originais: Dump textures on / Load replacements off
+# em build/mods/state.toml (ver notes/recomp.md §12).
+format_version = 5
+id = "psx.enhancement.hd-textures"
+version = "1.0.0"
+name = "Texturas HD (pacote DuckStation)"
+author = "psxrecomp / BustAGroove2Web"
+description = "Carrega os PNG ampliados de mods/texture-packs/SLUS-01159/replacements (HUD, menus, palcos e roupas 4x via xBR) no OpenGL, ou captura os originais durante o jogo. Nenhuma arte vem embutida no exe."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-01159"
+
+[[feature]]
+id = "hd-textures"
+name = "Texturas HD"
+description = "Ativo por padrão. Desligue para as texturas originais do PS1 (4/8 bpp)."
+group = "Visual"
+default_enabled = true
+
+[[resource]]
+feature = "hd-textures"
+id = "pack"
+label = "Pasta do pacote de texturas"
+description = "mods/texture-packs/SLUS-01159 ao lado do exe (criada no primeiro uso). Trocar para outro pacote compatível ou pasta vazia."
+format = "directory"
+required = true
+
+[[option]]
+feature = "hd-textures"
+id = "replacements"
+label = "Carregar substituições"
+description = "Exibe os PNG de replacements/ no OpenGL. Substituição ausente ou inválida mantém a arte original."
+type = "boolean"
+default = "true"
+
+[[option]]
+feature = "hd-textures"
+id = "dump"
+label = "Capturar texturas"
+description = "Grava os originais usados em dumps/ enquanto joga (sair do jogo conclui a gravação). Desligado por padrão."
+type = "boolean"
+default = "false"
+
+[[plugin]]
+feature = "hd-textures"
+id = "psx.hd-textures"

@@ -359,3 +359,55 @@ Capturas: `tools/recomp/logs/cap-ws-{stage,closeup,menu43}.jpg`. Release:
 
 Captura de tela: `PrintWindow` e `CopyFromScreen` voltam preto com a janela GL sem borda; o que funciona é
 a captura de tela do app (DXGI). Sempre `Stop-Process -Name Bust_A_Groove_2_Recompiled` depois dos testes.
+
+## 12. Pacote de texturas HD (2026-10-23)
+Mod embutido `psx.enhancement.hd-textures` do runtime (formato DuckStation; `C:\tools\psxrecomp\docs\HD_TEXTURE_PACKS.md`
+e `DUCKSTATION_TEXTURE_FORMAT.md`). Só o OpenGL exibe substituições. Pasta do pacote: `mods/texture-packs/SLUS-01159`
+ao lado do exe (o runtime gera esse caminho como recurso `pack` padrão quando nada foi selecionado —
+`mod_runtime.cpp`, "psx.hd-textures has a shared directory-resource contract"), com `dumps/` e `replacements/`.
+
+**Ligar sem launcher** (a build é `PSX_RECOMP_UI=OFF`, sem página Mods): o título sobrepõe o manifesto embutido com
+o mesmo id/versão em `mods/preloaded/packages/psx.enhancement.hd-textures/1.0.0/manifest.toml` (`default_enabled = true`,
+`replacements` padrão `"true"`, `dump` padrão `"false"`); `-Step runtime` copia para `build/mods/bundled/`. Para
+capturar originais, `build/mods/state.toml` (formato 2) sobrepõe os padrões — valores são strings:
+```toml
+format_version = 2
+[[package]]
+id = "psx.enhancement.hd-textures"
+version = "1.0.0"
+[[feature]]
+package_id = "psx.enhancement.hd-textures"
+id = "hd-textures"
+enabled = true
+[feature.values]
+replacements = "false"
+dump = "true"
+```
+Apagar o `state.toml` volta aos padrões do manifesto (= comportamento da release, que não o inclui).
+O log confirma: `psxrecomp: HD textures: <pasta> (replacements off, dumping on)` e
+`texture pack '<pasta>': N replacements, 0 ambiguous, 0 ignored`.
+
+**Captura.** Os dumps são publicados ~1x/s durante o jogo e concluídos na saída; sair pelo fechamento da janela
+(`$p.CloseMainWindow()`), não `Stop-Process`, senão o último lote se perde. Nome: `texupload-<P4|P8|STP4>-<hash
+textura>-<hash CLUT>-<src>x<h>-<ox>-<oy>-<w>x<h>-P<min>-<max>.png` (xxh3 dos words nativos; `C16` não é capturado por
+padrão, `DumpC16Textures` no `config.yaml`). Alfa: 0 = recorte (cor 0), 255 = opaco, 143 = texel STP em
+dumps `STP*`. 710 texturas em ~40 min: abertura, menus, ranking, seleção, 3 partidas 1P (Heat vs Hiro no palco disco,
+Comet vs Strike no palco industrial, Capoeira vs Comet no Sushi Planet) e o modo demonstração (que cicla palcos:
+Tokyo, lava, boate vermelha, estúdio) — deixar o jogo parado no attract é o jeito mais barato de cobrir palcos.
+Stage 1 depende do personagem escolhido, então trocar de personagem troca o palco sem precisar vencer.
+Teclas pelo computer-use: toque curto é ignorado pelo pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract
+em poucos segundos sem entrada.
+
+**Upscale** (`tools/hd_textures.py`): xBR nível 1 (Hyllian) vetorizado em numpy, 2x por passada, 4x = duas passadas,
+~710 texturas em 13 s. Cada pixel de saída copia um pixel de entrada (sem mistura) de propósito: o runtime
+classifica transparência por limiar de alfa (ordinário: <128 recorte; ST: ≤242 STP, ≥243 opaco), e qualquer
+interpolação de alfa entre recorte e opaco criaria franjas/costuras. Distância de cor YUV (48/7/6) com o alfa pesado
+(x4) para um texel recortado nunca "parecer" vizinho de um opaco. `--filter nearest` gera um pack de controle;
+`--scale 2`; arquivos já existentes são pulados (`--force` regrava). Resultado: 13 MB de PNG 4x para 36 MB de dumps.
+`xbrz.py` (xBRZ real) não compila com o GCC/Python daqui — se um dia compilar, é upgrade direto (nível 2 com mistura
+só no RGB, mantendo o alfa discreto).
+
+**Limites conhecidos.** Texturas <16 px por lado não são capturadas (`DumpTextureWidthThreshold`); sprites montados
+de várias partes/paletas saem como peças separadas (editáveis, não personagens reconstruídos); animação de paleta
+gera vários ids da mesma textura; o pack só casa a região USA (hash dos pixels nativos). Texturas vistas depois da
+captura (palcos não visitados) continuam originais até nova rodada de dump + `hd_textures.py` (incremental).

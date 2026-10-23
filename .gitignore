@@ -35,3 +35,9 @@ releases/*
 
 # memory cards do jogo (dados do usuario)
 saves/
+
+# Texturas do jogo capturadas/ampliadas pelo mod HD (psx.enhancement.hd-textures): nunca no git
+tools/recomp/bag2/build/mods/texture-packs/
+**/texture-packs/**/dumps/
+**/texture-packs/**/replacements/
+*.hdres
