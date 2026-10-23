@@ -7,6 +7,20 @@ executável original, WebAssembly e WebGPU. Projeto pessoal, uso local apenas.
 > rasterização de triângulos, GTE (coprocessador de geometria), SPU ADPCM, CD-ROM XA. Isso é
 > bom: o PS1 é a plataforma com mais ferramentas de decompilação/recompilação disponíveis.
 
+## Jogar no PC (recomendado)
+Versões prontas em `releases/` (fora do git):
+- `releases/BAG2-recomp-estavel-2026-10-23/` — build estável original (resolução nativa, janela).
+- `releases/BAG2-recomp-1080p-2026-10-23/` — build melhorada: resolução interna 5x (1200 linhas → 1080p),
+  PGXP (geometria sem tremor, texturas em perspectiva), filtro xBR, FXAA, sem dithering, render thread,
+  tela cheia sem borda a 1920×1080 (F11 alterna).
+
+Executar: `Jogar.bat` (usa o `.cue` da pasta do disco; aceita outro caminho como argumento) ou
+`Bust_A_Groove_2_Recompiled.exe --game game.toml --disc "<arquivo.cue>"`.
+Teclado (`keybinds.ini`): setas = direcional, `X` = ✕, `S` = ○, `Z` = □, `A` = △, `Q/W` = L1/R1, `E/R` = L2/R2,
+`Enter` = Start, `Shift direito` = Select. Gamepads SDL funcionam direto.
+Ajustes: `game.toml` `[video]` (`internal_resolution`, `texture_filtering`, `antialiasing_mode`,
+`dithering`, `geometry_correction`), `settings.toml` (`fullscreen`, `window_width`). Memory card em `saves/`.
+
 ## Regras
 - **Nenhum dado do jogo entra no repositório** (`.gitignore` bloqueia `.bin/.cue/.XA/.STR/SLUS_*/extracted/`).
   O navegador lê a imagem do disco do disco local do usuário (File System Access API / `<input type=file>`).

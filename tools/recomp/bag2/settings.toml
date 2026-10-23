@@ -1,0 +1,5 @@
+# Preferências do jogador (lidas ao lado do exe; precedência: ambiente > CLI > settings.toml > game.toml).
+# fullscreen: 0 = janela, 1 = tela cheia sem borda (desktop), 2 = exclusiva. F11 alterna em jogo.
+[video]
+fullscreen = 1
+window_width = 1920

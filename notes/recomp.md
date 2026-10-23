@@ -319,3 +319,13 @@ Ajustes:
   atraso total medido ≈ 120 ms (fila ~60 + dispositivo ~58), 0 underruns com 35 % de CPU livre. O
   HUD mostra o atraso estimado. Abaixo de ~40 ms pode voltar a cortar; o exe nativo (SDL direto) tem
   latência bem menor que qualquer navegador.
+
+## 10. Versão PC melhorada (2026-10-23)
+`tools/recomp/bag2/game.toml` `[video]`: `internal_resolution = "1080p"` (5x de 240 linhas = 1200,
+resolvido para a janela), `geometry_correction`/`perspective_texturing` (PGXP), `texture_filtering = "xbr"`
+(o log imprime "bilinear" para qualquer filtro ≠ nearest), `antialiasing_mode = "fxaa"`, `dithering = "off"`,
+`render_thread = true`, `vsync = "on"`, presets `[quality.*]` (chaves permitidas: ver QUALITY_PRESETS.md —
+`antialiasing_mode` não é preset; `antialiasing` bool é). `settings.toml` ao lado do exe:
+`fullscreen = 1` (sem borda 1920×1080 confirmado), `window_width = 1920`. `Jogar.bat` lança com o disco.
+Capturas: `tools/recomp/logs/cap-1080p-*.png`. Backups: `releases/BAG2-recomp-estavel-2026-10-23`
+(intacto) e `releases/BAG2-recomp-1080p-2026-10-23`.
