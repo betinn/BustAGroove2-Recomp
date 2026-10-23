@@ -27,7 +27,7 @@ binInput.addEventListener('change', () => {
 
 function boot(bin: File | string) {
   bootBtn.disabled = true;
-  log(`Iniciando ${coreSel.value}…`);
+  log(`Iniciando ${coreSel.value}â€¦`);
 
   window.EJS_player = '#game';
   window.EJS_core = coreSel.value;
