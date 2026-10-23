@@ -187,3 +187,40 @@ Resultados:
   compilador antigo; candidatos a seeds extras se algo quebrar).
 - Configure do runtime do jogo (`tools/recomp/bag2/build`): **OK** (SDL3 3.4.10
   baixado e compilado junto, backend OpenBIOS + C do jogo linkados).
+- Build do runtime do jogo: **OK na 2ª tentativa**. Na 1ª, o GCC 16 compilou o
+  runtime como gnu++20 (o template de projeto não fixa o padrão) e
+  `gpu_hd_textures.cpp` / `duckstation_texture_pack.cpp` quebraram em
+  `path::u8string()` (vira `std::u8string`). Corrigido fixando
+  `CMAKE_CXX_STANDARD 17` em `tools/recomp/bag2/CMakeLists.txt`. Saída:
+  `tools/recomp/bag2/build/Bust_A_Groove_2_Recompiled.exe` (38 MB, nome vem do
+  WINDOW_TITLE), com `bios/openbios.bin`, `game.toml`, `mods/`, `assets/` ao lado.
+- **Boot: FUNCIONA.** `Bust_A_Groove_2_Recompiled.exe --game game.toml --disc "<cue>"`
+  cria contexto OpenGL 3.3 (RTX 3070 Ti), executa o OpenBIOS LLE a partir de
+  0xBFC00000, carrega o SLUS_011.59 do disco, e roda estável a 60 fps
+  (`emu_busy` 12–28 %). Capturas em `tools/recomp/logs/bag2-boot-*-window.png`:
+  12 s = tela preta (boot do BIOS), 24 s = logo "Frame Graphics", 40 s = abertura
+  do jogo (dançarino com partículas). Logs: `logs/bag2-boot.log`
+  (`--hidden-window` + `PSX_FRAME_REPORT_MS=1000`) e `logs/bag2-boot-visible.log`.
+  Em 40 s ainda não apareceu `overlay_captures.json` (os DBI_ só entram ao sair
+  da abertura/menus); ao chegar lá o runtime vai capturar e, sem `gcc` no PATH,
+  interpretar ("tcc tier active but no bundled toolchain ... overlay gaps ->
+  interpreter"). Rodar com `env.ps1` carregado põe o gcc do WinLibs no PATH e
+  habilita a compilação dos overlays (tier gcc).
+
+## 6. Próximos passos
+
+1. Jogar até um modo de dança (overlay DBI_) com `env.ps1` carregado e checar
+   `overlay_captures.json` + `docs/COMPILING_OVERLAYS.md` para compilar os
+   overlays AOT (`--static`) em vez de interpretar.
+2. Se algum trecho ficar no interpretador/`psx_unknown_dispatch`, adicionar os
+   endereços ao `seeds/functions.txt` (os 14 avisos "out-of-function branch" do
+   log do psxrecomp-game são os primeiros candidatos) e regenerar.
+3. Alvo WASM: (a) clonar `kem0x/psxrecomp` em `C:\tools\psxrecomp-web`, (b)
+   `emsdk_env.bat`, (c) regenerar o C do jogo com o `psxrecomp-game` desse fork
+   (API `psxrecomp_add_runtime_target` antiga; conferir `psxrecomp-toml-readme.md`
+   do fork), (d) copiar `CMakeLists.txt`, `web/shell.html`, `web/serve.py` do
+   RepsiMan trocando `SLPS_017.62` → `SLUS_011.59` e `renderer = "software"`,
+   (e) `emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+   -DPSX_LAUNCHER=OFF -DPSX_DEBUG_TOOLS=OFF && cmake --build build-web`.
+   Overlays em WASM: não há gcc/tcc no browser, então ou os DBI_ são compilados
+   AOT (shards estáticos) antes, ou ficam no interpretador.
