@@ -43,12 +43,14 @@ export class WebGpuPresenter {
   private tex?: GPUTexture; private bind?: GPUBindGroup; private uni!: GPUBuffer; private sampler!: GPUSampler;
   private texW = 0; private texH = 0;
   scanlines = 0;
+  onError?: (msg: string) => void;
 
   static async create(canvas: HTMLCanvasElement): Promise<WebGpuPresenter | undefined> {
     const adapter = await navigator.gpu?.requestAdapter();
     if (!adapter) return undefined;
     const p = new WebGpuPresenter();
     p.device = await adapter.requestDevice();
+    p.device.addEventListener('uncapturederror', (ev) => p.onError?.(String((ev as GPUUncapturedErrorEvent).error.message)));
     p.ctx = canvas.getContext('webgpu') as unknown as GPUCanvasContext;
     const format = navigator.gpu.getPreferredCanvasFormat();
     p.ctx.configure({ device: p.device, format, alphaMode: 'opaque' });

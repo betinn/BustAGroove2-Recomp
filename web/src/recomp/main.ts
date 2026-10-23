@@ -259,9 +259,13 @@ const scanToggle = $<HTMLInputElement>('scanlines');
 async function startWebGpuPresenter() {
   const M = window.Module;
   if (!M._psx_web_frame_ptr || !M._psx_web_frame_serial) { log('WebGPU: runtime sem exportação de frame (build antiga).'); return; }
-  const presenter = await WebGpuPresenter.create(gpuCanvas).catch(() => undefined);
+  const presenter = await WebGpuPresenter.create(gpuCanvas).catch((e) => { log('WebGPU: ' + e); return undefined; });
   if (!presenter) { log('WebGPU indisponível; usando o canvas do SDL.'); gpuToggle.disabled = true; return; }
-  let lastSerial = -1;
+  (window as unknown as { __bag2gpu: unknown }).__bag2gpu = presenter;
+  presenter.onError = (m) => log('WebGPU erro: ' + m);
+  log('WebGPU: apresentando o framebuffer.');
+  let lastSerial = -1, frames = 0;
+  (window as unknown as { __bag2frames: () => number }).__bag2frames = () => frames;
   const tick = () => {
     const on = gpuToggle.checked;
     gpuCanvas.style.display = on ? 'block' : 'none';
@@ -273,7 +277,8 @@ async function startWebGpuPresenter() {
         if (ptr && w && h) {
           presenter.scanlines = scanToggle.checked ? 0.35 : 0;
           // HEAPU8 pode ser substituído quando a memória cresce: ler sempre via Module.HEAPU8.
-          presenter.present(M.HEAPU8.subarray(ptr, ptr + w * h * 4), w, h, gpuCanvas);
+          try { presenter.present(M.HEAPU8.subarray(ptr, ptr + w * h * 4), w, h, gpuCanvas); frames++; }
+          catch (e) { if (frames === 0) log('WebGPU present: ' + e); }
         }
       }
     }
