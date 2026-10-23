@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "target": "es2023",
+        "target": "es2023",
     "module": "esnext",
     "lib": ["ES2023", "DOM"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "@webgpu/types"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
@@ -17,7 +17,7 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    "erasableSyntaxOnly": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

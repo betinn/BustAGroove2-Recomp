@@ -1,0 +1,63 @@
+# game.toml — Bust A Groove 2 (USA) para o PSXRecomp (RetroPortingToolKit/psxrecomp).
+# Esquema: C:\tools\psxrecomp\docs\config_schema.md
+# Caminhos relativos resolvem a partir da "raiz do projeto" = esta pasta
+# (o loader sobe diretórios até achar CMakeLists.txt/.gitignore/.git).
+#
+# Fatos do cabeçalho PS-X EXE (lidos de extracted/disc/SLUS_011.59):
+#   pc0 = 0x80038270, t_addr = 0x80010000, t_size = 0x4E800, sp = 0x801FFFF0
+#   SYSTEM.CNF: BOOT = cdrom:\SLUS_011.59;1  TCB=4 EVENT=16 STACK=801FFF00
+#
+# Overlays: o jogo NÃO usa o loader do BIOS. Ele mesmo carrega blocos DBI_
+# de dentro de BUST2.BIN, descomprime com uma rotina BPE em 0x80035DC4 e
+# instala em 0x8008F6C0 (função de instalação em 0x8001F7E0). O PSXRecomp
+# trata isso em runtime: captura o código que aparece em RAM, cai no
+# interpretador MIPS e compila via gcc/tcc, guardando em overlay_captures.json
+# (ver docs/EXECUTION_MODEL.md, docs/AOT_SHARDING.md, docs/COMPILING_OVERLAYS.md).
+
+[game]
+name         = "Bust A Groove 2"
+id           = "SLUS-01159"
+players      = 2
+exe          = "../../../extracted/disc/SLUS_011.59"
+disc         = "C:/Users/sem-m/OneDrive/Documentos/My Games/Bust a groove 2/Bust A Groove 2 (USA).cue"
+load_address = "0x80010000"
+entry_pc     = "0x80038270"
+text_size    = "0x0004E800"
+stack_base   = "0x801FFFF0"
+
+[recompiler]
+# seeds/functions.txt: alvos de JAL extraídos pelo psxrecomp-toml + endereços
+# conhecidos (BPE 0x80035DC4, instalador de overlay 0x8001F7E0).
+seeds     = "seeds/functions.txt"
+out_dir   = "generated"
+strict    = true
+discovery = "whole-image"
+
+[runtime]
+window_title = "Bust A Groove 2 Recompiled"
+memcard_dir  = "saves"
+disc_speed   = "2x"
+bios_hle     = false      # LLE do OpenBIOS (mais fiel); true = pula a animação de boot
+overlay_cache = true
+overlay_backend = "auto"
+
+[video]
+renderer          = "opengl"   # "software" é o fallback/referência (e o que o RepsiMan usa na web)
+supersampling     = 1
+texture_filtering = "nearest"
+aspect_ratio      = "4:3"
+
+[controller]
+default_analog = false
+deadzone       = 12000
+
+# Regiões para a ferramenta de auditoria (tools/audit_config.py):
+[audit]
+[[audit.regions]]
+name       = "Main executable text"
+rom_start  = "0x800"
+rom_end    = "0x4F000"
+vaddr_base = "0x80010000"
+
+[audit.normalize]
+kseg_mask = "0x1FFFFFFF"

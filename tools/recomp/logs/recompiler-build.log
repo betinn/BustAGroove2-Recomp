@@ -1,0 +1,390 @@
+﻿-- The C compiler identification is GNU 16.2.0
+-- The CXX compiler identification is GNU 16.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/tools/winlibs/mingw64/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/tools/winlibs/mingw64/bin/g++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- psxrecomp: psx_libchdr from vendored archive third_party/libchdr-6cde5348eb118da3baf94f75a69577a005a484fd.tar.gz
+-- Looking for _M_AMD64
+-- Looking for _M_AMD64 - not found
+-- Performing Test LINKER_VERSION_SCRIPT_SUPPORTED
+-- Performing Test LINKER_VERSION_SCRIPT_SUPPORTED - Success
+-- Version: 9.1.1
+-- Build type: Release
+-- CXX_STANDARD: 20
+-- Performing Test has_std_20_flag
+-- Performing Test has_std_20_flag - Success
+-- Performing Test has_std_2a_flag
+-- Performing Test has_std_2a_flag - Success
+-- Required features: cxx_variadic_templates
+-- Found Python3: C:/Users/sem-m/AppData/Local/Python/pythoncore-3.14-64/python.exe (found version "3.14.7") found components: Interpreter
+-- test-registration guard: 426 test file(s), all registered
+-- Configuring done (5.6s)
+-- Generating done (0.5s)
+-- Build files have been written to: C:/tools/psxrecomp/recompiler/build
+=== CONFIGURE EXIT 0 ===
+[0/2] Re-checking globbed directories...
+[1/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/analysis/LoPairingInfo.cpp.obj
+[2/352] Building C object _deps/psx_libchdr-build/deps/lzma-25.01/CMakeFiles/chdr-lzma.dir/src/LzmaDec.c.obj
+[3/352] Building C object _deps/psx_libchdr-build/deps/miniz-3.1.1/CMakeFiles/miniz.dir/miniz.c.obj
+[4/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/analysis/RegistersTracker.cpp.obj
+[5/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstrId.cpp.obj
+[6/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstructionR3000GTE.cpp.obj
+[7/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/analysis/RabbitizerLoPairingInfo.c.obj
+[8/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstructionCpu.cpp.obj
+[9/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstrIdType.cpp.obj
+[10/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstructionR5900.cpp.obj
+[11/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstructionRsp.cpp.obj
+[12/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/common/Utils.c.obj
+[13/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/common/RabbitizerVersion.c.obj
+[14/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstrCategory.c.obj
+[15/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/common/RabbitizerConfig.c.obj
+[16/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/analysis/RabbitizerTrackedRegisterState.c.obj
+[17/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/analysis/RabbitizerRegistersTracker.c.obj
+[18/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstrId.c.obj
+[19/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstrSuffix.c.obj
+[20/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstrIdType.c.obj
+[21/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionR3000GTE/RabbitizerInstructionR3000GTE.c.obj
+[22/352] Building CXX object CMakeFiles/rabbitizer.dir/lib/rabbitizer/cplusplus/src/instructions/InstructionBase.cpp.obj
+[23/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionR3000GTE/RabbitizerInstructionR3000GTE_OperandType.c.obj
+[24/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionCpu/RabbitizerInstructionCpu_OperandType.c.obj
+[25/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstrDescriptor.c.obj
+[26/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionR3000GTE/RabbitizerInstructionR3000GTE_ProcessUniqueId.c.obj
+[27/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionR5900/RabbitizerInstructionR5900.c.obj
+[28/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionRsp/RabbitizerInstructionRsp.c.obj
+[29/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionR5900/RabbitizerInstructionR5900_OperandType.c.obj
+[30/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionRsp/RabbitizerInstructionRsp_OperandType.c.obj
+[31/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstruction/RabbitizerInstruction_Examination.c.obj
+[32/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstruction/RabbitizerInstruction.c.obj
+[33/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstruction/RabbitizerInstruction_Disassemble.c.obj
+[34/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstruction/RabbitizerInstruction_Operand.c.obj
+[35/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionRsp/RabbitizerInstructionRsp_ProcessUniqueId.c.obj
+[36/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstructionR5900/RabbitizerInstructionR5900_ProcessUniqueId.c.obj
+[37/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerRegisterDescriptor.c.obj
+[38/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerRegister.c.obj
+[39/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_bitstream.c.obj
+[40/352] Building C object CMakeFiles/rabbitizer.dir/lib/rabbitizer/src/instructions/RabbitizerInstruction/RabbitizerInstruction_ProcessUniqueId.c.obj
+[41/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_cdlz.c.obj
+[42/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_cdrom.c.obj
+[43/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_cdfl.c.obj
+[44/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_cdzl.c.obj
+[45/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_cdzs.c.obj
+[46/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_flac.c.obj
+[47/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_huff.c.obj
+[48/352] Hashing codegen sources -> psxrecomp_baked_codegen_hash.h
+-- overlay codegen hash: 0x115b1739
+[49/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_lzma.c.obj
+[50/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_zstd.c.obj
+[51/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_codec_zlib.c.obj
+[52/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_chd.c.obj
+[53/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_huffman.c.obj
+[54/352] Linking C static library _deps\psx_libchdr-build\deps\miniz-3.1.1\libminiz.a
+[55/352] Linking CXX static library librabbitizer.a
+[56/352] Linking C static library _deps\psx_libchdr-build\deps\lzma-25.01\libchdr-lzma.a
+[57/352] Building CXX object CMakeFiles/psxrecomp.dir/src/cli_boot_path.cpp.obj
+[58/352] Building CXX object CMakeFiles/psxrecomp.dir/C_/tools/psxrecomp/runtime/src/cue_sheet.cpp.obj
+[59/352] Building CXX object CMakeFiles/psxrecomp-toml.dir/src/ps1_exe_parser.cpp.obj
+[60/352] Building CXX object CMakeFiles/psxrecomp.dir/src/ps1_exe_parser.cpp.obj
+[61/352] Building CXX object CMakeFiles/psxrecomp-toml.dir/src/main_toml.cpp.obj
+[62/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/mips_decoder.cpp.obj
+[63/352] Building C object _deps/psx_libchdr-build/deps/zstd-1.5.7/CMakeFiles/zstd.dir/zstddeclib.c.obj
+[64/352] Building CXX object CMakeFiles/psxrecomp.dir/src/main_cli.cpp.obj
+[65/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/ps1_exe_parser.cpp.obj
+[66/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr-static.dir/src/libchdr_flac.c.obj
+[67/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/bios_call_names.cpp.obj
+[68/352] Linking C static library _deps\psx_libchdr-build\deps\zstd-1.5.7\libzstd.a
+[69/352] Building CXX object CMakeFiles/psxrecomp.dir/C_/tools/psxrecomp/runtime/src/iso_reader.cpp.obj
+[70/352] Building CXX object lib/fmt/CMakeFiles/fmt.dir/src/format.cc.obj
+[71/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/mips_decoder.cpp.obj
+[72/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/ps1_exe_parser.cpp.obj
+[73/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/main_analyze.cpp.obj
+[74/352] Building CXX object lib/fmt/CMakeFiles/fmt.dir/src/os.cc.obj
+[75/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/pgxp_hook_emitter.cpp.obj
+[76/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/function_analysis.cpp.obj
+[77/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/bios_slice_walker.cpp.obj
+[78/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/analysis_export.cpp.obj
+[79/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/bios_address_model.cpp.obj
+[80/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/widescreen_scan.cpp.obj
+[81/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/recompiler_patch.cpp.obj
+[82/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/strict_translator.cpp.obj
+[83/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/function_discovery.cpp.obj
+[84/352] Building CXX object CMakeFiles/bios_address_model_test.dir/tests/bios_address_model_test.cpp.obj
+[85/352] Building CXX object CMakeFiles/bios_address_model_test.dir/src/bios_address_model.cpp.obj
+[86/352] Building CXX object CMakeFiles/bios_address_model_test.dir/src/ps1_exe_parser.cpp.obj
+[87/352] Building CXX object CMakeFiles/l1_decoder_test.dir/src/mips_decoder.cpp.obj
+[88/352] Building CXX object CMakeFiles/l2_structural_test.dir/src/mips_decoder.cpp.obj
+[89/352] Building CXX object CMakeFiles/l1_decoder_test.dir/src/ps1_exe_parser.cpp.obj
+[90/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/main_bios.cpp.obj
+[91/352] Building CXX object CMakeFiles/l1_decoder_test.dir/tests/l1_decoder_test.cpp.obj
+[92/352] Building CXX object CMakeFiles/l2_structural_test.dir/tests/l2_structural_test.cpp.obj
+[93/352] Building CXX object CMakeFiles/emitter_directive_line_test.dir/tests/emitter_directive_line_test.cpp.obj
+[94/352] Building CXX object CMakeFiles/l2_structural_test.dir/src/pgxp_hook_emitter.cpp.obj
+[95/352] Building CXX object CMakeFiles/l2_structural_test.dir/src/ps1_exe_parser.cpp.obj
+[96/352] Building CXX object CMakeFiles/emitter_directive_line_test.dir/src/pgxp_hook_emitter.cpp.obj
+[97/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/full_function_emitter.cpp.obj
+[98/352] Building CXX object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/tests/test_disc_identity.cpp.obj
+[99/352] Building CXX object CMakeFiles/control_flow_metadata_test.dir/tests/control_flow_metadata_test.cpp.obj
+[100/352] Building CXX object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/src/disc_path.cpp.obj
+[101/352] Building C object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/src/psx_sha256.c.obj
+[102/352] Building C object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/src/crc32.c.obj
+[103/352] Building C object CMakeFiles/guest_tty_test.dir/C_/tools/psxrecomp/runtime/tests/test_guest_tty.c.obj
+[104/352] Building CXX object CMakeFiles/l2_structural_test.dir/src/strict_translator.cpp.obj
+[105/352] Building CXX object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/src/disc_identity.cpp.obj
+[106/352] Building C object CMakeFiles/guest_tty_test.dir/C_/tools/psxrecomp/runtime/src/guest_tty.c.obj
+[107/352] Building CXX object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/src/cue_sheet.cpp.obj
+[108/352] Building CXX object CMakeFiles/control_flow_metadata_test.dir/src/control_flow.cpp.obj
+[109/352] Building C object CMakeFiles/mdec_busy_drain_test.dir/C_/tools/psxrecomp/runtime/tests/test_mdec_busy_drain.c.obj
+[110/352] Building C object CMakeFiles/display_scanout_test.dir/C_/tools/psxrecomp/runtime/tests/test_display_scanout.c.obj
+[111/352] Building C object CMakeFiles/debug_trace_ranges_test.dir/C_/tools/psxrecomp/runtime/src/debug_trace_ranges.c.obj
+[112/352] Building C object CMakeFiles/debug_trace_ranges_test.dir/C_/tools/psxrecomp/runtime/tests/test_debug_trace_ranges.c.obj
+[113/352] Building C object CMakeFiles/gl_scale_limits_test.dir/C_/tools/psxrecomp/runtime/tests/test_gl_scale_limits.c.obj
+[114/352] Building CXX object CMakeFiles/host_path_test.dir/tests/host_path_test.cpp.obj
+[115/352] Building C object CMakeFiles/mdec_busy_drain_test.dir/C_/tools/psxrecomp/runtime/src/mdec.c.obj
+[116/352] Building CXX object CMakeFiles/internal_resolution_test.dir/C_/tools/psxrecomp/runtime/tests/test_internal_resolution.cpp.obj
+[117/352] Building CXX object CMakeFiles/cli_boot_path_test.dir/tests/cli_boot_path_test.cpp.obj
+[118/352] Building CXX object CMakeFiles/disc_identity_test.dir/C_/tools/psxrecomp/runtime/src/iso_reader.cpp.obj
+[119/352] Building CXX object CMakeFiles/cli_boot_path_test.dir/src/cli_boot_path.cpp.obj
+[120/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/ps1_exe_parser.cpp.obj
+[121/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/mips_decoder.cpp.obj
+[122/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/pgxp_hook_emitter.cpp.obj
+[123/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/annotations.cpp.obj
+[124/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/control_flow.cpp.obj
+[125/352] Building CXX object CMakeFiles/psxrecomp-analyze.dir/src/analysis_db.cpp.obj
+[126/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/bios_address_model.cpp.obj
+[127/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/recompiler_patch.cpp.obj
+[128/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/function_analysis.cpp.obj
+[129/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/mips_decoder.cpp.obj
+[130/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/ps1_exe_parser.cpp.obj
+[131/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/tests/recompiler_patch_test.cpp.obj
+[132/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/tests/full_function_emitter_test.cpp.obj
+[133/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/pgxp_hook_emitter.cpp.obj
+[134/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/recompiler_patch.cpp.obj
+[135/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/bios_address_model.cpp.obj
+[136/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/strict_translator.cpp.obj
+[137/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/ps1_exe_parser.cpp.obj
+[138/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/function_discovery.cpp.obj
+[139/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/mips_decoder.cpp.obj
+[140/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/tests/signed_x_bound_codegen_test.cpp.obj
+[141/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/code_generator.cpp.obj
+[142/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/annotations.cpp.obj
+[143/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/pgxp_hook_emitter.cpp.obj
+[144/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/control_flow.cpp.obj
+[145/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/full_function_emitter.cpp.obj
+[146/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/function_analysis.cpp.obj
+[147/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/bios_address_model.cpp.obj
+[148/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/recompiler_patch.cpp.obj
+[149/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/mips_decoder.cpp.obj
+[150/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/ps1_exe_parser.cpp.obj
+[151/352] Building CXX object CMakeFiles/bios_address_model_test.dir/src/config_loader.cpp.obj
+[152/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/tests/ws_cull_edge_codegen_test.cpp.obj
+[153/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/pgxp_hook_emitter.cpp.obj
+[154/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/control_flow.cpp.obj
+[155/352] Building CXX object CMakeFiles/psxrecomp-bios.dir/src/config_loader.cpp.obj
+[156/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/annotations.cpp.obj
+[157/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/code_generator.cpp.obj
+[158/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/function_analysis.cpp.obj
+[159/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/ps1_exe_parser.cpp.obj
+[160/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/recompiler_patch.cpp.obj
+[161/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/bios_address_model.cpp.obj
+[162/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/tests/ws_cull_screen_x_hi_codegen_test.cpp.obj
+[163/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/mips_decoder.cpp.obj
+[164/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/annotations.cpp.obj
+[165/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/pgxp_hook_emitter.cpp.obj
+[166/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/control_flow.cpp.obj
+[167/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/bios_address_model.cpp.obj
+[168/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/recompiler_patch.cpp.obj
+[169/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/code_generator.cpp.obj
+[170/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/function_analysis.cpp.obj
+[171/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/mips_decoder.cpp.obj
+[172/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/ps1_exe_parser.cpp.obj
+[173/352] Building CXX object CMakeFiles/recompiler_patch_test.dir/src/config_loader.cpp.obj
+[174/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/tests/draw_distance_codegen_test.cpp.obj
+[175/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/pgxp_hook_emitter.cpp.obj
+[176/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/control_flow.cpp.obj
+[177/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/annotations.cpp.obj
+[178/352] Building CXX object CMakeFiles/full_function_emitter_test.dir/src/config_loader.cpp.obj
+[179/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/function_analysis.cpp.obj
+[180/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/bios_address_model.cpp.obj
+[181/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/code_generator.cpp.obj
+[182/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/recompiler_patch.cpp.obj
+[183/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/ps1_exe_parser.cpp.obj
+[184/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/mips_decoder.cpp.obj
+[185/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/pgxp_hook_emitter.cpp.obj
+[186/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/control_flow.cpp.obj
+[187/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/tests/mod_immediate_codegen_test.cpp.obj
+[188/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/annotations.cpp.obj
+[189/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/recompiler_patch.cpp.obj
+[190/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/bios_address_model.cpp.obj
+[191/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/function_analysis.cpp.obj
+[192/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/code_generator.cpp.obj
+[193/352] Building C object CMakeFiles/ws_cull_edge_interp_test.dir/C_/tools/psxrecomp/runtime/src/ws_aspect_cone_math.c.obj
+[194/352] Building C object CMakeFiles/draw_distance_interp_test.dir/C_/tools/psxrecomp/runtime/src/ws_aspect_cone_math.c.obj
+[195/352] Building C object CMakeFiles/mod_immediate_unit_test.dir/C_/tools/psxrecomp/runtime/tests/test_mod_immediate.c.obj
+[196/352] Building CXX object CMakeFiles/signed_x_bound_codegen_test.dir/src/config_loader.cpp.obj
+[197/352] Building C object CMakeFiles/ws_cull_edge_interp_test.dir/C_/tools/psxrecomp/runtime/tests/test_ws_cull_edge_interp.c.obj
+[198/352] Building C object CMakeFiles/draw_distance_interp_test.dir/C_/tools/psxrecomp/runtime/tests/test_draw_distance_interp.c.obj
+[199/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/ps1_exe_parser.cpp.obj
+[200/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/mips_decoder.cpp.obj
+[201/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/tests/uncached_fetch_codegen_test.cpp.obj
+[202/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/annotations.cpp.obj
+[203/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/pgxp_hook_emitter.cpp.obj
+[204/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/code_generator.cpp.obj
+[205/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/control_flow.cpp.obj
+[206/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/recompiler_patch.cpp.obj
+[207/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/bios_address_model.cpp.obj
+[208/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/function_analysis.cpp.obj
+[209/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/mips_decoder.cpp.obj
+[210/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/ps1_exe_parser.cpp.obj
+[211/352] Building CXX object CMakeFiles/ws_cull_edge_codegen_test.dir/src/config_loader.cpp.obj
+[212/352] Building CXX object CMakeFiles/ws_cull_screen_x_hi_codegen_test.dir/src/config_loader.cpp.obj
+[213/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/control_flow.cpp.obj
+[214/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/code_generator.cpp.obj
+[215/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/function_analysis.cpp.obj
+[216/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/annotations.cpp.obj
+[217/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/pgxp_hook_emitter.cpp.obj
+[218/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/game_dispatch_emitter.cpp.obj
+[219/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/tests/emitter_runtime_pc_test.cpp.obj
+[220/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/bios_address_model.cpp.obj
+[221/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/strict_translator.cpp.obj
+[222/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/recompiler_patch.cpp.obj
+[223/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/mips_decoder.cpp.obj
+[224/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/ps1_exe_parser.cpp.obj
+[225/352] Building CXX object CMakeFiles/segment_variants_test.dir/tests/segment_variants_test.cpp.obj
+[226/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/code_generator.cpp.obj
+[227/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/segment_variants.cpp.obj
+[228/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/pgxp_hook_emitter.cpp.obj
+[229/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/control_flow.cpp.obj
+[230/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/annotations.cpp.obj
+[231/352] Building CXX object CMakeFiles/recompiler_patch_cxx17_header_test.dir/tests/recompiler_patch_cxx17_header_test.cpp.obj
+[232/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/recompiler_patch.cpp.obj
+[233/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/bios_address_model.cpp.obj
+[234/352] Building CXX object CMakeFiles/draw_distance_codegen_test.dir/src/config_loader.cpp.obj
+[235/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/function_analysis.cpp.obj
+[236/352] Building CXX object CMakeFiles/rewind_settings_test.dir/tests/rewind_settings_test.cpp.obj
+[237/352] Building CXX object CMakeFiles/video_enhancement_settings_test.dir/src/ps1_exe_parser.cpp.obj
+[238/352] Building CXX object CMakeFiles/mod_immediate_codegen_test.dir/src/config_loader.cpp.obj
+[239/352] Building CXX object CMakeFiles/video_enhancement_settings_test.dir/tests/video_enhancement_settings_test.cpp.obj
+[240/352] Building CXX object CMakeFiles/rewind_settings_test.dir/src/ps1_exe_parser.cpp.obj
+[241/352] Building CXX object CMakeFiles/jogcon_ffb_settings_test.dir/tests/jogcon_ffb_settings_test.cpp.obj
+[242/352] Building CXX object CMakeFiles/jogcon_ffb_settings_test.dir/src/ps1_exe_parser.cpp.obj
+[243/352] Building CXX object CMakeFiles/quality_presets_test.dir/tests/quality_presets_test.cpp.obj
+[244/352] Building CXX object CMakeFiles/quality_presets_test.dir/src/ps1_exe_parser.cpp.obj
+[245/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/code_generator.cpp.obj
+[246/352] Building C object CMakeFiles/quality_presets_test.dir/C_/tools/psxrecomp/runtime/src/quality_tier.c.obj
+[247/352] Building CXX object CMakeFiles/quality_presets_test.dir/C_/tools/psxrecomp/runtime/src/quality_presets.cpp.obj
+[248/352] Building CXX object CMakeFiles/portable_settings_paths_test.dir/tests/portable_settings_paths_test.cpp.obj
+[249/352] Building CXX object CMakeFiles/portable_settings_paths_test.dir/src/ps1_exe_parser.cpp.obj
+[250/352] Building CXX object CMakeFiles/reachable_discovery_test.dir/tests/reachable_discovery_test.cpp.obj
+[251/352] Building CXX object CMakeFiles/uncached_fetch_codegen_test.dir/src/config_loader.cpp.obj
+[252/352] Building C object CMakeFiles/tas_gte_deferred_O0.dir/C_/tools/psxrecomp/runtime/tests/test_gte_deferred.c.obj
+[253/352] Building C object CMakeFiles/tas_gte_deferred_O0.dir/C_/tools/psxrecomp/runtime/src/psx_cycles.c.obj
+[254/352] Building CXX object CMakeFiles/reachable_discovery_test.dir/src/ps1_exe_parser.cpp.obj
+[255/352] Building C object CMakeFiles/tas_gte_deferred_O2.dir/C_/tools/psxrecomp/runtime/tests/test_gte_deferred.c.obj
+[256/352] Building C object CMakeFiles/muldiv_deferred_O0.dir/C_/tools/psxrecomp/runtime/tests/test_muldiv_deferred.c.obj
+[257/352] Building C object CMakeFiles/tas_gte_deferred_O2.dir/C_/tools/psxrecomp/runtime/src/psx_cycles.c.obj
+[258/352] Building CXX object CMakeFiles/emitter_runtime_pc_test.dir/src/config_loader.cpp.obj
+[259/352] Building C object CMakeFiles/muldiv_deferred_O0.dir/C_/tools/psxrecomp/runtime/src/psx_cycles.c.obj
+[260/352] Building CXX object CMakeFiles/reachable_discovery_test.dir/src/function_analysis.cpp.obj
+[261/352] Building C object CMakeFiles/muldiv_deferred_O2.dir/C_/tools/psxrecomp/runtime/tests/test_muldiv_deferred.c.obj
+[262/352] Building C object CMakeFiles/present_image_ring_test.dir/C_/tools/psxrecomp/runtime/tests/test_present_image_ring.c.obj
+[263/352] Building C object CMakeFiles/muldiv_deferred_O2.dir/C_/tools/psxrecomp/runtime/src/psx_cycles.c.obj
+[264/352] Building C object CMakeFiles/present_image_ring_test.dir/C_/tools/psxrecomp/runtime/src/present_image_ring.c.obj
+[265/352] Building RC object CMakeFiles/psxrecomp-toml_manifest.dir/psxrecomp-toml_manifest.rc.obj
+[266/352] Building RC object CMakeFiles/psxrecomp-game_manifest.dir/psxrecomp-game_manifest.rc.obj
+[267/352] Building RC object CMakeFiles/psxrecomp_manifest.dir/psxrecomp_manifest.rc.obj
+[268/352] Building RC object CMakeFiles/psxrecomp-analyze_manifest.dir/psxrecomp-analyze_manifest.rc.obj
+[269/352] Building RC object CMakeFiles/psxrecomp-bios_manifest.dir/psxrecomp-bios_manifest.rc.obj
+[270/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/mips_decoder.cpp.obj
+[271/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/ps1_exe_parser.cpp.obj
+[272/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/pgxp_hook_emitter.cpp.obj
+[273/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/control_flow.cpp.obj
+[274/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/annotations.cpp.obj
+[275/352] Building CXX object CMakeFiles/segment_variants_test.dir/src/config_loader.cpp.obj
+[276/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/bios_address_model.cpp.obj
+[277/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/function_analysis.cpp.obj
+[278/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/recompiler_patch.cpp.obj
+[279/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/game_dispatch_emitter.cpp.obj
+[280/352] Linking C static library _deps\psx_libchdr-build\libchdr-static.a
+[281/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_bitstream.c.obj
+[282/352] Building CXX object CMakeFiles/quality_presets_test.dir/src/config_loader.cpp.obj
+[283/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_cdrom.c.obj
+[284/352] Building CXX object CMakeFiles/rewind_settings_test.dir/src/config_loader.cpp.obj
+[285/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_cdfl.c.obj
+[286/352] Building CXX object CMakeFiles/video_enhancement_settings_test.dir/src/config_loader.cpp.obj
+[287/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_cdlz.c.obj
+[288/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_chd.c.obj
+[289/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_cdzl.c.obj
+[290/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_cdzs.c.obj
+[291/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_flac.c.obj
+[292/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_huff.c.obj
+[293/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_lzma.c.obj
+[294/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_zlib.c.obj
+[295/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_codec_zstd.c.obj
+[296/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/segment_variants.cpp.obj
+[297/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/code_generator.cpp.obj
+[298/352] Building C object _deps/psx_libchdr-build/tests/CMakeFiles/chdr-benchmark.dir/benchmark.c.obj
+[299/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_huffman.c.obj
+[300/352] Linking CXX static library lib\fmt\libfmt.a
+[301/352] Linking CXX executable host_path_test.exe
+[302/352] Linking C executable mdec_busy_drain_test.exe
+[303/352] Linking C executable guest_tty_test.exe
+[304/352] Linking CXX executable disc_identity_test.exe
+[305/352] Linking CXX executable emitter_directive_line_test.exe
+[306/352] Linking CXX executable l1_decoder_test.exe
+[307/352] Linking CXX executable control_flow_metadata_test.exe
+[308/352] Linking CXX executable l2_structural_test.exe
+[309/352] Linking CXX executable bios_address_model_test.exe
+[310/352] Linking CXX executable internal_resolution_test.exe
+[311/352] Linking C executable debug_trace_ranges_test.exe
+[312/352] Linking C executable display_scanout_test.exe
+[313/352] Linking CXX executable cli_boot_path_test.exe
+[314/352] Linking C executable gl_scale_limits_test.exe
+[315/352] Linking CXX executable ws_cull_edge_codegen_test.exe
+[316/352] Linking CXX executable full_function_emitter_test.exe
+[317/352] Linking CXX executable ws_cull_screen_x_hi_codegen_test.exe
+[318/352] Linking CXX executable recompiler_patch_test.exe
+[319/352] Linking CXX executable signed_x_bound_codegen_test.exe
+[320/352] Linking C executable mod_immediate_unit_test.exe
+[321/352] Linking CXX executable draw_distance_codegen_test.exe
+[322/352] Linking CXX executable mod_immediate_codegen_test.exe
+[323/352] Linking CXX executable uncached_fetch_codegen_test.exe
+[324/352] Linking CXX executable emitter_runtime_pc_test.exe
+[325/352] Linking CXX executable segment_variants_test.exe
+[326/352] Linking CXX executable recompiler_patch_cxx17_header_test.exe
+[327/352] Building CXX object CMakeFiles/jogcon_ffb_settings_test.dir/src/config_loader.cpp.obj
+[328/352] Linking CXX executable rewind_settings_test.exe
+[329/352] Linking CXX executable video_enhancement_settings_test.exe
+[330/352] Linking CXX executable quality_presets_test.exe
+[331/352] Linking CXX executable reachable_discovery_test.exe
+[332/352] Linking C executable draw_distance_interp_test.exe
+[333/352] Linking CXX executable jogcon_ffb_settings_test.exe
+[334/352] Linking C executable tas_gte_deferred_O0.exe
+[335/352] Linking C executable muldiv_deferred_O2.exe
+[336/352] Linking C executable tas_gte_deferred_O2.exe
+[337/352] Linking C executable present_image_ring_test.exe
+[338/352] Linking C executable muldiv_deferred_O0.exe
+[339/352] Linking C executable ws_cull_edge_interp_test.exe
+[340/352] Linking CXX executable psxrecomp.exe
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: .rsrc merge failure: multiple non-default manifests
+[341/352] Linking C executable _deps\psx_libchdr-build\tests\chdr-benchmark.exe
+[342/352] Linking CXX executable psxrecomp-toml.exe
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: .rsrc merge failure: multiple non-default manifests
+[343/352] Linking CXX executable psxrecomp-analyze.exe
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: .rsrc merge failure: multiple non-default manifests
+[344/352] Linking CXX executable psxrecomp-bios.exe
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: .rsrc merge failure: multiple non-default manifests
+[345/352] Building C object _deps/psx_libchdr-build/CMakeFiles/chdr.dir/src/libchdr_flac.c.obj
+[346/352] Linking C shared library libchdr.dll
+[347/352] Building CXX object CMakeFiles/portable_settings_paths_test.dir/src/config_loader.cpp.obj
+[348/352] Linking CXX executable portable_settings_paths_test.exe
+[349/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/main_psx.cpp.obj
+[350/352] Building CXX object CMakeFiles/psxrecomp-game.dir/src/config_loader.cpp.obj
+[351/352] Linking CXX executable psxrecomp-game.exe
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: .rsrc merge failure: multiple non-default manifests
+=== BUILD EXIT 0 ===

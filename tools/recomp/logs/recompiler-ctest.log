@@ -1,0 +1,155 @@
+Test project C:/tools/psxrecomp/recompiler/build
+        Start   1: control_flow_metadata_test
+  1/157 Test   #1: control_flow_metadata_test ...........   Passed    0.07 sec
+        Start   2: disc_identity_test
+  2/157 Test   #2: disc_identity_test ...................   Passed    0.22 sec
+        Start   3: host_path_test
+  3/157 Test   #3: host_path_test .......................   Passed    0.04 sec
+        Start   4: emitter_directive_line_test
+  4/157 Test   #4: emitter_directive_line_test ..........   Passed    0.04 sec
+        Start   5: guest_tty_test
+  5/157 Test   #5: guest_tty_test .......................   Passed    0.04 sec
+        Start   6: mdec_busy_drain_test
+  6/157 Test   #6: mdec_busy_drain_test .................   Passed    0.03 sec
+        Start   7: debug_trace_ranges_test
+  7/157 Test   #7: debug_trace_ranges_test ..............   Passed    0.03 sec
+        Start   8: display_scanout_test
+  8/157 Test   #8: display_scanout_test .................   Passed    0.03 sec
+        Start   9: gl_scale_limits_test
+  9/157 Test   #9: gl_scale_limits_test .................   Passed    0.03 sec
+        Start  10: internal_resolution_test
+ 10/157 Test  #10: internal_resolution_test .............   Passed    0.04 sec
+        Start  11: cli_boot_path_test
+ 11/157 Test  #11: cli_boot_path_test ...................   Passed    0.07 sec
+        Start  12: recompiler_patch_test
+ 12/157 Test  #12: recompiler_patch_test ................   Passed    0.47 sec
+        Start  13: full_function_emitter_test
+ 13/157 Test  #13: full_function_emitter_test ...........   Passed    0.18 sec
+        Start  14: signed_x_bound_codegen_test
+ 14/157 Test  #14: signed_x_bound_codegen_test ..........   Passed    0.13 sec
+        Start  15: ws_cull_edge_codegen_test
+ 15/157 Test  #15: ws_cull_edge_codegen_test ............   Passed    0.69 sec
+        Start  16: ws_cull_screen_x_hi_codegen_test
+ 16/157 Test  #16: ws_cull_screen_x_hi_codegen_test .....   Passed    0.15 sec
+        Start  17: draw_distance_codegen_test
+ 17/157 Test  #17: draw_distance_codegen_test ...........   Passed    0.31 sec
+        Start  18: mod_immediate_codegen_test
+ 18/157 Test  #18: mod_immediate_codegen_test ...........   Passed    0.24 sec
+        Start  19: ws_cull_edge_interp_test
+ 19/157 Test  #19: ws_cull_edge_interp_test .............   Passed    0.03 sec
+        Start  20: draw_distance_interp_test
+ 20/157 Test  #20: draw_distance_interp_test ............   Passed    0.03 sec
+        Start  21: mod_immediate_unit_test
+ 21/157 Test  #21: mod_immediate_unit_test ..............   Passed    0.03 sec
+        Start  22: uncached_fetch_codegen_test
+ 22/157 Test  #22: uncached_fetch_codegen_test ..........   Passed    0.08 sec
+        Start  23: emitter_runtime_pc_test
+ 23/157 Test  #23: emitter_runtime_pc_test ..............   Passed    0.25 sec
+        Start  24: emitter_runtime_pc_test_legacy
+ 24/157 Test  #24: emitter_runtime_pc_test_legacy .......   Passed    0.18 sec
+        Start  25: segment_variants_test
+ 25/157 Test  #25: segment_variants_test ................   Passed    0.09 sec
+        Start  26: recompiler_patch_cxx17_header_test
+ 26/157 Test  #26: recompiler_patch_cxx17_header_test ...   Passed    0.03 sec
+        Start  27: video_enhancement_settings_test
+ 27/157 Test  #27: video_enhancement_settings_test ......   Passed    0.61 sec
+        Start  28: rewind_settings_test
+ 28/157 Test  #28: rewind_settings_test .................   Passed    0.09 sec
+        Start  29: jogcon_ffb_settings_test
+ 29/157 Test  #29: jogcon_ffb_settings_test .............   Passed    0.09 sec
+        Start  30: quality_presets_test
+ 30/157 Test  #30: quality_presets_test .................   Passed    0.18 sec
+        Start  31: portable_settings_paths_test
+ 31/157 Test  #31: portable_settings_paths_test .........   Passed    0.11 sec
+        Start  32: bios_address_model_test
+ 32/157 Test  #32: bios_address_model_test ..............   Passed    0.11 sec
+        Start  33: l2_structural_test
+ 33/157 Test  #33: l2_structural_test ...................   Passed    0.05 sec
+        Start  34: reachable_discovery_test
+ 34/157 Test  #34: reachable_discovery_test .............   Passed    0.05 sec
+        Start  35: runtime_ipo_configuration
+ 35/157 Test  #35: runtime_ipo_configuration ............   Passed   16.06 sec
+        Start  36: interp_cop0_read_sample
+ 36/157 Test  #36: interp_cop0_read_sample ..............***Failed    6.82 sec
+-O0: fixture failed (rc=3221226505)
+
+
+        Start  37: optional_netplay_auth
+ 37/157 Test  #37: optional_netplay_auth ................   Passed    0.55 sec
+        Start  38: bios_emitter_stamps
+ 38/157 Test  #38: bios_emitter_stamps ..................   Passed    0.25 sec
+        Start  39: pgo_rebuild_flow
+ 39/157 Test  #39: pgo_rebuild_flow .....................   Passed    6.43 sec
+        Start  40: cli_project_packaging
+ 40/157 Test  #40: cli_project_packaging ................   Passed    0.10 sec
+        Start  41: bios_module_build
+ 41/157 Test  #41: bios_module_build ....................   Passed    0.16 sec
+        Start  42: tcc_module_include_dir
+ 42/157 Test  #42: tcc_module_include_dir ...............   Passed    1.34 sec
+        Start  43: coverage_vault
+ 43/157 Test  #43: coverage_vault .......................   Passed    0.35 sec
+        Start  44: enrich_overlay_captures
+ 44/157 Test  #44: enrich_overlay_captures ..............   Passed    0.53 sec
+        Start  45: overlay_no_split_guard
+ 45/157 Test  #45: overlay_no_split_guard ...............   Passed    0.91 sec
+        Start  46: overlay_cross_image_calls
+ 46/157 Test  #46: overlay_cross_image_calls ............   Passed    3.79 sec
+        Start  47: runtime_exe_name
+ 47/157 Test  #47: runtime_exe_name .....................   Passed    0.28 sec
+        Start  48: recompiler_error_exit
+ 48/157 Test  #48: recompiler_error_exit ................   Passed    0.88 sec
+        Start  49: overlay_cross_page_delay_codegen
+ 49/157 Test  #49: overlay_cross_page_delay_codegen .....   Passed    0.24 sec
+        Start  50: overlay_guard_word_analysis_bound
+ 50/157 Test  #50: overlay_guard_word_analysis_bound ....   Passed    0.34 sec
+        Start  51: overlay_guard_word_requests
+ 51/157 Test  #51: overlay_guard_word_requests ..........   Passed    1.36 sec
+        Start  52: overlay_guard_bytes_declaration
+ 52/157 Test  #52: overlay_guard_bytes_declaration ......   Passed    0.54 sec
+        Start  53: aot_overlay_methods
+ 53/157 Test  #53: aot_overlay_methods ..................   Passed    2.01 sec
+        Start  54: counted_relocation_discovery
+ 54/157 Test  #54: counted_relocation_discovery .........   Passed    0.54 sec
+        Start  55: cli_generate_aot_static
+ 55/157 Test  #55: cli_generate_aot_static ..............   Passed    0.60 sec
+        Start  56: cli_rebuild_host
+ 56/157 Test  #56: cli_rebuild_host .....................   Passed    0.58 sec
+        Start  57: update_disc_set_paths
+ 57/157 Test  #57: update_disc_set_paths ................   Passed    0.30 sec
+        Start  58: overlay_static_sources_cmake
+ 58/157 Test  #58: overlay_static_sources_cmake .........   Passed    1.59 sec
+        Start  59: compile_overlays_static_tail
+ 59/157 Test  #59: compile_overlays_static_tail .........***Failed    0.55 sec
+F
+======================================================================
+FAIL: test_static_run_with_no_captures_exits_zero (__main__.StaticTailTest.test_static_run_with_no_captures_exits_zero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\tools\tests\test_compile_overlays_static_tail.py", line 81, in test_static_run_with_no_captures_exits_zero
+    self.assertIn("Done.", detail, detail)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'Done.' not found in 'root policy: no-split guard on, enrichment on\nGame ID: TEST-00000\nFATAL: STALE RECOMPILER BINARY.\n  C:\\tools\\psxrecomp\\recompiler\\build\\psxrecomp-game.exe\n  was built from emitter sources hashing 115b1739, but the runtime\n  tree stamps cache tag hash 00000000. Shards it emits would\n  carry the current tag with OLD codegen semantics (the silent\n  stale-shard class). Rebuild the recompiler first:\n    cmake --build <recompiler-build-dir> --target psxrecomp-game\n' : root policy: no-split guard on, enrichment on
+Game ID: TEST-00000
+FATAL: STALE RECOMPILER BINARY.
+  C:\tools\psxrecomp\recompiler\build\psxrecomp-game.exe
+  was built from emitter sources hashing 115b1739, but the runtime
+  tree stamps cache tag hash 00000000. Shards it emits would
+  carry the current tag with OLD codegen semantics (the silent
+  stale-shard class). Rebuild the recompiler first:
+    cmake --build <recompiler-build-dir> --target psxrecomp-game
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.320s
+
+FAILED (failures=1)
+
+        Start  60: frameless_dispatch_root_cfg_proof
+ 60/157 Test  #60: frameless_dispatch_root_cfg_proof ....   Passed    0.55 sec
+        Start  61: fmv_cycle_batch_codegen
+ 61/157 Test  #61: fmv_cycle_batch_codegen ..............   Passed    0.22 sec
+        Start  62: kuseg_dispatch_lookup
+ 62/157 Test  #62: kuseg_dispatch_lookup ................   Passed    1.86 sec
+        Start  63: segment_aware_codegen
+ 63/157 Test  #63: segment_aware_codegen ................   Passed    2.44 sec
+        Start  64: overlay_segment_keys

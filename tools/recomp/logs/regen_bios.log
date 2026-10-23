@@ -1,0 +1,57 @@
+regen_bios: building psxrecomp-bios in recompiler/build
+regen_bios: emit-full --config bios/OpenBIOS.toml (stem: OpenBIOS)
+psxrecomp-bios: WARNING: discovery had 8 unsupported instructions; they will be skipped during emission
+[load-delay] modeled pair: load 0xBFC21588 rt=26 succ 0xBFC2158C flush=1 (func 0xBFC21528)
+[load-delay] modeled pair: load 0xBFC21600 rt=26 succ 0xBFC21604 flush=1 (func 0xBFC21528)
+psxrecomp-bios: WARNING: cross-function target 0xA0850000 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0x24840001 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0x11000043 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0x2508FFFF (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850000 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850004 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850008 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC85000C (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850010 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850014 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850018 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC85001C (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850020 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850024 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850028 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC85002C (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850030 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850034 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850038 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC85003C (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850040 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850044 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC850048 (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+psxrecomp-bios: WARNING: cross-function target 0xAC85004C (parent guess 0x00004810) is in no emitted function — dispatching it at runtime will fail
+[load-delay] modeled pair: load 0xBFC21588 rt=26 succ 0xBFC2158C flush=1 (func 0xBFC21528)
+[load-delay] modeled pair: load 0xBFC21600 rt=26 succ 0xBFC21604 flush=1 (func 0xBFC21528)
+psxrecomp-bios: --config bios/OpenBIOS.toml
+  rom        = C:\tools\psxrecomp\bios/openbios.bin
+  seeds      = C:\tools\psxrecomp\recompiler/seeds/openbios_elf_seeds.json
+  out_dir    = C:\tools\psxrecomp\generated
+  out_stem   = OpenBIOS
+psxrecomp-bios: loaded 647 seeds from C:\tools\psxrecomp\recompiler/seeds/openbios_elf_seeds.json
+FunctionDiscovery: closure round 0: escapes=174 covered=17439 entries=647 promote=8
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC01154
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC0D140
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC0D168
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC1F3F8
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC21980
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC21D70
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC21DAC
+FunctionDiscovery:   promoting uncovered escaping target 0xBFC21DBC
+FunctionDiscovery: closure round 1: escapes=186 covered=17534 entries=655 promote=0
+psxrecomp-bios: dropped 20 continuation key(s) inside declared install-slot ranges
+psxrecomp-bios: EMIT OK  emitted=651  interpreted=0  skipped=4  instructions=17526  dispatch_entries=3990
+psxrecomp-bios: skipped functions:
+  0xBFC095F8: addr=0xBFC09608 raw=0x000065BC opcode=0x00: SPECIAL funct 0x3C not implemented in Phase 1a strict translator
+  0xBFC22674: addr=0xBFC22674 raw=0xBFC058C8 opcode=0x2F: top-level opcode 0x2F not implemented in Phase 1a
+  0xBFC227D4: addr=0xBFC227D4 raw=0xBFC019B4 opcode=0x2F: top-level opcode 0x2F not implemented in Phase 1a
+  0xBFC227E4: addr=0xBFC227E4 raw=0xBFC02FB8 opcode=0x2F: top-level opcode 0x2F not implemented in Phase 1a
+regen_bios: wrote fingerprint generated/OpenBIOS.emitter.sha
+regen_bios: done (Dispatch entries: 3990)
+EXIT 0

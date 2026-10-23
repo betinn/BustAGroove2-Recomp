@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BAG2 Viewer</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      #layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 110px); }
+      #side { overflow: auto; font-size: 13px; }
+      #side select, #side input { width: 100%; margin: 4px 0 8px; }
+      #gl { width: 100%; height: 100%; background: #000; display: block; }
+      #vram { width: 100%; image-rendering: pixelated; border: 1px solid #333; margin-top: 8px; }
+      pre { font-size: 11px; color: #9c9; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>BAG2 Viewer (WebGPU)</h1>
+      <p>Modelos, esqueleto e texturas lidos direto do <code>BUST2.BIN</code>, renderizados com VRAM do PS1 emulada.</p>
+      <div id="controls">
+        <label>Disco (.bin): <input type="file" id="bin" accept=".bin" /></label>
+        <span id="status"></span>
+      </div>
+    </header>
+    <div id="layout">
+      <div id="side">
+        <label>Personagem <select id="char"></select></label>
+        <label>Modelo (entrada do container) <select id="model"></select></label>
+        <label>Textura (container) <select id="texc"></select></label>
+        <label>Luz <input type="range" id="light" min="0" max="2" step="0.05" value="1" /></label>
+        <label><input type="checkbox" id="wire" /> mostrar só vértices (debug)</label>
+        <label><input type="checkbox" id="showShadow" /> sombra</label>
+        <pre id="info"></pre>
+        <canvas id="vram" width="1024" height="512"></canvas>
+      </div>
+      <canvas id="gl"></canvas>
+    </div>
+    <script type="module" src="/src/viewer/main.ts"></script>
+  </body>
+</html>
