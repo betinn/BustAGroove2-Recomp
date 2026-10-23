@@ -28,6 +28,9 @@ psxrecomp_add_game_runtime(psx-runtime
     # C gerado por psxrecomp-game --config game.toml
     GEN_MARKER    "generated/SLUS_011.59_dispatch.c"
     GEN_FULL_GLOB "generated/SLUS_011.59_full_*.c"
+    # Overlays DBI_ compilados antecipadamente a partir do disco (tools/recomp/aot/overlays.json,
+    # `aot_overlay_pipeline.py static`): sem isso o runtime interpreta/compila em tempo de execucao.
+    GAME_OVERLAY_STATIC_C "generated/overlays_static.c"
 )
 
 foreach(_cfg game.toml)

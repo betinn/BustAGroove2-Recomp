@@ -9,6 +9,7 @@
   {
    "name": "main",
    "method": "fixed_address_extents",
+   "allow_missing": true,
    "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
    "extents": [
     {
@@ -66,6 +67,7 @@
   {
    "name": "p1",
    "method": "fixed_address_extents",
+   "allow_missing": true,
    "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
    "extents": [
     {
@@ -433,6 +435,7 @@
   {
    "name": "p2",
    "method": "fixed_address_extents",
+   "allow_missing": true,
    "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
    "extents": [
     {
@@ -920,6 +923,7 @@
   {
    "name": "stage",
    "method": "fixed_address_extents",
+   "allow_missing": true,
    "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
    "extents": [
     {

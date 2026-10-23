@@ -95,3 +95,14 @@ Nomes já confirmados (renomear no projeto Ghidra):
 | 0x8001F8CC | dfs_get(c, i, &ptr) → size | acesso ao container |
 | 0x8002A6C0 | load_module(idx) | DBI direto (idx<5) ou BPE→DBI |
 | 0x80035DC4 | bpe_decode(src, dst, &end) | descompressão |
+
+## Overlays `DBI_`: endereços de carga (confirmados em runtime, 2026-10-23)
+104 blocos `DBI_` no `BUST2.BIN` (inventário em `tools/recomp/aot/dbi_inventory.json`):
+| Classe | Containers | Destino (payload, após 12 bytes de header) | Loader |
+|---|---|---|---|
+| módulos principais | raiz 2..6 (tabela `0x80052CBC`) | `0x8008F6C0` | `FUN_8002A6C0` → `FUN_8001F7E0` |
+| personagem P1 | `87+2k` e `159+2k` (entrada após os TIM) | `0x801CC510` | `FUN_8003235C` |
+| personagem P2 | `88+2k`, `160+2k` e 252/274/294/320/344/366/387/410/415/423/448/485 | `0x801D3B64` | `FUN_80032508` |
+| estágio | 231..245 (entrada 0) | `0x801DB1B8` | `FUN_800326F8` |
+Capturas de runtime (PSXRecomp) também mostram código executado em `0x80002000`/`0x8000D000` (kernel
+patchado pelo PsyQ) e `0x8004B000` (dentro do exe). Perfil AOT: `tools/recomp/aot/overlays.json`.

@@ -43,7 +43,7 @@ for cls, (addr, why) in classes.items():
             'load_addr': addr,
             'note': f"DF2_ entry {d['path']} (DBI_ header at 0x{d['abs_off']:X}, bss 0x{d['bss']:X})",
         })
-    images.append({'name': cls, 'method': 'fixed_address_extents', 'reason': why, 'extents': extents})
+    images.append({'name': cls, 'method': 'fixed_address_extents', 'allow_missing': True, 'reason': why, 'extents': extents})
 
 profile = {
     'schema': 'psxrecomp AOT methods v1',

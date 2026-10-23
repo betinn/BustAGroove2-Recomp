@@ -6,9 +6,11 @@ sombra `FUN_80021D5C`, animação `FUN_800124E4` / `FUN_800126B8` / `FUN_8001265
 Implementação: `web/src/bag2/model.ts`, `web/src/bag2/anim.ts`.
 
 ## Onde ficam
-Containers do `BUST2.BIN` em **ordem alfabética do nome do personagem**
-(BI-O, CAPOEIRA, CHICHI&SALLY, COLUMBO, COMET, HEAT, HIRO, KELLY, KITTY-N, HUSTLE KONG (como "KONG"),
-McLOAD, MICHAEL DOI, PANDER, ROBO-Z GOLD, SHORTY, STRIKE, SUSHI BOY, TSUTOMU), índice alfabético `k`:
+Tabelas no exe mapeiam **id do personagem → container** (u16, 18 entradas): `0x80056778` texturas P1,
+`0x8005679C` texturas P2, `0x80056850` modelos P1, `0x80056874` modelos P2. A ordem resultante dos
+containers (índice `k`) é: BI-O, CAPOEIRA, COMET, HEAT, HIRO, KELLY, KITTY-N, PANDER, ROBO-Z GOLD, SHORTY,
+STRIKE, TSUTOMU (elenco original, alfabético), depois CHICHI&SALLY, COLUMBO, HUSTLE KONG, McLOAD,
+MICHAEL DOI, SUSHI BOY (novos do BAG2, alfabético). Confirmado em runtime: HEAT carrega `093/001.dbi`.
 
 | Dado | Container | Conteúdo |
 |---|---|---|
