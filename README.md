@@ -36,7 +36,7 @@ Feito:
 - **Jogo recompilado rodando no navegador** (`web/recomp.html`): o `SLUS_011.59` foi traduzido de MIPS
   para C pelo PSXRecomp e compilado para WebAssembly (Emscripten, fork kem0x). OpenBIOS (MIT) no lugar
   da BIOS da Sony, renderer software num canvas, SPU via Web Audio, teclado como controle. Boot, abertura,
-  menu, seleção de personagem e partida completa funcionam (~55–60 vblank/s). Overlays `DBI_` rodam no
+  menu, seleção de personagem e partida completa a 60 vblank/s com ~30 % de CPU livre (LTO + SIMD; áudio com controle de taxa, sem cortes). Overlays `DBI_` rodam no
   interpretador MIPS do runtime. Build: `powershell -File tools\recomp\build-web.ps1`; detalhes em
   [notes/recomp.md](notes/recomp.md) §7.
 - **Build nativo** (`tools/recomp/bag2/build/Bust_A_Groove_2_Recompiled.exe`): mesmo código em

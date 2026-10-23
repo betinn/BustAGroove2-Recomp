@@ -293,3 +293,22 @@ interpretador MIPS (`overlay_backend = "interp"`).
   `psx_web_frame_ptr/w/h/serial` (buffer ARGB do renderer software); `web/src/recomp/webgpu.ts` copia o
   frame do heap (`HEAPU8` exportado) para uma textura `bgra8unorm` e desenha com filtro sharp-bilinear e
   scanlines opcionais num canvas sobre o do SDL.
+
+## 9. Desempenho da build web (2026-10-23 08:30)
+Medido nesta máquina (Chrome, 8 threads) com `psx_web_perf_*`:
+
+| Build | abertura (MDEC) | partida | CPU livre | underruns de áudio |
+|---|---|---|---|---|
+| inicial (`BAG2_WEB_DEBUG=ON`: `-sASSERTIONS=1 --profiling-funcs`) | 36 vblank/s | 55 | 0 % | milhares |
+| sem ASSERTIONS, `-msimd128` global | 58 | 56 | 1 % | ~0,4/s |
+| + `-flto -mnontrapping-fptoint -mbulk-memory` | 59,95 | 59,7 | 27–36 % | 0 (fora do boot) |
+
+Ajustes:
+- `tools/recomp/build-web.ps1` configura com `-DBAG2_WEB_DEBUG=OFF` (o default do CMake já era OFF, mas o
+  cache antigo estava ON).
+- `tools/recomp/patches/psxrecomp-web-audio-rate.patch` (`runtime/src/web_audio_bridge.c`): controle
+  dinâmico de taxa — `playbackRate` entre 0,92 e 1,03 conforme a fila de áudio, suavizado; quando a
+  emulação atrasa o som desacelera um pouco em vez de cortar. `Module.psxWebAudio.rateControl = false`
+  desliga. HUD da página mostra vblank/s, CPU livre, underruns, fila e taxa.
+- Teclado: o SDL ouve na janela; a página devolve o foco ao canvas em qualquer clique na área do jogo e
+  bloqueia Tab/setas de mudar foco ou rolar.
