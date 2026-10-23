@@ -44,13 +44,10 @@ Feito:
   (`tools/recomp/aot/overlays.json`, notes §8).
 
 Pendente:
-1. Overlays estáticos também na build web (o dispatcher do fork kem0x não distingue overlays que
-   carregam no mesmo endereço; precisa portar o despacho com guarda de CRC do upstream ou o suporte
-   Emscripten do fork para o upstream).
-2. GPU em WebGPU no lugar do renderer software (desempenho e filtros); hoje o canvas recebe o
-   framebuffer do software.
-3. Formatos próprios ainda não decifrados: step-charts (containers 15–50), eventos de animação
-   (footer), matrizes de luz (código dos overlays).
+1. Rasterizador do GPU do PS1 em WebGPU (hoje o renderer é software; WebGPU só apresenta o frame).
+   Ganho esperado: filtros/resolução interna maior, menos CPU na abertura (MDEC).
+2. Formatos ainda em aberto: semântica das faixas em `001.bin` dos containers 15–50, eventos de
+   animação (footer), matrizes de luz (código dos overlays).
 
 ## Ferramentas instaladas
 Python 3.14 + capstone + py7zr, Node 24, Git, Ghidra 12.1.4 + ghidra_psx_ldr em `C:\tools`, JDK 21
