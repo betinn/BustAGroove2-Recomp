@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BAG2 Recompilado (WASM)</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      main { padding: 12px 16px; display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+      #screen { width: 100%; max-width: 960px; aspect-ratio: 4 / 3; background: #000; }
+      #canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; outline: none; }
+      #log { height: 260px; overflow: auto; margin: 0; padding: 8px; background: #000; color: #9c9; font: 12px/1.3 ui-monospace, monospace; white-space: pre-wrap; }
+      #perf { font: 13px ui-monospace, monospace; color: #9cf; }
+      table { border-collapse: collapse; font-size: 13px; }
+      td { padding: 1px 8px 1px 0; color: #bbb; }
+      td:first-child { color: #eee; }
+      kbd { background: #222; border: 1px solid #444; border-radius: 3px; padding: 0 5px; font: 12px ui-monospace, monospace; }
+      h2 { font-size: 14px; margin: 12px 0 4px; color: #ddd; }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>BAG2 Recompilado (WASM)</h1>
+      <p>Jogo recompilado estaticamente (PSXRecomp, fork kem0x) rodando em WebAssembly: BIOS OpenBIOS interpretado, código do jogo em C→WASM, renderer software num canvas, áudio da SPU via Web Audio. O disco fica só no navegador.</p>
+      <div id="controls">
+        <label>Disco (.cue + .bin, ou só o .bin): <input type="file" id="disc" accept=".cue,.bin" multiple /></label>
+        <button id="start" disabled>Iniciar</button>
+        <button id="pause" disabled>Pausar</button>
+        <span id="status">Carregando runtime…</span>
+      </div>
+    </header>
+    <main>
+      <div>
+        <div id="screen"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Tela do jogo"></canvas></div>
+        <p id="perf"></p>
+      </div>
+      <div>
+        <h2>Log do runtime</h2>
+        <pre id="log"></pre>
+        <h2>Teclado → controle PS1 (jogador 1)</h2>
+        <table>
+          <tr><td>Direcional</td><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td></tr>
+          <tr><td>✕ / ○ / □ / △</td><td><kbd>X</kbd> / <kbd>S</kbd> / <kbd>Z</kbd> / <kbd>A</kbd></td></tr>
+          <tr><td>L1 / R1</td><td><kbd>Q</kbd> / <kbd>W</kbd></td></tr>
+          <tr><td>L2 / R2</td><td><kbd>E</kbd> / <kbd>R</kbd></td></tr>
+          <tr><td>Start / Select</td><td><kbd>Enter</kbd> / <kbd>Shift direito</kbd></td></tr>
+          <tr><td>Turbo</td><td><kbd>Tab</kbd> (segurar)</td></tr>
+        </table>
+        <p>Clique no canvas para dar foco antes de jogar. Gamepads padrão também funcionam (SDL2).</p>
+      </div>
+    </main>
+    <script type="module" src="/src/recomp/main.ts"></script>
+  </body>
+</html>

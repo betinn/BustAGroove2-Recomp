@@ -1,0 +1,43 @@
+# game-web.toml — Bust A Groove 2 (USA) para o fork kem0x/psxrecomp (branch
+# compat/windows-web-stability, C:\tools\psxrecomp-web), usado pelo alvo WASM.
+# Esquema do fork = o do RepsiMan/game.toml (sem bios_config/discovery, que são
+# chaves do upstream). O C gerado vai para generated-web/ (um único
+# SLUS_011.59_full.c + _dispatch.c; o fork não fragmenta em shards).
+# No navegador este arquivo NÃO é usado: web/src/recomp/main.ts escreve um
+# /game.toml equivalente no FS virtual (disc = /game/disc/...).
+
+[game]
+name         = "Bust A Groove 2"
+id           = "SLUS-01159"
+exe          = "../../../extracted/disc/SLUS_011.59"
+disc         = "C:/Users/sem-m/OneDrive/Documentos/My Games/Bust a groove 2/Bust A Groove 2 (USA).cue"
+load_address = "0x80010000"
+entry_pc     = "0x80038270"
+text_size    = "0x0004F000"
+stack_base   = "0x801FFFF0"
+
+[recompiler]
+seeds   = "seeds/functions.txt"
+strict  = true
+out_dir = "generated-web"
+
+[runtime]
+debug_port      = 0
+window_title    = "Bust A Groove 2 Recompiled"
+memcard_dir     = "saves"
+disc_speed      = "2x"
+bios_hle        = false
+fast_boot       = false
+overlay_cache   = false
+overlay_backend = "interp"   # no browser não há gcc/tcc/sljit: overlays DBI_ ficam no interpretador
+
+[video]
+renderer          = "software"
+supersampling     = 1
+antialiasing      = false
+texture_filtering = "nearest"
+aspect_ratio      = "4:3"
+
+[controller]
+default_analog = false
+deadzone       = 12000

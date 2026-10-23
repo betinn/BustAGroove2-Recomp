@@ -1,0 +1,1082 @@
+{
+ "schema": "psxrecomp AOT methods v1",
+ "game_id": "SLUS-01159",
+ "disc_hashes": {
+  "sha256": "b0384d6210808da733275f3909947ac990ee13e73748df51cdf8ac7b70814d30"
+ },
+ "main_ram_bytes": "0x200000",
+ "images": [
+  {
+   "name": "main",
+   "method": "fixed_address_extents",
+   "reason": "Main modules: FUN_8002A6C0 loads top-level DF2_ entries 2..6 and FUN_8001F7E0 copies the DBI_ payload to 0x8008F6C0",
+   "extents": [
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x5580C",
+     "size": "0xE0E9",
+     "sha256": "55a7c5cb42d705aaca432d4894af80b1786fde550897df5500f33223c6bd0ae6",
+     "load_addr": "0x8008F6C0",
+     "note": "DF2_ entry 2 (DBI_ header at 0x55800, bss 0xF4541)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x6400C",
+     "size": "0xAC71",
+     "sha256": "34b2ac8e67367c31d064234089fdae54c58bebf3a7a3f3ace70170bc6bc5dd0e",
+     "load_addr": "0x8008F6C0",
+     "note": "DF2_ entry 3 (DBI_ header at 0x64000, bss 0x12FB73)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x6F00C",
+     "size": "0xF73B",
+     "sha256": "31cc154083a65698beea50d2ac790dcb9aecf9a3f75d3052aa9ea26efdc70650",
+     "load_addr": "0x8008F6C0",
+     "note": "DF2_ entry 4 (DBI_ header at 0x6F000, bss 0x12D70E)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x7E80C",
+     "size": "0x75FC",
+     "sha256": "5a2e3e5336e104e9565d209dc99608237db1739b3c81292eea2c78bd054638bb",
+     "load_addr": "0x8008F6C0",
+     "note": "DF2_ entry 5 (DBI_ header at 0x7E800, bss 0x125290)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x8600C",
+     "size": "0x2EFC",
+     "sha256": "63eacb8e87d8cce33be6edd93980b5a54a15d715b42260ab9de3cecaabc464aa",
+     "load_addr": "0x8008F6C0",
+     "note": "DF2_ entry 6 (DBI_ header at 0x86000, bss 0x12D374)"
+    }
+   ]
+  },
+  {
+   "name": "p1",
+   "method": "fixed_address_extents",
+   "reason": "Player 1 character overlay: FUN_8003235C copies the DBI_ payload to 0x801CC510",
+   "extents": [
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xA1D4C4",
+     "size": "0x5DB4",
+     "sha256": "ea0e5c6e6ec400cf3eeec4df75fb51ea3b8037974fffc26d5ac69d26110832d2",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 87/1 (DBI_ header at 0xA1D4B8, bss 0x410)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xA804C4",
+     "size": "0x39A4",
+     "sha256": "64eeb7e57ee069195d18480117a5b7072c0740901963679205aaef2d5a208b8c",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 89/1 (DBI_ header at 0xA804B8, bss 0x505)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xAED4CC",
+     "size": "0x60B4",
+     "sha256": "ea4ea6fcc57153a85589057e80b86896d7becd8924f5282a6f0a68c1b5b83dac",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 91/1 (DBI_ header at 0xAED4C0, bss 0x931)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xB5CCCC",
+     "size": "0x4E40",
+     "sha256": "675c1daf5d9e3bde27dd3c67f11a46fbe4a49167cdc975a59c447d81766f6f9f",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 93/1 (DBI_ header at 0xB5CCC0, bss 0x15FE)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xBCFCCC",
+     "size": "0x50B8",
+     "sha256": "4b8328e7e7e666651ed91cb0f548b420d9ee74de899115e5f3e200ca4ea5569c",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 95/1 (DBI_ header at 0xBCFCC0, bss 0x181)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xC3ECCC",
+     "size": "0x61EC",
+     "sha256": "5b10e17a69c88587510936428ed769373bb117b5823aa69f801090a0fa67d07c",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 97/1 (DBI_ header at 0xC3ECC0, bss 0x6C1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xCAF4C4",
+     "size": "0x63D4",
+     "sha256": "7b7de944161939158d1f5b38d0e3780a7b403b6323b7054970c8923179048eb6",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 99/1 (DBI_ header at 0xCAF4B8, bss 0x3CC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xD19CCC",
+     "size": "0x4403",
+     "sha256": "d2a0da288cf072b41f5ac7854537b75ad8863346e183651d249c2403eee3d405",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 101/1 (DBI_ header at 0xD19CC0, bss 0x249)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xD88CCC",
+     "size": "0x5A70",
+     "sha256": "22168662c2a4eeb21045b98627efef05daf24b52f978e424ea9696d5c47cc627",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 103/1 (DBI_ header at 0xD88CC0, bss 0x1BE2)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xDFE4C4",
+     "size": "0x52DC",
+     "sha256": "8ddb07602913c47bdd171349a9c18e31895516769f4fc3cd663c8f85ac67aa4a",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 105/1 (DBI_ header at 0xDFE4B8, bss 0x290)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xE644C4",
+     "size": "0x3E16",
+     "sha256": "f42cc3ee870c95650f0439f511dde446995a88654fccd00024057594276a7e83",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 107/1 (DBI_ header at 0xE644B8, bss 0xC55)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xECBCC4",
+     "size": "0x5D54",
+     "sha256": "cc6e09befefc956258e230ac31f644b2b92eade1ff721a9794775f649c56ef33",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 109/1 (DBI_ header at 0xECBCB8, bss 0x3F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xF3F4C4",
+     "size": "0x42B0",
+     "sha256": "42792f43e6819996fcdf322101e28d2ad4fad6445d0bfa7b753f7194abe384b9",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 111/1 (DBI_ header at 0xF3F4B8, bss 0x4F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xFA84C4",
+     "size": "0x2448",
+     "sha256": "dab06e9299f7d241d2acad5f8a8ae88b9b9c00328b33bd3a7e5693e95d9b2b97",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 113/1 (DBI_ header at 0xFA84B8, bss 0xAD)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xFFB4CC",
+     "size": "0x39EC",
+     "sha256": "9bf8022dd5a415242635a35850c64507e503459494bff0800af4258656bb160a",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 115/1 (DBI_ header at 0xFFB4C0, bss 0x101)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x106A4CC",
+     "size": "0x3B94",
+     "sha256": "e22899c014f385b25388fa70dfdddd94751cb68cea9cb326096be21b71df01af",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 117/1 (DBI_ header at 0x106A4C0, bss 0x516)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x10D44C4",
+     "size": "0x2F78",
+     "sha256": "9fbe12eb93b154a9846b44fdee316af254a8f148ef859a4998eaee0203cd9b16",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 119/1 (DBI_ header at 0x10D44B8, bss 0x34E)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x113BCC4",
+     "size": "0x53A0",
+     "sha256": "c5bf1c4377bb7b0ffd2f80a4016c3e604551b4fc238a8d4e0a697e078ad06fbd",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 121/1 (DBI_ header at 0x113BCB8, bss 0x9F1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1CEECC4",
+     "size": "0x5DB4",
+     "sha256": "ea0e5c6e6ec400cf3eeec4df75fb51ea3b8037974fffc26d5ac69d26110832d2",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 159/1 (DBI_ header at 0x1CEECB8, bss 0x410)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1D51CC4",
+     "size": "0x39A4",
+     "sha256": "64eeb7e57ee069195d18480117a5b7072c0740901963679205aaef2d5a208b8c",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 161/1 (DBI_ header at 0x1D51CB8, bss 0x505)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1DBECCC",
+     "size": "0x60B4",
+     "sha256": "ea4ea6fcc57153a85589057e80b86896d7becd8924f5282a6f0a68c1b5b83dac",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 163/1 (DBI_ header at 0x1DBECC0, bss 0x931)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1E2E4CC",
+     "size": "0x4E40",
+     "sha256": "675c1daf5d9e3bde27dd3c67f11a46fbe4a49167cdc975a59c447d81766f6f9f",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 165/1 (DBI_ header at 0x1E2E4C0, bss 0x15FE)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1EA14CC",
+     "size": "0x50B8",
+     "sha256": "4b8328e7e7e666651ed91cb0f548b420d9ee74de899115e5f3e200ca4ea5569c",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 167/1 (DBI_ header at 0x1EA14C0, bss 0x181)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1F154CC",
+     "size": "0x61EC",
+     "sha256": "5b10e17a69c88587510936428ed769373bb117b5823aa69f801090a0fa67d07c",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 169/1 (DBI_ header at 0x1F154C0, bss 0x6C1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1F85CC4",
+     "size": "0x63D4",
+     "sha256": "7b7de944161939158d1f5b38d0e3780a7b403b6323b7054970c8923179048eb6",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 171/1 (DBI_ header at 0x1F85CB8, bss 0x3CC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1FF04CC",
+     "size": "0x4403",
+     "sha256": "d2a0da288cf072b41f5ac7854537b75ad8863346e183651d249c2403eee3d405",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 173/1 (DBI_ header at 0x1FF04C0, bss 0x249)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x205F4CC",
+     "size": "0x5A70",
+     "sha256": "22168662c2a4eeb21045b98627efef05daf24b52f978e424ea9696d5c47cc627",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 175/1 (DBI_ header at 0x205F4C0, bss 0x1BE2)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x20D4CC4",
+     "size": "0x52DC",
+     "sha256": "8ddb07602913c47bdd171349a9c18e31895516769f4fc3cd663c8f85ac67aa4a",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 177/1 (DBI_ header at 0x20D4CB8, bss 0x290)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x213ACC4",
+     "size": "0x3E16",
+     "sha256": "f42cc3ee870c95650f0439f511dde446995a88654fccd00024057594276a7e83",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 179/1 (DBI_ header at 0x213ACB8, bss 0xC55)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x21A24C4",
+     "size": "0x5D54",
+     "sha256": "cc6e09befefc956258e230ac31f644b2b92eade1ff721a9794775f649c56ef33",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 181/1 (DBI_ header at 0x21A24B8, bss 0x3F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x2215CC4",
+     "size": "0x42B0",
+     "sha256": "42792f43e6819996fcdf322101e28d2ad4fad6445d0bfa7b753f7194abe384b9",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 183/1 (DBI_ header at 0x2215CB8, bss 0x4F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x227ECC4",
+     "size": "0x2448",
+     "sha256": "dab06e9299f7d241d2acad5f8a8ae88b9b9c00328b33bd3a7e5693e95d9b2b97",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 185/1 (DBI_ header at 0x227ECB8, bss 0xAD)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x22D1CCC",
+     "size": "0x39EC",
+     "sha256": "9bf8022dd5a415242635a35850c64507e503459494bff0800af4258656bb160a",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 187/1 (DBI_ header at 0x22D1CC0, bss 0x101)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x2340CCC",
+     "size": "0x3B94",
+     "sha256": "e22899c014f385b25388fa70dfdddd94751cb68cea9cb326096be21b71df01af",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 189/1 (DBI_ header at 0x2340CC0, bss 0x516)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x23AACC4",
+     "size": "0x2F78",
+     "sha256": "9fbe12eb93b154a9846b44fdee316af254a8f148ef859a4998eaee0203cd9b16",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 191/1 (DBI_ header at 0x23AACB8, bss 0x34E)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x24124C4",
+     "size": "0x53A0",
+     "sha256": "c5bf1c4377bb7b0ffd2f80a4016c3e604551b4fc238a8d4e0a697e078ad06fbd",
+     "load_addr": "0x801CC510",
+     "note": "DF2_ entry 193/1 (DBI_ header at 0x24124B8, bss 0x9F1)"
+    }
+   ]
+  },
+  {
+   "name": "p2",
+   "method": "fixed_address_extents",
+   "reason": "Player 2 character overlay: FUN_80032508 copies the DBI_ payload to 0x801D3B64",
+   "extents": [
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xA5083C",
+     "size": "0x34A8",
+     "sha256": "2759d0fc40a5049b2bb3ffcc5d3efdd2d2501d96156b9b262e9e73e707c9149b",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 88/0 (DBI_ header at 0xA50830, bss 0x410)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xAB383C",
+     "size": "0x39A4",
+     "sha256": "767d539659107928bc27132d66881ba688a9753243e5285a501e5af28a971c2d",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 90/0 (DBI_ header at 0xAB3830, bss 0x505)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xB25044",
+     "size": "0x60B4",
+     "sha256": "d56387686224f3fa9b6e553a2f6fe80b79643d29cddd5fda3a276d3d2d13e5f6",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 92/0 (DBI_ header at 0xB25038, bss 0x931)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xB96844",
+     "size": "0x4E40",
+     "sha256": "2226957d85626c3c3db489912ddf55850c05b901998984425a6af8da56796622",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 94/0 (DBI_ header at 0xB96838, bss 0x15FE)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xC08044",
+     "size": "0x50B8",
+     "sha256": "28618809dec92eef213534644e4b3c3c63f880463b855bbf87dc410e049e2d9e",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 96/0 (DBI_ header at 0xC08038, bss 0x181)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xC77044",
+     "size": "0x61EC",
+     "sha256": "60f2271135a40c854772cb1c2b9d66ce76936c7e83a8d5aa0858bacc96fc3447",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 98/0 (DBI_ header at 0xC77038, bss 0x6C1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xCE683C",
+     "size": "0x3FD4",
+     "sha256": "d4b10628d09e1866142500ccf19874e14d4aa88a27b81e54492d0ee486acf45f",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 100/0 (DBI_ header at 0xCE6830, bss 0x3CC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xD51844",
+     "size": "0x4403",
+     "sha256": "aeccfb791fe3a314a9556e534a9968468d4878ccb82d943739058c1a4977bd95",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 102/0 (DBI_ header at 0xD51838, bss 0x249)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xDC0844",
+     "size": "0x5A70",
+     "sha256": "79612fbd9e9a41672b25749588f99260455d966dc377dc21e9e8ff544aab45b1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 104/0 (DBI_ header at 0xDC0838, bss 0x1BE2)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xE3183C",
+     "size": "0x52DC",
+     "sha256": "9d132a45d52fc258c6506ff982370b5846943c941ba9d80937d8aa5016e43cdd",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 106/0 (DBI_ header at 0xE31830, bss 0x290)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xE9883C",
+     "size": "0x3E16",
+     "sha256": "60d5f78bf41c741274dba6b1d3e48a6692290abe6b5ae56133d2b4756ed7527e",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 108/0 (DBI_ header at 0xE98830, bss 0xC55)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xF0303C",
+     "size": "0x407C",
+     "sha256": "dbbd155156979a9e1ef92690f5c4d98567ca0661292d53dafb01f0c8ddf86959",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 110/0 (DBI_ header at 0xF03030, bss 0x3F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xF7503C",
+     "size": "0x42B0",
+     "sha256": "a0e8dccdd156c77e6cfe25f8416d1f75642ef0ed665716fe9894a5aab2a7f686",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 112/0 (DBI_ header at 0xF75030, bss 0x4F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0xFD203C",
+     "size": "0x2448",
+     "sha256": "04fb32ba28934ec2d2aad3dd3c0eeace7d3a402efd82d2596702523e08ba3b19",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 114/0 (DBI_ header at 0xFD2030, bss 0xAD)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1034044",
+     "size": "0x39EC",
+     "sha256": "180145b2655004ca2bf041c70320a2fb91439261af13a3d3dec025e5c7827ef6",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 116/0 (DBI_ header at 0x1034038, bss 0x101)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x109F844",
+     "size": "0x3B94",
+     "sha256": "a2f4e6da6177be84c0bc12aeb1e8d63492062b2ca9c7854091eed428be9c5111",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 118/0 (DBI_ header at 0x109F838, bss 0x516)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x110903C",
+     "size": "0x2F78",
+     "sha256": "5f8e672878a12813b26a9f86d051bb81f49e4af4111eb17a32a6395512acc818",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 120/0 (DBI_ header at 0x1109030, bss 0x34E)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x117183C",
+     "size": "0x53A0",
+     "sha256": "04cc1f2e661994c34c9a25cca1348785b7127179a0f32326f728f7e85fcd4ff3",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 122/0 (DBI_ header at 0x1171830, bss 0x9F1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1D2203C",
+     "size": "0x34A8",
+     "sha256": "2759d0fc40a5049b2bb3ffcc5d3efdd2d2501d96156b9b262e9e73e707c9149b",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 160/0 (DBI_ header at 0x1D22030, bss 0x410)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1D8503C",
+     "size": "0x39A4",
+     "sha256": "767d539659107928bc27132d66881ba688a9753243e5285a501e5af28a971c2d",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 162/0 (DBI_ header at 0x1D85030, bss 0x505)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1DF6844",
+     "size": "0x60B4",
+     "sha256": "d56387686224f3fa9b6e553a2f6fe80b79643d29cddd5fda3a276d3d2d13e5f6",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 164/0 (DBI_ header at 0x1DF6838, bss 0x931)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1E68044",
+     "size": "0x4E40",
+     "sha256": "2226957d85626c3c3db489912ddf55850c05b901998984425a6af8da56796622",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 166/0 (DBI_ header at 0x1E68038, bss 0x15FE)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1EDC044",
+     "size": "0x50B8",
+     "sha256": "28618809dec92eef213534644e4b3c3c63f880463b855bbf87dc410e049e2d9e",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 168/0 (DBI_ header at 0x1EDC038, bss 0x181)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1F4D844",
+     "size": "0x61EC",
+     "sha256": "60f2271135a40c854772cb1c2b9d66ce76936c7e83a8d5aa0858bacc96fc3447",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 170/0 (DBI_ header at 0x1F4D838, bss 0x6C1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x1FBD03C",
+     "size": "0x3FD4",
+     "sha256": "d4b10628d09e1866142500ccf19874e14d4aa88a27b81e54492d0ee486acf45f",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 172/0 (DBI_ header at 0x1FBD030, bss 0x3CC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x2028044",
+     "size": "0x4403",
+     "sha256": "aeccfb791fe3a314a9556e534a9968468d4878ccb82d943739058c1a4977bd95",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 174/0 (DBI_ header at 0x2028038, bss 0x249)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x2097044",
+     "size": "0x5A70",
+     "sha256": "79612fbd9e9a41672b25749588f99260455d966dc377dc21e9e8ff544aab45b1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 176/0 (DBI_ header at 0x2097038, bss 0x1BE2)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x210803C",
+     "size": "0x52DC",
+     "sha256": "9d132a45d52fc258c6506ff982370b5846943c941ba9d80937d8aa5016e43cdd",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 178/0 (DBI_ header at 0x2108030, bss 0x290)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x216F03C",
+     "size": "0x3E16",
+     "sha256": "60d5f78bf41c741274dba6b1d3e48a6692290abe6b5ae56133d2b4756ed7527e",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 180/0 (DBI_ header at 0x216F030, bss 0xC55)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x21D983C",
+     "size": "0x407C",
+     "sha256": "dbbd155156979a9e1ef92690f5c4d98567ca0661292d53dafb01f0c8ddf86959",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 182/0 (DBI_ header at 0x21D9830, bss 0x3F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x224B83C",
+     "size": "0x42B0",
+     "sha256": "a0e8dccdd156c77e6cfe25f8416d1f75642ef0ed665716fe9894a5aab2a7f686",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 184/0 (DBI_ header at 0x224B830, bss 0x4F8)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x22A883C",
+     "size": "0x2448",
+     "sha256": "04fb32ba28934ec2d2aad3dd3c0eeace7d3a402efd82d2596702523e08ba3b19",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 186/0 (DBI_ header at 0x22A8830, bss 0xAD)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x230A844",
+     "size": "0x39EC",
+     "sha256": "180145b2655004ca2bf041c70320a2fb91439261af13a3d3dec025e5c7827ef6",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 188/0 (DBI_ header at 0x230A838, bss 0x101)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x2376044",
+     "size": "0x3B94",
+     "sha256": "a2f4e6da6177be84c0bc12aeb1e8d63492062b2ca9c7854091eed428be9c5111",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 190/0 (DBI_ header at 0x2376038, bss 0x516)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x23DF83C",
+     "size": "0x2F78",
+     "sha256": "5f8e672878a12813b26a9f86d051bb81f49e4af4111eb17a32a6395512acc818",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 192/0 (DBI_ header at 0x23DF830, bss 0x34E)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x244803C",
+     "size": "0x53A0",
+     "sha256": "04cc1f2e661994c34c9a25cca1348785b7127179a0f32326f728f7e85fcd4ff3",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 194/0 (DBI_ header at 0x2448030, bss 0x9F1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3669844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 252/0 (DBI_ header at 0x3669838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x383D844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 274/0 (DBI_ header at 0x383D838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x39F4844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 294/0 (DBI_ header at 0x39F4838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3BFD044",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 320/0 (DBI_ header at 0x3BFD038, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3DE3044",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 344/0 (DBI_ header at 0x3DE3038, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3FAD044",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 366/0 (DBI_ header at 0x3FAD038, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x416C844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 387/0 (DBI_ header at 0x416C838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x4363044",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 410/0 (DBI_ header at 0x4363038, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x442B844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 415/0 (DBI_ header at 0x442B838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x4522844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 423/0 (DBI_ header at 0x4522838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x4712844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 448/0 (DBI_ header at 0x4712838, bss 0x53)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x4B07844",
+     "size": "0x578C",
+     "sha256": "218e0b41e459884af25fbd61c7cbe39c778d62a18a72d4581a5ced6b3a7869a1",
+     "load_addr": "0x801D3B64",
+     "note": "DF2_ entry 485/0 (DBI_ header at 0x4B07838, bss 0x53)"
+    }
+   ]
+  },
+  {
+   "name": "stage",
+   "method": "fixed_address_extents",
+   "reason": "Stage overlay: FUN_800326F8 copies entry 0 of the stage container to 0x801DB1B8",
+   "extents": [
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x2FC487C",
+     "size": "0x7D57",
+     "sha256": "b7961222e7f14688ec790ad85db51ff435823bf22efe4ec7a06530c341307f76",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 231/0 (DBI_ header at 0x2FC4870, bss 0x1B3E)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x303006C",
+     "size": "0x7EB7",
+     "sha256": "3f8f2b190c084a2b5b28d47fd7af0c1f4d580b174d2b9f5d9f40b6d7fb83b43d",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 232/0 (DBI_ header at 0x3030060, bss 0x4ED)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x309486C",
+     "size": "0x928B",
+     "sha256": "11faffe2ad3c16e232dfedec5542cbbf0528b4aab7b456884909db792657508e",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 233/0 (DBI_ header at 0x3094860, bss 0x2CE1)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x310787C",
+     "size": "0xAC86",
+     "sha256": "29f5c1b21a29b0e51f6cd62cfa5bf10e57b9e7d30cd2e5af6f8a947735b05015",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 234/0 (DBI_ header at 0x3107870, bss 0x1364)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x317B06C",
+     "size": "0x9413",
+     "sha256": "5e407ac088c891ef96a5878695f5dd925bdc1fa98b45c9aac55fb5ea8c9eacff",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 235/0 (DBI_ header at 0x317B060, bss 0x220D)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x31EC864",
+     "size": "0xBD9A",
+     "sha256": "036f2818eae0399d6d544e29bfec1231ee34266ddd2525c2bec9b46d2fbacc94",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 236/0 (DBI_ header at 0x31EC858, bss 0x144A)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x325C8A4",
+     "size": "0x9328",
+     "sha256": "7436fb91a8d5774c39368ea85e575b4b4c590740827c0b5f12a60f039da94cf9",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 237/0 (DBI_ header at 0x325C898, bss 0x29C0)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x32D2074",
+     "size": "0x7714",
+     "sha256": "5d6b540f88312e49d04d7da771095e7600ded4753df679760ec07c2677f390f4",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 238/0 (DBI_ header at 0x32D2068, bss 0x2AFC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3350874",
+     "size": "0x7714",
+     "sha256": "5d6b540f88312e49d04d7da771095e7600ded4753df679760ec07c2677f390f4",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 239/0 (DBI_ header at 0x3350868, bss 0x2AFC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x33CF074",
+     "size": "0x7714",
+     "sha256": "5d6b540f88312e49d04d7da771095e7600ded4753df679760ec07c2677f390f4",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 240/0 (DBI_ header at 0x33CF068, bss 0x2AFC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x344D864",
+     "size": "0xB414",
+     "sha256": "df0ed32b42e2b2c88f1944d4a1012a4746927155de98cca55d71589b7904801b",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 241/0 (DBI_ header at 0x344D858, bss 0x3ACC)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x34B4874",
+     "size": "0x91AB",
+     "sha256": "072796043ebc87a13f107fd39d8b344f07ca4ab9d48a9aa20d75aab187838800",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 242/0 (DBI_ header at 0x34B4868, bss 0x2476)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3529084",
+     "size": "0x8978",
+     "sha256": "e931e2b456ff3ee7e0b0158b755d6a42c1c2cb2daa4df96e0ade8b4ba6355e9f",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 243/0 (DBI_ header at 0x3529078, bss 0x31F4)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x3591864",
+     "size": "0x722A",
+     "sha256": "92aded1824eb78d734d08d98dc80f26a985cfe676a4477fd292777915789bd5f",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 244/0 (DBI_ header at 0x3591858, bss 0x25AA)"
+    },
+    {
+     "file": "BUST2.BIN",
+     "file_offset": 0,
+     "base": 0,
+     "address": "0x35FC04C",
+     "size": "0xDCF3",
+     "sha256": "b012773cc6cfb0d2f93283f8cad96eaa367fadc94fe8001acca9501bbba430c4",
+     "load_addr": "0x801DB1B8",
+     "note": "DF2_ entry 245/0 (DBI_ header at 0x35FC040, bss 0x675)"
+    }
+   ]
+  }
+ ],
+ "checks": [],
+ "expected_records": 104,
+ "strict_bounds": true,
+ "static_output": "generated/overlays_static.c"
+}

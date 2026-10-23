@@ -7,11 +7,10 @@ import { Vram } from '../psx/vram';
 import { Renderer } from './renderer';
 import { multiply, perspective, psxRotMatrix, rotX, rotY, scaling, translation, transformDir, transformPoint, type Mat4 } from './math';
 
-// Character containers are in alphabetical order of the character name (table at 0x80056704 maps
-// character id -> step-data container 15..32; the same order applies to textures 87+2k/88+2k and
-// models 123+2k/124+2k). Character ids (name pointer table at 0x800527F4) are in CHAR_IDS.
-const CHARS = ['BI-O', 'CAPOEIRA', 'CHICHI&SALLY', 'COLUMBO', 'COMET', 'HEAT', 'HIRO', 'KELLY', 'KITTY-N', 'HUSTLE KONG',
-  'McLOAD', 'MICHAEL DOI', 'PANDER', 'ROBO-Z GOLD', 'SHORTY', 'STRIKE', 'SUSHI BOY', 'TSUTOMU'];
+// Container order per character (tables in the exe: 0x80056778 = texture container P1, 0x8005679C = P2,
+// 0x80056850 = model container P1, 0x80056874 = P2; index = character id). Order k below = (container-87)/2.
+const CHARS = ['BI-O', 'CAPOEIRA', 'COMET', 'HEAT', 'HIRO', 'KELLY', 'KITTY-N', 'PANDER', 'ROBO-Z GOLD', 'SHORTY', 'STRIKE', 'TSUTOMU',
+  'CHICHI&SALLY', 'COLUMBO', 'HUSTLE KONG', 'McLOAD', 'MICHAEL DOI', 'SUSHI BOY'];
 export const CHAR_IDS: Record<string, number> = { HEAT: 0, STRIKE: 1, COMET: 2, TSUTOMU: 3, KELLY: 4, SHORTY: 5, PANDER: 6, 'KITTY-N': 7, HIRO: 8, 'BI-O': 9,
   CAPOEIRA: 10, 'ROBO-Z GOLD': 11, COLUMBO: 12, 'SUSHI BOY': 13, 'CHICHI&SALLY': 14, 'MICHAEL DOI': 15, McLOAD: 16, 'HUSTLE KONG': 17, 'JAMES SUNEOKA': 18 };
 
@@ -217,7 +216,7 @@ async function openDisc(disc: Disc) {
   log(`BUST2.BIN: ${entries.length} entradas`);
   charSel.innerHTML = CHARS.map((n, i) => `<option value="${i}">${i}: ${n}</option>`).join('');
   texSel.innerHTML = entries.map((_, i) => `<option value="${i}">${i}</option>`).join('');
-  await selectChar(6);
+  await selectChar(4);
 }
 
 async function selectChar(c: number) {

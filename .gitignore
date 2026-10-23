@@ -24,3 +24,7 @@ web/.disc.json
 ghidra/project/
 ghidra/out/
 tools/recomp/logs/
+web/public/recomp/
+tools/recomp/bag2/generated-web/
+tools/recomp/bag2/build-web/
+tools/recomp/aot/work/
