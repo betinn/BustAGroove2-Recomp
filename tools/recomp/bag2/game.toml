@@ -43,10 +43,35 @@ overlay_cache = true
 overlay_backend = "auto"
 
 [video]
-renderer          = "opengl"   # "software" é o fallback/referência (e o que o RepsiMan usa na web)
-supersampling     = 1
-texture_filtering = "nearest"
+renderer          = "opengl"   # "software" é o fallback/referência (e o que a web usa)
+# Resolução interna: o PS1 desenha a 320x240; "1080p" renderiza a 5x (1200 linhas) e resolve para a
+# janela. Outros valores: native | 720p | 1080p | 1440p | 4k | display (acompanha o monitor).
+internal_resolution        = "1080p"
+resolution_reference_lines = 240
+window_width               = 1920          # janela inicial (F11 = tela cheia)
+vsync                      = "on"
+render_thread              = true          # GL numa thread própria: stalls do driver não travam o jogo
+# Geometria/texturas: PGXP corrige o "tremor" dos vértices e a distorção afim das texturas do PS1.
+geometry_correction   = true
+perspective_texturing = true
+pgxp_depth_buffer     = false
+texture_filtering = "xbr"      # nearest (original) | bilinear | xbr (bordas diagonais suavizadas, texels nítidos)
+dithering         = "off"      # sem o padrão 4x4 do PS1 (cor de 24 bits)
+antialiasing_mode = "fxaa"     # bordas dos polígonos; "off" para pixels crus
 aspect_ratio      = "4:3"
+dynamic_resolution = false
+
+# Presets selecionáveis por PSX_QUALITY ou settings.toml (ver docs/QUALITY_PRESETS.md)
+[quality.ultra]
+[quality.high]
+texture_filtering = "bilinear"
+[quality.medium]
+texture_filtering = "nearest"
+antialiasing = false
+[quality.low]
+texture_filtering = "nearest"
+antialiasing = false
+render_thread = false
 
 [controller]
 default_analog = false
