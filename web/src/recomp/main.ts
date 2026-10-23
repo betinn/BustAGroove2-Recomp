@@ -230,6 +230,16 @@ async function start() {
   }
 }
 startBtn.addEventListener('click', start);
+// O SDL ouve o teclado na janela, mas o foco precisa estar fora de inputs/botoes; qualquer clique na
+// area da tela (inclusive no canvas WebGPU sobreposto) devolve o foco ao canvas do SDL.
+const screen = $<HTMLDivElement>('screen');
+screen.addEventListener('pointerdown', () => canvas.focus());
+document.addEventListener('keydown', e => {
+  if (!started) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON')) { t.blur(); canvas.focus(); }
+  if (e.key === 'Tab' || e.key.startsWith('Arrow')) e.preventDefault();   // nao mover o foco/scroll com as setas
+});
 pauseBtn.addEventListener('click', () => {
   paused = !paused;
   window.Module._psx_web_set_paused?.(paused ? 1 : 0);
@@ -242,10 +252,16 @@ function startPerfHud() {
   const M = window.Module;
   if (!M._psx_web_perf_vblanks) return;
   let last = M._psx_web_perf_vblanks(), lastT = performance.now();
+  let lastWait = (M as unknown as { _psx_web_perf_pacer_wait_us?: () => number })._psx_web_perf_pacer_wait_us?.() ?? 0;
   setInterval(() => {
     const now = M._psx_web_perf_vblanks!(), t = performance.now();
     const fps = (now - last) * 1000 / (t - lastT);
-    perfEl.textContent = `${fps.toFixed(1)} vblank/s (guest) · ${now} vblanks`;
+    const waitFn = (M as unknown as { _psx_web_perf_pacer_wait_us?: () => number })._psx_web_perf_pacer_wait_us;
+    const wait = waitFn ? waitFn() : 0;
+    const idle = waitFn ? ((wait - lastWait) / 1000) / (t - lastT) * 100 : 0;
+    lastWait = wait;
+    const au = M.psxWebAudio;
+    perfEl.textContent = `${fps.toFixed(1)} vblank/s (alvo 59.94) · CPU livre ${idle.toFixed(0)}% · áudio: ${au?.underruns ?? 0} underruns, ${au ? ((au.nextTime - au.context.currentTime) * 1000).toFixed(0) : '-'} ms na fila`;
     last = now; lastT = t;
   }, 1000);
 }

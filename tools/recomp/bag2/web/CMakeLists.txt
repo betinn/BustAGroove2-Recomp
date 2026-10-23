@@ -71,6 +71,8 @@ if(EMSCRIPTEN)
         "${PSXRECOMP_ROOT}/runtime/src/main.cpp"
         PROPERTIES COMPILE_OPTIONS "-msimd128")
     target_link_options(psx-runtime PRIVATE "-msimd128")
+    # SIMD em todo o runtime e no C gerado (autovetorizacao), nao so nos 3 arquivos do RepsiMan.
+    target_compile_options(psx-runtime PRIVATE "-msimd128")
 
     # Saida: bag2.js + bag2.wasm (sem shell HTML; a pagina Vite web/recomp.html define `Module`
     # e injeta bag2.js). INVOKE_RUN=0: main() so roda quando a pagina chama Module.callMain(args).

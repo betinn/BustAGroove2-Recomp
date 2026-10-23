@@ -52,7 +52,7 @@ if ($Step -in 'game','all') {
 if ($Step -in 'configure','all') {
     # 3. Configure com a toolchain do Emscripten (emcmake). SDL2 vem da port do Emscripten (--use-port=sdl2).
     Invoke-Logged 'web-configure' {
-        & "$emsdk\upstream\emscripten\emcmake.exe" cmake -S $src -B $bld -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_LAUNCHER=OFF -DPSX_DEBUG_TOOLS=OFF "-DPSXRECOMP_ROOT=$($fw -replace '\\','/')"
+        & "$emsdk\upstream\emscripten\emcmake.exe" cmake -S $src -B $bld -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_LAUNCHER=OFF -DPSX_DEBUG_TOOLS=OFF -DBAG2_WEB_DEBUG=OFF "-DPSXRECOMP_ROOT=$($fw -replace '\\','/')"
     }
 }
 if ($Step -in 'build','all') {
