@@ -327,8 +327,8 @@ resolvido para a janela), `geometry_correction`/`perspective_texturing` (PGXP), 
 `render_thread = true`, `vsync = "on"`, presets `[quality.*]` (chaves permitidas: ver QUALITY_PRESETS.md —
 `antialiasing_mode` não é preset; `antialiasing` bool é). Superado por §11 (9x, sem FXAA, 16:9). `settings.toml` ao lado do exe:
 `fullscreen = 1` (sem borda 1920×1080 confirmado), `window_width = 1920`. `Jogar.bat` lança com o disco.
-Capturas: `tools/recomp/logs/cap-1080p-*.png`. Backups: `releases/BAG2-recomp-estavel-2026-10-23`
-(intacto) e `releases/BAG2-recomp-1080p-2026-10-23`.
+Capturas: `tools/recomp/logs/cap-1080p-*.png`. Backups: `releases/v1.0.0-estavel`
+(intacto) e `releases/v1.1.0-1080p`.
 
 ## 11. Widescreen 16:9 nativo + 9x (2026-10-23)
 Nitidez: `internal_resolution = "4k"` (9x de 240 = 2160 linhas, resolvido para 1080p = supersampling 2x por
@@ -354,7 +354,7 @@ Verificado em partida (palco de boate: colunas de luzes extras nas laterais, per
 correta, HUD nos cantos; seleção de personagem e abertura em 4:3). Limite: em câmeras muito próximas
 da borda do palco aparece o fim da geometria autoral (preto) — não há mais cena para revelar.
 Capturas: `tools/recomp/logs/cap-ws-{stage,closeup,menu43}.jpg`. Release:
-`releases/BAG2-recomp-widescreen-2026-10-23`. Não usar `[widescreen.cull] auto_screen_x` por enquanto
+`releases/v1.2.0-widescreen`. Não usar `[widescreen.cull] auto_screen_x` por enquanto
 (exige regen do código; o jogo não mostrou pop-in de polígonos nas bordas).
 
 Captura de tela: `PrintWindow` e `CopyFromScreen` voltam preto com a janela GL sem borda; o que funciona é

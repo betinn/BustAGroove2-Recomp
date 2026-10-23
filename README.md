@@ -8,12 +8,14 @@ executável original, WebAssembly e WebGPU. Projeto pessoal, uso local apenas.
 > bom: o PS1 é a plataforma com mais ferramentas de decompilação/recompilação disponíveis.
 
 ## Jogar no PC (recomendado)
-Versões prontas em `releases/` (fora do git):
-- `releases/BAG2-recomp-estavel-2026-10-23/` — build estável original (resolução nativa, janela).
-- `releases/BAG2-recomp-1080p-2026-10-23/` — build melhorada: resolução interna 5x (1200 linhas → 1080p),
+Versões prontas em `releases/` (fora do git; só `releases/README.md` é versionado). Pastas numeradas
+`vMAJOR.MINOR.PATCH-apelido` (MINOR = recurso visual novo, PATCH = ajuste de config); cada pasta tem
+`VERSION.txt`. Histórico e próxima versão em [releases/README.md](releases/README.md).
+- `releases/v1.0.0-estavel/` — build estável original (resolução nativa, janela).
+- `releases/v1.1.0-1080p/` — build melhorada: resolução interna 5x (1200 linhas → 1080p),
   PGXP (geometria sem tremor, texturas em perspectiva), filtro xBR, FXAA, sem dithering, render thread,
   tela cheia sem borda a 1920×1080 (F11 alterna).
-- `releases/BAG2-recomp-widescreen-2026-10-23/` — **atual**: 9x interno (2160 linhas, supersampling para
+- `releases/v1.2.0-widescreen/` — **atual**: 9x interno (2160 linhas, supersampling para
   1080p, sem FXAA) e **widescreen 16:9 nativo** (o jogo renderiza mais cena nas laterais; nada esticado;
   menus, abertura e HUD em proporção original). Plugin em `tools/recomp/bag2/src/bag2_mods.c` + pacote
   `mods/preloaded/`; detalhes em [notes/recomp.md](notes/recomp.md) §11.
