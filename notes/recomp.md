@@ -270,3 +270,16 @@ interpretador MIPS (`overlay_backend = "interp"`).
   `GAME_OVERLAY_STATIC_C "${CMAKE_CURRENT_SOURCE_DIR}/generated/overlays_static.c"` (caminho absoluto:
   com relativo o glob das unidades `_NNNN.c` falha e o link dá 34k referências indefinidas).
 - Endereços de carga dos overlays: `notes/formats.md` (seção "Overlays DBI_").
+- Resultado no nativo (2026-10-23 02:13): com os overlays estáticos linkados, uma partida completa roda a
+  60 fps (`emu_busy` ~37 %) e o `overlay_captures.json` gerado ao sair contém só os patches de kernel do
+  PsyQ (`0x80002000`, `0x8000D000`), uma página do exe (`0x8004B000`) e 4 PCs em `0x80091000` — antes
+  eram ~12 mil PCs interpretados por partida. Esses restos podem ser compilados com
+  `compile_overlays.py --static --captures overlay_captures.json` e somados aos shards.
+- `tools/recomp/bag2/CMakeLists.txt`: o `psxrecomp_overlay_static_sources` do upstream não encontrou as
+  unidades nem definiu `PSX_HAS_OVERLAY_DISPATCH` nesta máquina; o projeto adiciona as unidades por
+  `file(GLOB ...)` + `target_sources` e define a macro explicitamente.
+- Web: `GAME_OVERLAY_STATIC_C` do fork gera `psx_overlay_dispatch` como `switch (addr)` **sem guarda de
+  CRC** e com `case` duplicados (36 overlays de personagem no mesmo endereço): não compila
+  (`redefinition of 'func_801CC590'`). A build web continua com `overlay_backend = "interp"` até portar o
+  despacho guardado do upstream (`psx_ov_static_ranges` + `psx_overlay_static_code_matches`) para o fork,
+  ou o suporte Emscripten do fork para o upstream.
