@@ -1,0 +1,35 @@
+diff --git a/runtime/src/web_audio_bridge.c b/runtime/src/web_audio_bridge.c
+index fbdf8c3..6f5228c 100644
+--- a/runtime/src/web_audio_bridge.c
++++ b/runtime/src/web_audio_bridge.c
+@@ -103,6 +103,21 @@ int psx_web_audio_init_subsystem(Uint32 flags) {
+             var source = state.context.createBufferSource();
+             source.buffer = buffer;
+             source.connect(state.output || state.context.destination);
++            /* BAG2 (tools/recomp/patches/psxrecomp-web-audio-rate.patch): dynamic rate
++             * control. When the guest runs slower than real time the queue drains and
++             * every chunk becomes an underrun (a click). Instead, slow playback a little
++             * (<= 8 %) so the queue holds; pitch drifts slightly but audio stays
++             * continuous, which matters for a rhythm game. Smoothed to avoid warble. */
++            var queued = state.started ? (state.nextTime - now) : lead;
++            var target = lead;
++            var err = (queued - target) / Math.max(target, 0.05);
++            var want = 1.0 + 0.25 * err;
++            if (want < 0.92) want = 0.92;
++            if (want > 1.03) want = 1.03;
++            if (!state.rate) state.rate = 1.0;
++            state.rate = state.rate * 0.9 + want * 0.1;
++            if (state.rateControl === false) state.rate = 1.0;
++            source.playbackRate.value = state.rate;
+             var start;
+             if (!state.started) {
+                 start = now + lead;
+@@ -118,7 +133,7 @@ int psx_web_audio_init_subsystem(Uint32 flags) {
+                 start = state.nextTime;
+             }
+             source.start(start);
+-            state.nextTime = start + frames / 44100.0;
++            state.nextTime = start + frames / 44100.0 / state.rate;
+             state.sources.add(source);
+             source.onended = function() { state.sources.delete(source); };
+         };

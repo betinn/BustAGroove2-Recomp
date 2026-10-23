@@ -261,7 +261,8 @@ function startPerfHud() {
     const idle = waitFn ? ((wait - lastWait) / 1000) / (t - lastT) * 100 : 0;
     lastWait = wait;
     const au = M.psxWebAudio;
-    perfEl.textContent = `${fps.toFixed(1)} vblank/s (alvo 59.94) · CPU livre ${idle.toFixed(0)}% · áudio: ${au?.underruns ?? 0} underruns, ${au ? ((au.nextTime - au.context.currentTime) * 1000).toFixed(0) : '-'} ms na fila`;
+    const rate = (au as unknown as { rate?: number } | undefined)?.rate;
+    perfEl.textContent = `${fps.toFixed(1)} vblank/s (alvo 59.94) · CPU livre ${idle.toFixed(0)}% · áudio: ${au?.underruns ?? 0} underruns, ${au ? ((au.nextTime - au.context.currentTime) * 1000).toFixed(0) : '-'} ms na fila, taxa ${rate ? rate.toFixed(3) : '1.000'}`;
     last = now; lastT = t;
   }, 1000);
 }

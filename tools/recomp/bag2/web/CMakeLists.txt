@@ -73,6 +73,10 @@ if(EMSCRIPTEN)
     target_link_options(psx-runtime PRIVATE "-msimd128")
     # SIMD em todo o runtime e no C gerado (autovetorizacao), nao so nos 3 arquivos do RepsiMan.
     target_compile_options(psx-runtime PRIVATE "-msimd128")
+    # Conversoes float->int sem trap (evita checagens extras por conversao), bulk memory (memcpy/memset
+    # nativos do WASM) e LTO entre runtime + C gerado.
+    target_compile_options(psx-runtime PRIVATE "-mnontrapping-fptoint" "-mbulk-memory" "-flto")
+    target_link_options(psx-runtime PRIVATE "-mnontrapping-fptoint" "-mbulk-memory" "-flto")
 
     # Saida: bag2.js + bag2.wasm (sem shell HTML; a pagina Vite web/recomp.html define `Module`
     # e injeta bag2.js). INVOKE_RUN=0: main() so roda quando a pagina chama Module.callMain(args).
