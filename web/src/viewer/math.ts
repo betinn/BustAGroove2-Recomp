@@ -26,7 +26,7 @@ export function transformDir(m: Mat4, x: number, y: number, z: number): [number,
 }
 /** PS1 angle (4096 = 360 degrees) to radians. */
 export const psxAngle = (a: number) => (a / 4096) * Math.PI * 2;
-/** PsyQ RotMatrix: m = Rx * Ry * Rz (rotation applied to vector in order Z, then Y, then X). */
+/** Game rotation matrix (FUN_8001EEF8): m = Rz * Ry * Rx, i.e. m00 = cy*cz, m20 = -sy (vector rotated X, then Y, then Z). */
 export function psxRotMatrix(rx: number, ry: number, rz: number): Mat4 {
-  return multiply(rotX(psxAngle(rx)), multiply(rotY(psxAngle(ry)), rotZ(psxAngle(rz))));
+  return multiply(rotZ(psxAngle(rz)), multiply(rotY(psxAngle(ry)), rotX(psxAngle(rx))));
 }

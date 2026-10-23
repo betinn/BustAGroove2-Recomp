@@ -22,13 +22,14 @@ exe          = "../../../extracted/disc/SLUS_011.59"
 disc         = "C:/Users/sem-m/OneDrive/Documentos/My Games/Bust a groove 2/Bust A Groove 2 (USA).cue"
 load_address = "0x80010000"
 entry_pc     = "0x80038270"
-text_size    = "0x0004E800"
+text_size    = "0x0004F000"   # header diz 0x4E800; psxrecomp-toml arredonda para a página de 4 KiB
 stack_base   = "0x801FFFF0"
 
 [recompiler]
 # seeds/functions.txt: alvos de JAL extraídos pelo psxrecomp-toml + endereços
 # conhecidos (BPE 0x80035DC4, instalador de overlay 0x8001F7E0).
-seeds     = "seeds/functions.txt"
+seeds       = "seeds/functions.txt"
+bios_config = "C:/tools/psxrecomp/bios/OpenBIOS.toml"   # perfil de BIOS (modelo de endereços); OpenBIOS é o que roda
 out_dir   = "generated"
 strict    = true
 discovery = "whole-image"

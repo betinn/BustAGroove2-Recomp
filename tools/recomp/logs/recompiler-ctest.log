@@ -153,3 +153,526 @@ FAILED (failures=1)
         Start  63: segment_aware_codegen
  63/157 Test  #63: segment_aware_codegen ................   Passed    2.44 sec
         Start  64: overlay_segment_keys
+ 64/157 Test  #64: overlay_segment_keys .................***Failed   13.19 sec
+capture views
+manifests
+cache layout
+compile_overlays.py
+compile_overlays.py: demands without a dispatch entry
+  FAIL: a dispatch-less v3 record compiles byte-identically to its v2 reading
+compile_overlays.py --static: isolated fragments per segment
+compile_overlays.py: per-segment prior manifests and fragments
+compile_overlays.py: config code sites in every view
+overlay loader
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\recompiler\tests\test_overlay_segment_keys.py", line 685, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\tools\psxrecomp\recompiler\tests\test_overlay_segment_keys.py", line 676, in main
+    check_loader(args.compiler, data, labels, cache, tmp)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tools\psxrecomp\recompiler\tests\test_overlay_segment_keys.py", line 612, in check_loader
+    pair.compile_harness(compiler, harness)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\tools\psxrecomp\runtime\tests\test_overlay_pair_dedup_runtime.py", line 103, in compile_harness
+    run(command)
+    ~~~^^^^^^^^^
+  File "C:\tools\psxrecomp\runtime\tests\test_overlay_pair_dedup_runtime.py", line 55, in run
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: command failed (1): C:/tools/winlibs/mingw64/bin/gcc.exe -std=c11 -O0 -Wall -Wextra -DPSX_NO_DEBUG_TOOLS -DPSX_OVERLAY_DLL_BUILD -DPSX_OVERLAY_TEST_CANDIDATE_CAP=4 -IC:\tools\psxrecomp\runtime\include C:\tools\psxrecomp\runtime\src\overlay_loader.c C:\tools\psxrecomp\runtime\src\overlay_path_canon.c C:\tools\psxrecomp\runtime\src\overlay_posix.c C:\tools\psxrecomp\runtime\src\crc32.c C:\tools\psxrecomp\runtime\tests\overlay_pair_dedup_harness.c -o C:\Users\sem-m\AppData\Local\Temp\psx-overlay-segment-2qr0vjv7\harness.exe
+stdout:
+
+stderr:
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'overlay_loader_cps_probe_get':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:346:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  346 |     if (pc) *pc = s_cps_probe_pc; if (cnt) *cnt = s_cps_probe_count;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:346:35: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  346 |     if (pc) *pc = s_cps_probe_pc; if (cnt) *cnt = s_cps_probe_count;
+      |                                   ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:347:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  347 |     if (found) *found = s_cps_probe_found; if (ci) *ci = s_cps_probe_ci;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:347:44: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  347 |     if (found) *found = s_cps_probe_found; if (ci) *ci = s_cps_probe_ci;
+      |                                            ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:348:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  348 |     if (nrange) *nrange = s_cps_probe_nrange; if (matched) *matched = s_cps_probe_matched;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:348:47: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  348 |     if (nrange) *nrange = s_cps_probe_nrange; if (matched) *matched = s_cps_probe_matched;
+      |                                               ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:349:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  349 |     if (outcome) *outcome = s_cps_probe_outcome; if (ncand) *ncand = s_cps_probe_ncand_inrange;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:349:50: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  349 |     if (outcome) *outcome = s_cps_probe_outcome; if (ncand) *ncand = s_cps_probe_ncand_inrange;
+      |                                                  ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'abi_preflight_sweep':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2099:32: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'int (*)(void)' [-Wcast-function-type]
+ 2099 |                 AbiFn abi_fn = (AbiFn)GetProcAddress(h, "overlay_abi");
+      |                                ^
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'load_overlay_dll':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2738:20: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'int (*)(void)' [-Wcast-function-type]
+ 2738 |     AbiFn abi_fn = (AbiFn)GetProcAddress(h, "overlay_abi");
+      |                    ^
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2762:22: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'void (*)(const OverlayCallbacks *)' [-Wcast-function-type]
+ 2762 |     InitFn init_fn = (InitFn)GetProcAddress(h, "overlay_init");
+      |                      ^
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: At top level:
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:4476:13: warning: 'run_shadow_diff_legacy' defined but not used [-Wunused-function]
+ 4476 | static void run_shadow_diff_legacy(CPUState *cpu, Candidate *c, uint32_t addr) {
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:3634:12: warning: 'lazy_better_bundle' defined but not used [-Wunused-function]
+ 3634 | static int lazy_better_bundle(int li, int best) {
+      |            ^~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2014:13: warning: 'cache_idx_remove_path' defined but not used [-Wunused-function]
+ 2014 | static void cache_idx_remove_path(const char *path) {
+      |             ^~~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:1823:12: warning: 'cache_filename_equal' defined but not used [-Wunused-function]
+ 1823 | static int cache_filename_equal(const char *a, const char *b) {
+      |            ^~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'warn_on_cgtag_mismatch':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:1982:45: warning: '%s' directive output may be truncated writing up to 259 bytes into a region of size between 132 and 899 [-Wformat-truncation=]
+ 1982 |         snprintf(dllpat, sizeof dllpat, "%s/%s/*_*.dll", base, fd.cFileName);
+      |                                             ^~                 ~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:1982:9: note: 'snprintf' output between 10 and 1036 bytes into a destination of size 900
+ 1982 |         snprintf(dllpat, sizeof dllpat, "%s/%s/*_*.dll", base, fd.cFileName);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\tests\overlay_pair_dedup_harness.c: In function 'module_counter':
+C:\tools\psxrecomp\runtime\tests\overlay_pair_dedup_harness.c:246:12: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'int (*)(void)' [-Wcast-function-type]
+  246 |     return (CounterFn)GetProcAddress(module, name);
+      |            ^
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x774b): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x7784): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x7dd4): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x7e02): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x81b5): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x81df): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x8b9c): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.text+0x8bc7): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.rdata$.refptr.psx_mod_immediate_select[.refptr.psx_mod_immediate_select]+0x0): undefined reference to `psx_mod_immediate_select'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\ccbTG4U7.o:overlay_loader.c:(.rdata$.refptr.psx_mod_memory_address[.refptr.psx_mod_memory_address]+0x0): undefined reference to `psx_mod_memory_address'
+collect2.exe: error: ld returned 1 exit status
+
+
+        Start  65: bios_segment_variants
+ 65/157 Test  #65: bios_segment_variants ................   Passed   51.55 sec
+        Start  66: overlay_shim_compile_contract
+ 66/157 Test  #66: overlay_shim_compile_contract ........   Passed    0.55 sec
+        Start  67: lwlr_load_delay_forward
+ 67/157 Test  #67: lwlr_load_delay_forward ..............   Passed    0.19 sec
+        Start  68: dirty_text_continuation_guards
+ 68/157 Test  #68: dirty_text_continuation_guards .......   Passed    0.09 sec
+        Start  69: dirty_text_admission_guards
+ 69/157 Test  #69: dirty_text_admission_guards ..........   Passed    0.16 sec
+        Start  70: bios_backend_constant_codegen
+ 70/157 Test  #70: bios_backend_constant_codegen ........   Passed    0.52 sec
+        Start  71: bios_vector_stub_shapes
+ 71/157 Test  #71: bios_vector_stub_shapes ..............   Passed    0.49 sec
+        Start  72: uncached_fetch_charge
+ 72/157 Test  #72: uncached_fetch_charge ................   Passed    1.29 sec
+        Start  73: stall_report
+ 73/157 Test  #73: stall_report .........................   Passed    0.47 sec
+        Start  74: aligned_lzss_banks
+ 74/157 Test  #74: aligned_lzss_banks ...................   Passed    0.63 sec
+        Start  75: bpe_container
+ 75/157 Test  #75: bpe_container ........................   Passed    0.19 sec
+        Start  76: audit_playtest_diagnostics_package
+ 76/157 Test  #76: audit_playtest_diagnostics_package ...   Passed    1.87 sec
+        Start  77: package_title_release
+ 77/157 Test  #77: package_title_release ................   Passed    1.11 sec
+        Start  78: bundled_release_layout
+ 78/157 Test  #78: bundled_release_layout ...............***Failed    7.30 sec
+........................F.....
+======================================================================
+FAIL: test_links_committed_bios_backends (__main__.TemplateContract.test_links_committed_bios_backends)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\tools\tests\test_bundled_release_layout.py", line 108, in test_links_committed_bios_backends
+    self.assertIn("BIOS backends linked: .*SCPH1001", self.text)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'BIOS backends linked: .*SCPH1001' not found in '# Bundled multi-platform release template for a PSXRecomp *game* repository.\n#\n# Install:\n#   mkdir -p .github/workflows\n#   cp psxrecomp/docs/ci/templates/game-release.yml .github/workflows/release.yml\n# Then replace every YOUR_* token (or let setup_project / fill_tokens.py /\n# tools/generate_ci do it). See docs/GAME_PROJECT_SETUP.md.\n#\n# WHAT THIS SHIPS. A compiled game. The title COMMITS its generated/ game C\n# (psxrecomp_cli.py generate, run once by the developer from a legal disc);\n# the framework COMMITS its OpenBIOS backend in psxrecomp/generated/\n# (SCPH-1001 is local-only since #575). CI links it into the runtime and packages the\n# executable with its runtime data. Players download, point it at their disc\n# (and, if they want the retail BIOS, their own dump — the runtime needs the\n# image\'s data and checks its identity), and play. Nothing is generated or\n# compiled on a player\'s machine, and no emitters, sources, or CLI ship at\n# the zip root.\n#\n# WHAT NEVER SHIPS. Disc images and BIOS dumps (the zip carries only the\n# OpenBIOS image). The overlay shard cache: it is compiled FROM THE DISC,\n# which CI does not have, so the committed static AOT shard\n# (generated/overlays_static*.c) is linked and the bundled\n# overlay_toolchain/ compiles anything else from the player\'s disc at\n# runtime. Do not set PSX_PGO in CI.\n#\n# Shared (do not fork these into the title):\n#   ./psxrecomp/.github/actions/{build-emitters,fetch-toolchain}\n#   psxrecomp/tools/ci/{check_boot_exe,check_generated,record_pins}.sh\n#   psxrecomp/tools/{package_game_release,bundle_mingw_dlls}.sh\n#   psxrecomp/tools/release_stage.py  (mod catalog + overlay toolchain staging)\n#\n# Title-owned:\n#   CMakeLists.txt flags, the thin scripts/package_release.sh wrapper\n#\n# Release hosts always build with PSX_HAVE_VULKAN (headers + glslc); the\n# runtime still loads the ICD dynamically via SDL.\n#\n# workflow_dispatch: leave version empty to auto-bump patch (or choose bump).\n# reuse_cached_emitters skips rebuilding psxrecomp-game/bios when the\n# psxrecomp submodule SHA cache hits. See docs/ci/BUNDLED_RELEASES.md.\n\nname: Release builds\n\non:\n  workflow_dispatch:\n    inputs:\n      version:\n        description: >-\n          Release version (e.g. 0.1.0 or v0.1.0). Leave empty to auto-bump\n          from the latest vX.Y.Z git tag (see bump).\n        required: false\n        type: string\n        default: \'\'\n      bump:\n        description: \'When version is empty, which semver component to increment\'\n        required: false\n        type: choice\n        options:\n          - patch\n          - minor\n          - major\n        default: patch\n      publish:\n        description: \'Create git tag vX.Y.Z and GitHub Release\'\n        required: true\n        type: boolean\n        default: true\n      channel:\n        description: \'Release channel: public (diagnostics off) or playtest (diagnostics on, -playtest names)\'\n        required: true\n        type: choice\n        options:\n          - public\n          - playtest\n      reuse_cached_emitters:\n        description: \'Skip emitter rebuild when build-recompiler cache hits (psxrecomp SHA)\'\n        required: false\n        type: boolean\n        default: true\n  push:\n    tags:\n      - \'v*\'\n\nconcurrency:\n  group: yourgame-release-${{ github.event_name }}-${{ github.ref }}-${{ github.run_id }}\n  cancel-in-progress: true\n\npermissions:\n  contents: write\n\nenv:\n  CMAKE_BUILD_TYPE: Release\n\njobs:\n  prepare:\n    name: Resolve version\n    runs-on: ubuntu-24.04\n    outputs:\n      version: ${{ steps.meta.outputs.version }}\n      tag: ${{ steps.meta.outputs.tag }}\n      publish: ${{ steps.meta.outputs.publish }}\n      reuse_emitters: ${{ steps.meta.outputs.reuse_emitters }}\n    steps:\n      - name: Checkout (tags for auto-bump)\n        if: github.event_name == \'workflow_dispatch\'\n        uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n\n      - name: Normalize version / tag\n        id: meta\n        shell: bash\n        run: |\n          set -euo pipefail\n          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then\n            RAW="${{ github.event.inputs.version }}"\n            BUMP="${{ github.event.inputs.bump || \'patch\' }}"\n            PUBLISH="${{ github.event.inputs.publish }}"\n            REUSE="${{ github.event.inputs.reuse_cached_emitters }}"\n          else\n            RAW="${{ github.ref_name }}"\n            BUMP="patch"\n            PUBLISH="true"\n            REUSE="true"\n          fi\n          RAW="$(printf \'%s\' "${RAW}" | tr -d \'[:space:]\')"\n          if [[ -z "${RAW}" ]]; then\n            # Prefer shared helper when present (optional); else inline bump.\n            if [[ -x psxrecomp/tools/ci/normalize_version.sh ]]; then\n              eval "$(bash psxrecomp/tools/ci/normalize_version.sh --next "${BUMP}" | grep -E \'^(VERSION|TAG)=\')"\n              VER="${VERSION}"\n              TAG="${TAG}"\n            else\n              LATEST="$(git tag -l \'v[0-9]*.[0-9]*.[0-9]*\' --sort=-v:refname | head -1 || true)"\n              BASE="${LATEST#v}"\n              if [[ -z "${BASE}" && -f VERSION ]]; then\n                BASE="$(tr -d \'[:space:]\' <VERSION)"\n                BASE="${BASE#v}"\n              fi\n              BASE="${BASE:-0.0.0}"\n              BASE="${BASE%%[-+]*}"\n              IFS=. read -r MA MI PA <<<"${BASE}"\n              MA="${MA:-0}"; MI="${MI:-0}"; PA="${PA:-0}"\n              case "${BUMP}" in\n                major) MA=$((MA + 1)); MI=0; PA=0 ;;\n                minor) MI=$((MI + 1)); PA=0 ;;\n                *) PA=$((PA + 1)) ;;\n              esac\n              VER="${MA}.${MI}.${PA}"\n              TAG="v${VER}"\n              echo "Auto-bumped ${BUMP}: ${LATEST:-none} \u2192 ${VER}"\n            fi\n          else\n            VER="${RAW#v}"\n            if [[ ! "${VER}" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+([.+-][A-Za-z0-9.+-]*)?$ ]]; then\n              echo "::error::invalid version \'${RAW}\' (want X.Y.Z or vX.Y.Z)"\n              exit 1\n            fi\n            TAG="v${VER}"\n          fi\n          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && \\\n             git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then\n            echo "::error::tag ${TAG} already exists — bump again or pass an explicit version"\n            exit 1\n          fi\n          echo "version=${VER}" >>"$GITHUB_OUTPUT"\n          echo "tag=${TAG}" >>"$GITHUB_OUTPUT"\n          echo "publish=${PUBLISH}" >>"$GITHUB_OUTPUT"\n          echo "reuse_emitters=${REUSE}" >>"$GITHUB_OUTPUT"\n          echo "Using version ${VER} (tag ${TAG}), publish=${PUBLISH}, reuse_emitters=${REUSE}"\n  build:\n    name: ${{ matrix.artifact }}\n    needs: prepare\n    runs-on: ${{ matrix.os }}\n    strategy:\n      fail-fast: false\n      matrix:\n        include:\n          - os: ubuntu-24.04\n            artifact: linux-x64\n            shell: bash\n          - os: windows-2022\n            artifact: windows-x64\n            shell: \'msys2 {0}\'\n          - os: macos-15\n            artifact: macos-arm64\n            shell: bash\n            deployment_target: \'11.0\'\n          - os: macos-15-intel\n            artifact: macos-x64\n            shell: bash\n            deployment_target: \'11.0\'\n    defaults:\n      run:\n        shell: ${{ matrix.shell }}\n    env:\n      # Rename to match your packager (e.g. BPE_RELEASE_VERSION).\n      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v4\n        with:\n          submodules: recursive\n          fetch-depth: 1\n\n      - name: Pin VERSION\n        shell: bash\n        run: |\n          set -euo pipefail\n          printf \'%s\\n\' "${RELEASE_VERSION}" >VERSION\n          echo "VERSION=$(cat VERSION)"\n\n      # Submodule gitlinks are the pin; this step only logs SHAs for the job.\n      - name: Record framework revisions\n        shell: bash\n        run: bash psxrecomp/tools/ci/record_pins.sh\n\n      # game.toml, CMakeLists GEN_MARKER and codegen_setup.c each carry the\n      # boot-EXE name; the committed generated/ files are named after it, so a\n      # skew means the build looks for C the checkout does not have.\n      - name: Lint boot-EXE name consistency\n        shell: bash\n        run: bash psxrecomp/tools/ci/check_boot_exe.sh .\n\n      # The release is built from COMMITTED C: the title\'s game C and the\n      # framework\'s BIOS backends. Fail here, at the top, when either is\n      # absent or untracked, or when a BIOS dump is in the tree.\n      - name: Verify committed game C\n        shell: bash\n        run: bash psxrecomp/tools/ci/check_generated.sh --root .\n\n      # The framework\'s committed BIOS backends must carry stamps that match\n      # the emitter fingerprint computed HERE. runtime.cmake re-checks this at\n      # configure (BIOS_STALE_FATAL); this step runs first and, on mismatch,\n      # prints every input\'s digest so the disagreement names a file.\n      - name: Verify BIOS backend stamps\n        shell: bash\n        run: bash psxrecomp/tools/ci/check_bios_stamps.sh --framework psxrecomp\n\n      - name: Setup MSYS2 (Windows)\n        if: runner.os == \'Windows\'\n        uses: msys2/setup-msys2@v2\n        with:\n          msystem: MINGW64\n          update: true\n          install: >-\n            mingw-w64-x86_64-toolchain\n            mingw-w64-x86_64-cmake\n            mingw-w64-x86_64-ninja\n            mingw-w64-x86_64-SDL2\n            mingw-w64-x86_64-pkgconf\n            mingw-w64-x86_64-vulkan-headers\n            mingw-w64-x86_64-shaderc\n            curl\n            zip\n            unzip\n\n      - name: Install deps (Linux)\n        if: runner.os == \'Linux\'\n        run: |\n          sudo apt-get update\n          # X11 + xtst required when FetchContent builds SDL3 (XTEST).\n          sudo apt-get install -y --no-install-recommends \\\n            build-essential cmake ninja-build pkg-config \\\n            libsdl2-dev libgl1-mesa-dev libxtst-dev \\\n            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \\\n            libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev \\\n            libasound2-dev libpulse-dev libudev-dev zip unzip \\\n            libvulkan-dev glslc\n\n      - name: Install deps (macOS)\n        if: runner.os == \'macOS\'\n        run: |\n          brew install cmake ninja pkg-config sdl3 \\\n            vulkan-headers shaderc molten-vk \\\n            || brew install cmake ninja pkg-config sdl2 \\\n            vulkan-headers shaderc molten-vk\n\n      # Headers + glslc are enough to compile PSX_HAVE_VULKAN (runtime still\n      # loads the ICD dynamically via SDL). Fail early if the stub path would\n      # be selected so releases always ship the real Vulkan backend.\n      - name: Verify Vulkan build tools\n        run: |\n          set -euo pipefail\n          command -v glslc\n          glslc --version || true\n          HDR=""\n          for candidate in \\\n              /mingw64/include/vulkan/vulkan.h \\\n              /usr/include/vulkan/vulkan.h \\\n              /opt/homebrew/include/vulkan/vulkan.h \\\n              /usr/local/include/vulkan/vulkan.h; do\n            if [[ -f "${candidate}" ]]; then\n              HDR="${candidate}"\n              break\n            fi\n          done\n          if [[ -z "${HDR}" ]] && command -v brew >/dev/null 2>&1; then\n            BREW_HDR="$(brew --prefix)/include/vulkan/vulkan.h"\n            if [[ -f "${BREW_HDR}" ]]; then\n              HDR="${BREW_HDR}"\n            fi\n          fi\n          if [[ -z "${HDR}" ]]; then\n            echo "::error::vulkan/vulkan.h not found"\n            exit 1\n          fi\n          echo "Found ${HDR}"\n\n      # Ubuntu 24.04 has no libsdl3-dev; Windows MSYS ships SDL2. The runtime\n      # therefore FetchContents the pinned SDL3 tarball. CMake\'s HTTP/2\n      # download from github.com release assets intermittently dies with\n      # REFUSED_STREAM (curl status 56). Prefetch with curl --http1.1 and point\n      # FetchContent at the extracted tree (macOS uses brew sdl3 and skips this).\n      - name: Cache SDL3 source\n        if: runner.os != \'macOS\'\n        uses: actions/cache@v4\n        with:\n          path: .cache/sdl3-src\n          key: sdl3-3.4.10-src\n\n      - name: Prefetch SDL3 source\n        if: runner.os != \'macOS\'\n        shell: bash\n        run: |\n          set -euo pipefail\n          # Use repo-relative paths for tar: Windows GITHUB_WORKSPACE is D:\\…\n          # and GNU tar treats drive-letter abs paths as remote hosts\n          # ("Cannot connect to D"). Prefer prefetch_sdl3.sh when present.\n          OUT=".cache/sdl3-src"\n          sdl3_env() {\n            local abs="${OUT}"\n            if command -v cygpath >/dev/null 2>&1; then\n              abs="$(cygpath -m "${OUT}")"\n            elif [[ -d "${OUT}" ]]; then\n              abs="$(cd "${OUT}" && pwd)"\n            fi\n            echo "PSX_SDL3_SOURCE_DIR=${abs}" >>"$GITHUB_ENV"\n            echo "SDL3 source ready: ${abs}"\n          }\n          if [[ -f "${OUT}/CMakeLists.txt" ]]; then\n            sdl3_env\n            echo "SDL3 source cache hit"\n            exit 0\n          fi\n          if [[ -f psxrecomp/tools/ci/prefetch_sdl3.sh ]]; then\n            chmod +x psxrecomp/tools/ci/prefetch_sdl3.sh\n            bash psxrecomp/tools/ci/prefetch_sdl3.sh --out-dir "${OUT}"\n            exit 0\n          fi\n          # Submodule may predate the helper — inline HTTP/1.1 prefetch.\n          echo "prefetch_sdl3.sh missing; using inline curl --http1.1"\n          mkdir -p .cache\n          VER=3.4.10\n          SHA=12b34280415ec8418c864408b93d008a20a6530687ee613d60bfbd20411f2785\n          URL="https://github.com/libsdl-org/SDL/releases/download/release-${VER}/SDL3-${VER}.tar.gz"\n          TAR=".cache/SDL3-${VER}.tar.gz"\n          curl -fsSL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 -o "${TAR}" "${URL}"\n          echo "${SHA}  ${TAR}" | sha256sum -c -\n          rm -rf "${OUT}.extracting"\n          mkdir -p "${OUT}.extracting"\n          # --force-local: belt-and-suspenders if a path ever gains a colon.\n          if tar --help 2>&1 | grep -q -- \'--force-local\'; then\n            tar --force-local -xzf "${TAR}" -C "${OUT}.extracting"\n          else\n            tar -xzf "${TAR}" -C "${OUT}.extracting"\n          fi\n          INNER="$(find "${OUT}.extracting" -mindepth 1 -maxdepth 1 -type d | head -n1)"\n          rm -rf "${OUT}"\n          mv "${INNER}" "${OUT}"\n          rm -rf "${OUT}.extracting"\n          sdl3_env\n\n      # Windows: build emitters with llvm-mingw from cmake-clang-v1 (static\n      # CLI). The pack is for the build machine only; it never ships.\n      - name: Fetch portable toolchain (Windows emitters)\n        if: runner.os == \'Windows\'\n        uses: ./psxrecomp/.github/actions/fetch-toolchain\n        with:\n          artifact: ${{ matrix.artifact }}\n\n      # Emitters ship inside overlay_toolchain/ so the runtime can compile\n      # overlays from the player\'s disc (and a BIOS backend for a known image\n      # this build does not link). Host/UI-only bumps keep the same psxrecomp\n      # gitlink \u2192 cache hit skips rebuilding them (see reuse_cached_emitters).\n      - name: Emitter cache key\n        id: emitter_cache\n        shell: bash\n        run: |\n          set -euo pipefail\n          SHA="$(git -C psxrecomp rev-parse HEAD)"\n          echo "psxrecomp_sha=${SHA}" >>"$GITHUB_OUTPUT"\n          echo "key=${{ runner.os }}-${{ matrix.artifact }}-emitters-${SHA}" >>"$GITHUB_OUTPUT"\n          echo "psxrecomp SHA ${SHA}"\n\n      - name: Cache emitters (build-recompiler)\n        id: cache_emitters\n        uses: actions/cache@v4\n        with:\n          path: build-recompiler\n          key: ${{ steps.emitter_cache.outputs.key }}\n\n      - name: Build recompiler tools (emitters)\n        if: >-\n          steps.cache_emitters.outputs.cache-hit != \'true\' ||\n          needs.prepare.outputs.reuse_emitters != \'true\'\n        uses: ./psxrecomp/.github/actions/build-emitters\n\n      - name: Verify emitters present\n        shell: bash\n        run: |\n          set -euo pipefail\n          # Restored cache or fresh build must leave both emitters in place.\n          test -d build-recompiler\n          find build-recompiler -type f \\( -name \'psxrecomp-game*\' -o -name \'psxrecomp-bios*\' \\) | head\n          count="$(find build-recompiler -type f \\( -name \'psxrecomp-game*\' -o -name \'psxrecomp-bios*\' \\) | wc -l | tr -d \' \')"\n          if [[ "${count}" -lt 2 ]]; then\n            echo "::error::expected psxrecomp-game + psxrecomp-bios under build-recompiler (found ${count})"\n            exit 1\n          fi\n\n      # The generated game C is tens of MB per title; ccache turns a host/UI\n      # bump into a link-only rebuild on every platform.\n      - name: Setup ccache (Linux/macOS)\n        if: runner.os != \'Windows\'\n        uses: hendrikmuhs/ccache-action@v1.2\n        with:\n          key: game-${{ matrix.artifact }}\n          max-size: 2G\n\n      - name: Configure & build the game\n        env:\n          CMAKE_OSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target || \'\' }}\n        run: |\n          set -euo pipefail\n          EXTRA=()\n          if [[ -n "${CMAKE_OSX_DEPLOYMENT_TARGET:-}" ]]; then\n            EXTRA+=("-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")\n          fi\n          if [[ "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* ]] && command -v ccache >/dev/null 2>&1; then\n            EXTRA+=("-DCMAKE_C_COMPILER_LAUNCHER=ccache")\n            EXTRA+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")\n          fi\n          # Point CMake at Vulkan headers/glslc. Prefer VULKAN_SDK layout\n          # (runtime.cmake checks $VULKAN_SDK first); also seed CMAKE_PREFIX_PATH\n          # so find_path works after the empty-_vk_inc fix in runtime.cmake.\n          if [[ "$(uname -s)" == "Darwin" ]]; then\n            BREW_PREFIX="$(brew --prefix)"\n            export PATH="${BREW_PREFIX}/bin${PATH:+:${PATH}}"\n            if command -v brew >/dev/null 2>&1; then\n              SHADERC_PREFIX="$(brew --prefix shaderc 2>/dev/null || true)"\n              VK_HDR_PREFIX="$(brew --prefix vulkan-headers 2>/dev/null || true)"\n              if [[ -n "${SHADERC_PREFIX}" && -d "${SHADERC_PREFIX}/bin" ]]; then\n                export PATH="${SHADERC_PREFIX}/bin:${PATH}"\n              fi\n              for p in "${VK_HDR_PREFIX}" "${SHADERC_PREFIX}" "${BREW_PREFIX}"; do\n                if [[ -n "${p}" && -d "${p}" ]]; then\n                  export CMAKE_PREFIX_PATH="${p}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"\n                fi\n              done\n            else\n              export CMAKE_PREFIX_PATH="${BREW_PREFIX}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"\n            fi\n            if [[ -f "${BREW_PREFIX}/include/vulkan/vulkan.h" ]]; then\n              export VULKAN_SDK="${BREW_PREFIX}"\n            elif [[ -n "${VK_HDR_PREFIX:-}" && -f "${VK_HDR_PREFIX}/include/vulkan/vulkan.h" ]]; then\n              export VULKAN_SDK="${VK_HDR_PREFIX}"\n            fi\n          elif [[ "$(uname -s)" == "Linux" ]]; then\n            if [[ -z "${VULKAN_SDK:-}" && -f /usr/include/vulkan/vulkan.h ]]; then\n              export VULKAN_SDK=/usr\n            fi\n          elif [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then\n            if [[ -z "${VULKAN_SDK:-}" && -f /mingw64/include/vulkan/vulkan.h ]]; then\n              export VULKAN_SDK=/mingw64\n            fi\n          fi\n          if command -v glslc >/dev/null 2>&1; then\n            EXTRA+=("-DGLSLC_EXE=$(command -v glslc)")\n          fi\n          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"\n          # Emitters may have set PSXRECOMP_TOOLCHAIN_DIR (llvm-mingw) via\n          # GITHUB_ENV. Clear it before the MSYS2 g++ configure so the pack\'s\n          # lib/ cannot win -L for -static-libstdc++ (codecvt link errors).\n          if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then\n            unset PSXRECOMP_TOOLCHAIN_DIR TOOLCHAIN_DIR BPE_TOOLCHAIN_DIR RETCOMM_TOOLCHAIN_DIR || true\n            unset CMAKE_PREFIX_PATH SDL3_DIR ZLIB_ROOT || true\n          fi\n          # Full game build: the committed generated/ C is REQUIRED, so a\n          # checkout without it fails configure instead of silently producing\n          # a setup host. runtime.cmake links every BIOS backend whose C is\n          # committed in the submodule (OpenBIOS; SCPH-1001 is local-only), and\n          # BIOS_STALE_FATAL refuses a stamp that predates the emitter.\n          # PSX_SETUP_WIZARD stays on: it is the first-run BIOS/disc picker.\n          # Netplay titles: set PSX_NETPLAY ON in CMakeLists *before*\n          # include(runtime.cmake) (ENABLE_NETPLAY_IF_PRESENT alone is too\n          # late) and add -DPSX_NETPLAY=ON below as belt-and-suspenders.\n          # Add title-specific -D flags here if needed (e.g. -DMOTK_NATIVE=OFF).\n          if [[ -n "${PSX_SDL3_SOURCE_DIR:-}" && -f "${PSX_SDL3_SOURCE_DIR}/CMakeLists.txt" ]]; then\n            EXTRA+=("-DFETCHCONTENT_SOURCE_DIR_SDL3=${PSX_SDL3_SOURCE_DIR}")\n          elif [[ -f "${GITHUB_WORKSPACE}/.cache/sdl3-src/CMakeLists.txt" ]]; then\n            EXTRA+=("-DFETCHCONTENT_SOURCE_DIR_SDL3=${GITHUB_WORKSPACE}/.cache/sdl3-src")\n          fi\n          cmake -S . -B build-ci -G Ninja \\\n            -DCMAKE_BUILD_TYPE=Release \\\n            -DPSXRECOMP_REQUIRE_GAME_C=ON \\\n            -DPSXRECOMP_BIOS_STALE_FATAL=ON \\\n            -DPSXRECOMP_FORCE_SETUP_HOST=OFF \\\n            -DPSXRECOMP_ALLOW_NO_BIOS=OFF \\\n            -DPSX_SETUP_WIZARD=ON \\\n            -DPSX_GAME_VERSION="${RELEASE_VERSION}" \\\n            -DPSX_RELEASE_CHANNEL="${{ github.event_name == \'push\' && \'public\' || github.event.inputs.channel }}" \\\n            "${EXTRA[@]}" 2>&1 | tee build-ci-configure.log\n          # Assert the configure took the FULL path, not the setup-host one.\n          if ! grep -q \'linking generated game C (full runtime)\' build-ci-configure.log; then\n            echo "::error::CMake did not link the generated game C (see configure log)"\n            exit 1\n          fi\n          if ! grep -qE \'BIOS backends linked: .*OpenBIOS\' build-ci-configure.log; then\n            echo "::error::CMake did not link the OpenBIOS backend (psxrecomp/generated missing or stale?)"\n            exit 1\n          fi\n          if ! grep -q \'Vulkan backend: headers\' build-ci-configure.log; then\n            echo "::error::CMake did not enable PSX_HAVE_VULKAN (see configure log)"\n            exit 1\n          fi\n          # Ninja does not emit flags.make (Makefiles generator only). Probe\n          # whichever compile-flag artifact exists for the defines the release\n          # depends on.\n          for define in PSX_HAVE_VULKAN PSX_HAS_GAME_DISPATCH; do\n            FOUND=0\n            for f in \\\n                build-ci/build.ninja \\\n                build-ci/compile_commands.json \\\n                build-ci/CMakeFiles/psx-runtime.dir/flags.make; do\n              if [[ -f "${f}" ]] && grep -q "${define}" "${f}"; then\n                FOUND=1\n                echo "Found ${define} in ${f}"\n                break\n              fi\n            done\n            if [[ "${FOUND}" -ne 1 ]]; then\n              echo "::error::${define} missing from psx-runtime compile flags"\n              exit 1\n            fi\n          done\n          cmake --build build-ci --target psx-runtime -j"${JOBS}"\n          # Lobby list pin must match RELEASE_VERSION (the packager enforces).\n          STAMP=""\n          for cand in \\\n              build-ci/psx_game_version.txt \\\n              build-ci/Release/psx_game_version.txt \\\n              build-ci/*/psx_game_version.txt\n          do\n            if [[ -f "${cand}" ]]; then STAMP="${cand}"; break; fi\n          done\n          if [[ -z "${STAMP}" ]]; then\n            STAMP="$(find build-ci -name psx_game_version.txt -type f 2>/dev/null | head -n1 || true)"\n          fi\n          if [[ -z "${STAMP}" || ! -f "${STAMP}" ]]; then\n            echo "::error::missing psx_game_version.txt after build (update psxrecomp submodule)"\n            exit 1\n          fi\n          BUILT="$(tr -d \'[:space:]\' <"${STAMP}")"\n          BUILT="${BUILT#v}"\n          if [[ "${BUILT}" != "${RELEASE_VERSION}" ]]; then\n            echo "::error::lobby pin stamp ${BUILT} != RELEASE_VERSION ${RELEASE_VERSION} (${STAMP})"\n            exit 1\n          fi\n          echo "lobby pin ok: ${BUILT} (${STAMP})"\n\n      - name: Package game zip\n        # Windows code signing (Smart App Control / SmartScreen): the packager\n        # signs the game exe and its DLLs when these secrets exist and skips\n        # signing, with a notice, when they do not. Put the .pfx in the\n        # repo\'s Actions secrets base64-encoded (`base64 -w0 cert.pfx`).\n        # See psxrecomp/docs/ci/README.md, "Windows code signing". Because the\n        # shipped exe IS the game, the signature now covers what the player\n        # runs — there is no unsigned locally built binary any more.\n        env:\n          WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}\n          WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}\n        run: |\n          set -euo pipefail\n          chmod +x scripts/package_release.sh\n          if [[ "${{ runner.os }}" == "Windows" ]]; then\n            export PSXRECOMP_RUNTIME_BIN_DIR=/mingw64/bin\n            export BPE_RUNTIME_BIN_DIR=/mingw64/bin\n          fi\n          export RELEASE_VERSION\n          scripts/package_release.sh build-ci "${{ matrix.artifact }}" build-recompiler\n          ls -la dist/\n\n      - name: Verify zip contents\n        shell: bash\n        run: |\n          set -euo pipefail\n          # Assert the artifact, not the intent: every rule below was once\n          # "the packager does that by default" and shipped broken anyway.\n          ZIP=$(ls dist/YOUR_ZIP_PREFIX-*-"${{ matrix.artifact }}".zip | head -1)\n          echo "checking ${ZIP}"\n          LIST="$(unzip -Z1 "${ZIP}")"\n          # 1. It is a game: the executable, the bundled OpenBIOS, and the\n          #    runtime data sit at the root.\n          for must in \'bios/openbios.bin\' \'bios/OpenBIOS.LICENSE\' \'game.toml\' \'psx_game_version.txt\' \'assets/fonts/\' \'licenses/recomp-ui-LICENSE\' \'assets/fonts/NOTICE.md\' \'assets/img/NOTICE.md\' \'mods/bundled/\'; do\n            if ! grep -q "^${must}" <<<"${LIST}"; then\n              echo "::error::release zip lacks ${must}" >&2\n              printf \'%s\\n\' "${LIST}" | head -40 >&2\n              exit 1\n            fi\n          done\n          MANIFESTS=$(grep -c \'mods/bundled/.*/manifest\\.toml\' <<<"${LIST}" || true)\n          echo "mod manifests in zip: ${MANIFESTS}"\n          if [[ "${MANIFESTS}" -lt 1 ]]; then\n            echo "::error::release zip ships no mod catalog (mods/bundled/*/manifest.toml)" >&2\n            exit 1\n          fi\n          # 2. It is NOT a build kit: no framework tree, no CLI, no emitters at\n          #    the root, no sources, no generated C.\n          for never in \'^psxrecomp/\' \'^recomp-ui/\' \'^psxrecomp_cli.py\' \'^psxrecomp-game\' \'^psxrecomp-bios\' \\\n                       \'^generated/\' \'^seeds/\' \'^CMakeLists.txt\' \'^codegen_setup\\.\' \'^toolchain/\' \'^src/\'; do\n            if grep -qE "${never}" <<<"${LIST}"; then\n              echo "::error::release zip contains build-kit content matching ${never}" >&2\n              grep -E "${never}" <<<"${LIST}" | head -20 >&2\n              exit 1\n            fi\n          done\n          if grep -E \'\\.c$\' <<<"${LIST}" | grep -qv \'^overlay_toolchain/\'; then\n            echo "::error::release zip contains C sources outside overlay_toolchain/" >&2\n            grep -E \'\\.c$\' <<<"${LIST}" | grep -v \'^overlay_toolchain/\' | head -20 >&2\n            exit 1\n          fi\n          # 2b. A bundled TinyCC ships its LGPL-2.1 notice beside the binary and\n          #     in licenses/ (its win64 zip carries none of its own).\n          if grep -q \'^overlay_toolchain/tcc/tcc\\.exe$\' <<<"${LIST}"; then\n            for must in \'overlay_toolchain/tcc/COPYING\' \'licenses/TinyCC-LICENSE.txt\'; do\n              if ! grep -qx "${must}" <<<"${LIST}"; then\n                echo "::error::release zip bundles TinyCC without ${must}" >&2\n                exit 1\n              fi\n            done\n          fi\n          # 3. No BIOS dump, disc, or memory card; the only image is OpenBIOS.\n          if grep -iE \'(^|/)SCPH|\\.(cue|iso|img|chd|mcd|mcr)$\' <<<"${LIST}" | grep -qv \'\\.toml$\'; then\n            echo "::error::release zip contains a BIOS dump, disc, or memory card" >&2\n            grep -iE \'(^|/)SCPH|\\.(cue|iso|img|chd|mcd|mcr)$\' <<<"${LIST}" | grep -v \'\\.toml$\' >&2\n            exit 1\n          fi\n          if grep -iE \'\\.bin$\' <<<"${LIST}" | grep -qv \'^bios/openbios.bin$\'; then\n            echo "::error::release zip contains a .bin other than bios/openbios.bin" >&2\n            grep -iE \'\\.bin$\' <<<"${LIST}" | grep -v \'^bios/openbios.bin$\' >&2\n            exit 1\n          fi\n          # 4. Per-machine mod state never ships: state.toml is one machine\'s\n          #    selections, mods/installed/ is one developer\'s installs, and\n          #    developer-channel packages are unfinished work.\n          if grep -q \'state\\.toml\' <<<"${LIST}"; then\n            echo "::error::release zip contains mods/state.toml (per-machine state)" >&2\n            exit 1\n          fi\n          if grep -q \'mods/installed/\' <<<"${LIST}"; then\n            echo "::error::release zip contains mods/installed (per-machine installs)" >&2\n            exit 1\n          fi\n          if unzip -p "${ZIP}" \'mods/**/manifest.toml\' 2>/dev/null \\\n               | grep -Eq \'^[[:space:]]*channel[[:space:]]*=[[:space:]]*"developer"\'; then\n            echo "::error::release zip contains developer-channel mod packages" >&2\n            exit 1\n          fi\n          echo "zip verified: compiled game, bundled OpenBIOS, mod catalog, no kit / dumps / dev mods"\n\n      - name: Upload artifact\n        uses: actions/upload-artifact@v4\n        with:\n          # Artifact name uses the title zip prefix (e.g. bpe, motk).\n          name: YOUR_ZIP_PREFIX-${{ matrix.artifact }}\n          path: dist/YOUR_ZIP_PREFIX-*-${{ matrix.artifact }}.zip\n          if-no-files-found: error\n          retention-days: 30\n\n  release:\n    name: GitHub Release\n    needs: [prepare, build]\n    if: needs.prepare.outputs.publish == \'true\'\n    runs-on: ubuntu-24.04\n    steps:\n      - name: Checkout (for tagging on workflow_dispatch)\n        uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n\n      - name: Download all artifacts\n        uses: actions/download-artifact@v4\n        with:\n          path: artifacts\n          merge-multiple: false\n\n      - name: Flatten zips\n        run: |\n          set -euo pipefail\n          mkdir -p dist\n          find artifacts -type f -name \'YOUR_ZIP_PREFIX-*.zip\' -exec cp -v {} dist/ \\;\n          ls -la dist/\n\n      - name: Ensure release tag exists\n        if: github.event_name == \'workflow_dispatch\'\n        env:\n          TAG: ${{ needs.prepare.outputs.tag }}\n        run: |\n          set -euo pipefail\n          git config user.name "github-actions[bot]"\n          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"\n          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then\n            git tag -a "${TAG}" -m "YOUR_GAME_TITLE ${TAG}"\n          fi\n          if ! git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then\n            git push origin "refs/tags/${TAG}"\n          fi\n\n      - name: Publish release\n        uses: softprops/action-gh-release@v2\n        with:\n          tag_name: ${{ needs.prepare.outputs.tag }}\n          # Quoted: titles may contain \':\' (e.g. "Marvel vs. Capcom: …").\n          name: "YOUR_GAME_TITLE ${{ needs.prepare.outputs.tag }}"\n          files: |\n            dist/YOUR_ZIP_PREFIX-*.zip\n          generate_release_notes: true\n          fail_on_unmatched_files: true\n          target_commitish: ${{ github.sha }}\n'
+
+----------------------------------------------------------------------
+Ran 30 tests in 6.989s
+
+FAILED (failures=1)
+
+        Start  79: collect_game_misses
+ 79/157 Test  #79: collect_game_misses ..................   Passed    1.29 sec
+        Start  80: cursor_writers
+ 80/157 Test  #80: cursor_writers .......................   Passed    0.21 sec
+        Start  81: disc_companion
+ 81/157 Test  #81: disc_companion .......................   Passed    1.57 sec
+        Start  82: duckstation_oracle
+ 82/157 Test  #82: duckstation_oracle ...................   Passed    6.73 sec
+        Start  83: fp_identity
+ 83/157 Test  #83: fp_identity ..........................   Passed   13.89 sec
+        Start  84: gpu_frame
+ 84/157 Test  #84: gpu_frame ............................***Failed    0.26 sec
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\tools\tests\test_gpu_frame.py", line 30, in <module>
+    LAYERS = _load("gpu_frame_layers")
+  File "C:\tools\psxrecomp\tools\tests\test_gpu_frame.py", line 25, in _load
+    spec.loader.exec_module(mod)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "C:\tools\psxrecomp\tools\gpu_frame_layers.py", line 39, in <module>
+    import numpy as np  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'numpy'
+
+        Start  85: menu_scan
+ 85/157 Test  #85: menu_scan ............................   Passed    0.24 sec
+        Start  86: migrate_probe_refresh
+ 86/157 Test  #86: migrate_probe_refresh ................   Passed    0.49 sec
+        Start  87: mips_tagged_relocations
+ 87/157 Test  #87: mips_tagged_relocations ..............   Passed    0.19 sec
+        Start  88: overlay_widescreen_callbacks
+ 88/157 Test  #88: overlay_widescreen_callbacks .........   Passed    0.51 sec
+        Start  89: pad_delivery
+ 89/157 Test  #89: pad_delivery .........................   Passed    0.19 sec
+        Start  90: pad_trace
+ 90/157 Test  #90: pad_trace ............................   Passed    0.21 sec
+        Start  91: psx_chd
+ 91/157 Test  #91: psx_chd ..............................   Passed    1.43 sec
+        Start  92: sbi_registry
+ 92/157 Test  #92: sbi_registry .........................   Passed    0.25 sec
+        Start  93: static_fragment_variant_keys
+ 93/157 Test  #93: static_fragment_variant_keys .........   Passed    0.50 sec
+        Start  94: playtest_diagnostics_defaults
+ 94/157 Test  #94: playtest_diagnostics_defaults ........   Passed    0.80 sec
+        Start  95: release_channel_cmake
+ 95/157 Test  #95: release_channel_cmake ................   Passed    1.51 sec
+        Start  96: compile_overlays_static_split
+ 96/157 Test  #96: compile_overlays_static_split ........   Passed    1.40 sec
+        Start  97: aot_overlay_spike_coverage_report
+ 97/157 Test  #97: aot_overlay_spike_coverage_report ....   Passed    0.63 sec
+        Start  98: disc_inventory
+ 98/157 Test  #98: disc_inventory .......................   Passed    0.67 sec
+        Start  99: aot_base_recovery
+ 99/157 Test  #99: aot_base_recovery ....................   Passed    2.41 sec
+        Start 100: bios_resident_shard
+100/157 Test #100: bios_resident_shard ..................   Passed    0.54 sec
+        Start 101: computed_stride_jump_codegen
+101/157 Test #101: computed_stride_jump_codegen .........   Passed    0.22 sec
+        Start 102: msvc_cps_codegen
+102/157 Test #102: msvc_cps_codegen .....................   Passed    0.22 sec
+        Start 103: overlay_guard_codegen
+103/157 Test #103: overlay_guard_codegen ................   Passed    0.26 sec
+        Start 104: overlay_store_barrier_codegen
+104/157 Test #104: overlay_store_barrier_codegen ........   Passed    0.62 sec
+        Start 105: reachable_discovery_codegen
+105/157 Test #105: reachable_discovery_codegen ..........   Passed    0.36 sec
+        Start 106: aot_overlay_discovery
+106/157 Test #106: aot_overlay_discovery ................***Failed    7.98 sec
+  WARNING: ownership discovery cycle; suppressing 3 unstable derived roots (80010080,80010100,80010140)
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\recompiler\tests\test_aot_overlay_discovery.py", line 4011, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\tools\psxrecomp\recompiler\tests\test_aot_overlay_discovery.py", line 3954, in main
+    check_atomic_dll_publication()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\tools\psxrecomp\recompiler\tests\test_aot_overlay_discovery.py", line 1532, in check_atomic_dll_publication
+    assert os.path.isfile(gcc), "real loaded-DLL regression needs MinGW gcc"
+           ~~~~~~~~~~~~~~^^^^^
+AssertionError: real loaded-DLL regression needs MinGW gcc
+
+        Start 107: extract_discovery_project_root
+107/157 Test #107: extract_discovery_project_root .......   Passed    0.63 sec
+        Start 108: bios_selection_guards
+108/157 Test #108: bios_selection_guards ................   Passed    0.10 sec
+        Start 109: capture_history
+109/157 Test #109: capture_history ......................   Passed    0.17 sec
+        Start 110: cli_retail_bios_profile
+110/157 Test #110: cli_retail_bios_profile ..............   Passed    0.54 sec
+        Start 111: codegen_host_bios_stems
+111/157 Test #111: codegen_host_bios_stems ..............   Passed    0.12 sec
+        Start 112: default_renderer_guards
+112/157 Test #112: default_renderer_guards ..............   Passed    0.09 sec
+        Start 113: mod_owned_display_controls
+113/157 Test #113: mod_owned_display_controls ...........***Failed    0.14 sec
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_mod_owned_display_controls.py", line 106, in <module>
+    assert sorted(before) == sorted(expected), \
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: only mouse reset and scalar copy-in may precede the baseline call, got ['psx_mod_internal_resolution_reset();', 'memcard_set_extension_codec(nullptr, nullptr);', 'psx_local_mouse_clear();', 'psx_keybinds_clear_session_players();', 'PSXModSessionScalars live;', 'live.video_vsync = g_video_vsync;', 'live.frame_interpolation = g_frame_interpolation;', 'live.frame_interpolation_fps = g_frame_interpolation_fps;', 'live.auto_skip_fmv = g_auto_skip_fmv;', 'live.guest_frame_period_ms = g_guest_frame_period_ms;', 'live.frame_period_ms = g_frame_period_ms;']
+
+        Start 114: fmv_quiet_guards
+114/157 Test #114: fmv_quiet_guards .....................   Passed    0.09 sec
+        Start 115: fps_telemetry_opt_in
+115/157 Test #115: fps_telemetry_opt_in .................   Passed    0.09 sec
+        Start 116: frame_interpolation_display_rate
+116/157 Test #116: frame_interpolation_display_rate .....   Passed    0.09 sec
+        Start 117: frame_interpolation_flip_source
+117/157 Test #117: frame_interpolation_flip_source ......   Passed    0.10 sec
+        Start 118: hybrid_dev_any_input
+118/157 Test #118: hybrid_dev_any_input .................   Passed    0.09 sec
+        Start 119: launcher_pad_mode_wiring
+119/157 Test #119: launcher_pad_mode_wiring .............   Passed    0.23 sec
+        Start 120: netplay_start_failure_wiring
+120/157 Test #120: netplay_start_failure_wiring .........   Passed    0.11 sec
+        Start 121: jalr_link_register_guards
+121/157 Test #121: jalr_link_register_guards ............   Passed    0.09 sec
+        Start 122: gl_internal_scale_guards
+122/157 Test #122: gl_internal_scale_guards .............***Failed    0.33 sec
+.....E...E..E.....F...F.
+======================================================================
+ERROR: test_windowed_lines_two_vertex_sets (__main__.GlScaleGuards.test_windowed_lines_two_vertex_sets)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 99, in test_windowed_lines_two_vertex_sets
+    flush = body(GL, "static void flush_flat_batch(void)")
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 32, in body
+    start = src.index(signature)
+ValueError: substring not found
+
+======================================================================
+ERROR: test_mirrors_gated (__main__.HiresWindowGuards.test_mirrors_gated)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 138, in test_mirrors_gated
+    self.assertRegex(body(GL, "static void " + site),
+                     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 32, in body
+    start = src.index(signature)
+ValueError: substring not found
+
+======================================================================
+ERROR: test_wide_mirror_queued_in_windowed_mode (__main__.HiresWindowGuards.test_wide_mirror_queued_in_windowed_mode)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 151, in test_wide_mirror_queued_in_windowed_mode
+    fn = body(GL, site)
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 32, in body
+    start = src.index(signature)
+ValueError: substring not found
+
+======================================================================
+FAIL: test_vocabulary_is_optional_abi (__main__.InternalResolutionGuards.test_vocabulary_is_optional_abi)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 332, in test_vocabulary_is_optional_abi
+    self.assertEqual(closed, 0, field + " outside its #if block")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 25 != 0 : ls.internal_resolution outside its #if block
+
+======================================================================
+FAIL: test_hr_surface_users_pick_the_right_scale (__main__.ScaleContractGuards.test_hr_surface_users_pick_the_right_scale)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_gl_internal_scale_guards.py", line 281, in test_hr_surface_users_pick_the_right_scale
+    self.assertTrue("s_hiw" in fn or "hiw_on()" in fn,
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    name + " binds s_hr_fbo at s_out_scale without handling the window")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : pres_record binds s_hr_fbo at s_out_scale without handling the window
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.071s
+
+FAILED (failures=2, errors=3)
+
+        Start 123: launcher_vulkan_option
+123/157 Test #123: launcher_vulkan_option ...............   Passed    0.10 sec
+        Start 124: mod_controller_override
+124/157 Test #124: mod_controller_override ..............   Passed    0.11 sec
+        Start 125: mod_load_acceleration
+125/157 Test #125: mod_load_acceleration ................   Passed    0.13 sec
+        Start 126: native_wide_line_batching
+126/157 Test #126: native_wide_line_batching ............***Failed    0.18 sec
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_native_wide_line_batching.py", line 64, in <module>
+    flush = definition(GL, "flush_flat_batch")
+  File "C:\tools\psxrecomp\runtime\tests\test_native_wide_line_batching.py", line 35, in definition
+    assert m, "no definition of " + name
+           ^
+AssertionError: no definition of flush_flat_batch
+
+        Start 127: overlay_candidate_capacity
+127/157 Test #127: overlay_candidate_capacity ...........***Failed    0.15 sec
+FAIL: capacity guard must parse aliases before platform DLL loading
+
+        Start 128: release_zip
+128/157 Test #128: release_zip ..........................   Passed    0.31 sec
+        Start 129: overlay_decodable_fallback
+129/157 Test #129: overlay_decodable_fallback ...........   Passed    0.10 sec
+        Start 130: overlay_init_guard
+130/157 Test #130: overlay_init_guard ...................   Passed    0.10 sec
+        Start 131: overlay_segment_gate
+131/157 Test #131: overlay_segment_gate .................***Failed    2.90 sec
+Traceback (most recent call last):
+  File "C:\tools\psxrecomp\runtime\tests\test_overlay_segment_gate.py", line 251, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "C:\tools\psxrecomp\runtime\tests\test_overlay_segment_gate.py", line 148, in main
+    pair.compile_harness(args.gcc, harness)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\tools\psxrecomp\runtime\tests\test_overlay_pair_dedup_runtime.py", line 103, in compile_harness
+    run(command)
+    ~~~^^^^^^^^^
+  File "C:\tools\psxrecomp\runtime\tests\test_overlay_pair_dedup_runtime.py", line 55, in run
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: command failed (1): C:\tools\winlibs\mingw64\bin\gcc.EXE -std=c11 -O0 -Wall -Wextra -DPSX_NO_DEBUG_TOOLS -DPSX_OVERLAY_DLL_BUILD -DPSX_OVERLAY_TEST_CANDIDATE_CAP=4 -IC:\tools\psxrecomp\runtime\include C:\tools\psxrecomp\runtime\src\overlay_loader.c C:\tools\psxrecomp\runtime\src\overlay_path_canon.c C:\tools\psxrecomp\runtime\src\overlay_posix.c C:\tools\psxrecomp\runtime\src\crc32.c C:\tools\psxrecomp\runtime\tests\overlay_pair_dedup_harness.c -o C:\Users\sem-m\AppData\Local\Temp\psx-segment-gate-unblc3j6\segment-harness.exe
+stdout:
+
+stderr:
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'overlay_loader_cps_probe_get':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:346:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  346 |     if (pc) *pc = s_cps_probe_pc; if (cnt) *cnt = s_cps_probe_count;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:346:35: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  346 |     if (pc) *pc = s_cps_probe_pc; if (cnt) *cnt = s_cps_probe_count;
+      |                                   ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:347:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  347 |     if (found) *found = s_cps_probe_found; if (ci) *ci = s_cps_probe_ci;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:347:44: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  347 |     if (found) *found = s_cps_probe_found; if (ci) *ci = s_cps_probe_ci;
+      |                                            ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:348:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  348 |     if (nrange) *nrange = s_cps_probe_nrange; if (matched) *matched = s_cps_probe_matched;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:348:47: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  348 |     if (nrange) *nrange = s_cps_probe_nrange; if (matched) *matched = s_cps_probe_matched;
+      |                                               ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:349:5: warning: this 'if' clause does not guard... [-Wmisleading-indentation]
+  349 |     if (outcome) *outcome = s_cps_probe_outcome; if (ncand) *ncand = s_cps_probe_ncand_inrange;
+      |     ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:349:50: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the 'if'
+  349 |     if (outcome) *outcome = s_cps_probe_outcome; if (ncand) *ncand = s_cps_probe_ncand_inrange;
+      |                                                  ^~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'abi_preflight_sweep':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2099:32: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'int (*)(void)' [-Wcast-function-type]
+ 2099 |                 AbiFn abi_fn = (AbiFn)GetProcAddress(h, "overlay_abi");
+      |                                ^
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'load_overlay_dll':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2738:20: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'int (*)(void)' [-Wcast-function-type]
+ 2738 |     AbiFn abi_fn = (AbiFn)GetProcAddress(h, "overlay_abi");
+      |                    ^
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2762:22: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'void (*)(const OverlayCallbacks *)' [-Wcast-function-type]
+ 2762 |     InitFn init_fn = (InitFn)GetProcAddress(h, "overlay_init");
+      |                      ^
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: At top level:
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:4476:13: warning: 'run_shadow_diff_legacy' defined but not used [-Wunused-function]
+ 4476 | static void run_shadow_diff_legacy(CPUState *cpu, Candidate *c, uint32_t addr) {
+      |             ^~~~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:3634:12: warning: 'lazy_better_bundle' defined but not used [-Wunused-function]
+ 3634 | static int lazy_better_bundle(int li, int best) {
+      |            ^~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:2014:13: warning: 'cache_idx_remove_path' defined but not used [-Wunused-function]
+ 2014 | static void cache_idx_remove_path(const char *path) {
+      |             ^~~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:1823:12: warning: 'cache_filename_equal' defined but not used [-Wunused-function]
+ 1823 | static int cache_filename_equal(const char *a, const char *b) {
+      |            ^~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c: In function 'warn_on_cgtag_mismatch':
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:1982:45: warning: '%s' directive output may be truncated writing up to 259 bytes into a region of size between 132 and 899 [-Wformat-truncation=]
+ 1982 |         snprintf(dllpat, sizeof dllpat, "%s/%s/*_*.dll", base, fd.cFileName);
+      |                                             ^~                 ~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\src\overlay_loader.c:1982:9: note: 'snprintf' output between 10 and 1036 bytes into a destination of size 900
+ 1982 |         snprintf(dllpat, sizeof dllpat, "%s/%s/*_*.dll", base, fd.cFileName);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\tools\psxrecomp\runtime\tests\overlay_pair_dedup_harness.c: In function 'module_counter':
+C:\tools\psxrecomp\runtime\tests\overlay_pair_dedup_harness.c:246:12: warning: cast between incompatible function types from 'FARPROC' {aka 'long long int (*)()'} to 'int (*)(void)' [-Wcast-function-type]
+  246 |     return (CounterFn)GetProcAddress(module, name);
+      |            ^
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x774b): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x7784): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x7dd4): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x7e02): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x81b5): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x81df): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x8b9c): undefined reference to `host_span_begin'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.text+0x8bc7): undefined reference to `host_span_end'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.rdata$.refptr.psx_mod_immediate_select[.refptr.psx_mod_immediate_select]+0x0): undefined reference to `psx_mod_immediate_select'
+C:/tools/winlibs/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/16.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\Users\sem-m\AppData\Local\Temp\cc2GS7Vt.o:overlay_loader.c:(.rdata$.refptr.psx_mod_memory_address[.refptr.psx_mod_memory_address]+0x0): undefined reference to `psx_mod_memory_address'
+collect2.exe: error: ld returned 1 exit status
+
+
+        Start 132: recomp_ui_root_override
+132/157 Test #132: recomp_ui_root_override ..............   Passed    0.08 sec
+        Start 133: render_pass_guards
+133/157 Test #133: render_pass_guards ...................   Passed    0.16 sec
+        Start 134: pal_cadence_host_refresh
+134/157 Test #134: pal_cadence_host_refresh .............   Passed    0.09 sec
+        Start 135: sdl3_main_single_include
+135/157 Test #135: sdl3_main_single_include .............   Passed    2.44 sec
+        Start 136: spu_sample_scheduler_default
+136/157 Test #136: spu_sample_scheduler_default .........   Passed    0.09 sec
+        Start 137: vk_build_default
+137/157 Test #137: vk_build_default .....................   Passed    0.08 sec
+        Start 138: vk_color_self_barrier
+138/157 Test #138: vk_color_self_barrier ................   Passed    0.08 sec
+        Start 139: vk_command_buffer_batching
+139/157 Test #139: vk_command_buffer_batching ...........   Passed    0.08 sec
+        Start 140: vk_draw_area_batch_boundary
+140/157 Test #140: vk_draw_area_batch_boundary ..........   Passed    0.08 sec
+        Start 141: vk_mailbox_policy
+141/157 Test #141: vk_mailbox_policy ....................   Passed    0.08 sec
+        Start 142: vk_present_timing
+142/157 Test #142: vk_present_timing ....................   Passed    0.08 sec
+        Start 143: vk_present_wait_stage
+143/157 Test #143: vk_present_wait_stage ................   Passed    0.08 sec
+        Start 144: vk_staging_cache
+144/157 Test #144: vk_staging_cache .....................   Passed    0.08 sec
+        Start 145: wide_overlay_band_scissor
+145/157 Test #145: wide_overlay_band_scissor ............   Passed    0.09 sec
+        Start 146: interpreter_perf_guards
+146/157 Test #146: interpreter_perf_guards ..............***Not Run (Disabled)   0.00 sec
+        Start 147: runtime_perf_diag_guards
+147/157 Test #147: runtime_perf_diag_guards .............***Not Run (Disabled)   0.00 sec
+        Start 148: overlay_pair_dedup_runtime
+148/157 Test #148: overlay_pair_dedup_runtime ...........***Not Run (Disabled)   0.00 sec
+        Start 149: interp_refused_game_text
+149/157 Test #149: interp_refused_game_text .............***Failed    6.68 sec
+-O0: fixture failed (rc=3221226505)
+
+
+        Start 150: tas_gte_deferred_O0
+150/157 Test #150: tas_gte_deferred_O0 ..................   Passed    0.04 sec
+        Start 151: tas_gte_deferred_O2
+151/157 Test #151: tas_gte_deferred_O2 ..................   Passed    0.03 sec
+        Start 152: dma_gpu_list_cpu_hold
+152/157 Test #152: dma_gpu_list_cpu_hold ................   Passed   13.33 sec
+        Start 153: muldiv_deferred_O0
+153/157 Test #153: muldiv_deferred_O0 ...................   Passed    0.03 sec
+        Start 154: muldiv_deferred_O2
+154/157 Test #154: muldiv_deferred_O2 ...................   Passed    0.03 sec
+        Start 155: syscall_change_thread_self
+155/157 Test #155: syscall_change_thread_self ...........   Passed   11.36 sec
+        Start 156: present_image_ring_test
+156/157 Test #156: present_image_ring_test ..............   Passed    0.03 sec
+        Start 157: gpu_upload_history
+157/157 Test #157: gpu_upload_history ...................   Passed    0.73 sec
+
+92% tests passed, 12 tests failed out of 154
+
+Total Test time (real) = 225.32 sec
+
+The following tests did not run:
+	146 - interpreter_perf_guards (Disabled)
+	147 - runtime_perf_diag_guards (Disabled)
+	148 - overlay_pair_dedup_runtime (Disabled)
+
+The following tests FAILED:
+	 36 - interp_cop0_read_sample (Failed)
+	 59 - compile_overlays_static_tail (Failed)
+	 64 - overlay_segment_keys (Failed)
+	 78 - bundled_release_layout (Failed)
+	 84 - gpu_frame (Failed)
+	106 - aot_overlay_discovery (Failed)
+	113 - mod_owned_display_controls (Failed)
+	122 - gl_internal_scale_guards (Failed)
+	126 - native_wide_line_batching (Failed)
+	127 - overlay_candidate_capacity (Failed)
+	131 - overlay_segment_gate (Failed)
+	149 - interp_refused_game_text (Failed)
+Errors while running CTest

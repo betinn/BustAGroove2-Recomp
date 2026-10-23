@@ -1,4 +1,4 @@
-# Dot-source este arquivo numa sessão PowerShell para ter a toolchain do PSXRecomp no PATH:
+﻿# Dot-source este arquivo numa sessão PowerShell para ter a toolchain do PSXRecomp no PATH:
 #   . .\tools\recomp\env.ps1
 # Toolchain (tudo instalado sem admin):
 #   - GCC 16.2 MinGW-w64 UCRT (WinLibs)      C:\tools\winlibs\mingw64\bin
@@ -7,7 +7,9 @@
 #   - emsdk (Emscripten 6.0.13)              C:\tools\emsdk  (use emsdk_env.bat para o alvo WASM)
 #   - psxrecomp (framework)                  C:\tools\psxrecomp
 $env:PSXRECOMP_ROOT = 'C:\tools\psxrecomp'
-$env:Path = 'C:\tools\winlibs\mingw64\bin;' + "$env:APPDATA\Python\Python314\Scripts;" + $env:Path
-# Evita que o CMake pegue um sh.exe do Git Bash e recuse o gerador MinGW/Ninja.
+# O cmake embutido do WinLibs (4.4.3, GnuTLS sem CA bundle) falha nos downloads do FetchContent
+# ("SSL peer certificate ... not OK"); o cmake/ninja do pip (build oficial Kitware) tem de vir ANTES.
+$env:Path = "$env:APPDATA\Python\Python314\Scripts;" + 'C:\tools\winlibs\mingw64\bin;' + $env:Path
+$env:SSL_CERT_FILE = 'C:\tools\winlibs\mingw64\bin\curl-ca-bundle.crt'
 $env:CC  = 'C:\tools\winlibs\mingw64\bin\gcc.exe'
 $env:CXX = 'C:\tools\winlibs\mingw64\bin\g++.exe'

@@ -62,15 +62,15 @@ fn rgb15(c: u32) -> vec3f {
   if (i.lit > 0.5) {
     let n = normalize(i.normal);
     let d = max(dot(n, -normalize(U.light.xyz)), 0.0);
-    base = i.color * (U.ambient.xyz + d * U.light.w) * 2.0;  // GTE: 0x80 material at full light -> white
+    base = i.color * min(U.ambient.xyz + d * U.light.w, vec3f(1.0));  // color = material/128 (0x80 neutral)
   }
-  if (i.tex.x < 0.0) {           // untextured
-    return vec4f(base, 1.0);
+  if (i.tex.x < 0.0) {           // untextured: gouraud color as computed by the GTE
+    return vec4f(min(base, vec3f(1.0)), 1.0);
   }
   let t = texel(i.tex, i.uv);
   if (t == 0u) { discard; }
   // PS1 modulation: texel * color / 128 (color 0x80 = neutral)
-  return vec4f(rgb15(t) * base * 2.0, 1.0);
+  return vec4f(min(rgb15(t) * base, vec3f(1.0)), 1.0);
 }
 `;
 
