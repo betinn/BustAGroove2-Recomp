@@ -39,6 +39,9 @@ file(GLOB _bag2_ov_parts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/generate
 list(LENGTH _bag2_ov_parts _bag2_ov_n)
 message(STATUS "BAG2: ${_bag2_ov_n} unidades de overlay estatico")
 if(_bag2_ov_n GREATER 0)
+    # runtime.cmake so define isto quando o seu proprio glob acha o dispatcher; sem a macro,
+    # overlay_loader.c nao compila psx_overlay_static_code_matches e o link falha.
+    target_compile_definitions(psx-runtime PRIVATE PSX_HAS_OVERLAY_DISPATCH=1)
     get_target_property(_bag2_srcs psx-runtime SOURCES)
     foreach(_p ${_bag2_ov_parts})
         list(FIND _bag2_srcs "${_p}" _idx)
