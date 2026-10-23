@@ -224,3 +224,49 @@ Resultados:
    -DPSX_LAUNCHER=OFF -DPSX_DEBUG_TOOLS=OFF && cmake --build build-web`.
    Overlays em WASM: não há gcc/tcc no browser, então ou os DBI_ são compilados
    AOT (shards estáticos) antes, ou ficam no interpretador.
+
+## 7. Build web (WASM) — feito em 2026-10-23
+
+Resultado: `web/recomp.html` roda o jogo recompilado no navegador (`/recomp.html?dev` ou via seletor de
+`.bin`/`.cue`). Boot OpenBIOS → logos → abertura → menu principal a 60 vblank/s (abertura ~36–39 por
+causa do MDEC no renderer software). Teclado: mapa do PS1 em `web/src/recomp/main.ts` (`KEYBINDS_INI`).
+
+Toolchain: fork **kem0x/psxrecomp** (branch `compat-web`) em `C:\tools\psxrecomp-web`, Emscripten 6.0.13
+(`C:\tools\emsdk`). Script: `powershell -File tools\recomp\build-web.ps1 -Step framework|game|configure|build|copy|all`.
+Projeto CMake: `tools/recomp/bag2/web/CMakeLists.txt` (API antiga `psxrecomp_add_runtime_target`,
+`BIOS_INTERPRETER`, renderer software, `-sINVOKE_RUN=0`, `-sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV`,
+`-msimd128`). Config do jogo: `tools/recomp/bag2/game-web.toml` (C gerado em `generated-web/`, o fork emite
+um único `SLUS_011.59_full.c` de 21 MB). Saída copiada para `web/public/recomp/` (bag2.js 267 KB,
+bag2.wasm 7,5 MB, `bios/openbios.bin`), ignorada pelo git.
+
+Página (`web/src/recomp/main.ts`): define `window.Module` (noInitialRun, canvas, print → log), injeta
+`/recomp/bag2.js`, escreve no MEMFS `/bios/openbios.bin`, `/keybinds.ini`, `/game.toml` e o disco em
+`/game/disc/` (File do seletor ou `/dev-disc.bin` do plugin do Vite, com `.cue` trivial gerado se faltar),
+cria o `AudioContext` no clique (autoplay) e chama `Module.callMain([...])`. O Vite já manda COOP/COEP
+(SharedArrayBuffer/pthreads).
+
+Patch necessário no fork (`tools/recomp/patches/psxrecomp-web-overlay-cpu-writes.patch`, aplicado em
+`runtime/src/memory.c`): o runtime só marcava como "dirty" páginas de overlay escritas por DMA do CD; o
+BAG2 descomprime os `DBI_` com a CPU (BPE em `0x80035DC4`), então o primeiro despacho para o overlay
+caía em `unknown dispatch`. Agora stores da CPU acima de `g_overlay_region_floor` marcam a página.
+
+Overlays estáticos no WASM: `compile_overlays.py --static` do fork, alimentado com o
+`static-inputs.json` do pipeline AOT do upstream (§8), gera `generated-web/overlays_static.c`
+(2422 funções, arquivo único), linkado via `GAME_OVERLAY_STATIC_C`. Sem isso tudo que é overlay roda no
+interpretador MIPS (`overlay_backend = "interp"`).
+
+## 8. Overlays compilados antecipadamente (AOT) — 2026-10-23
+
+- Inventário: `tools/recomp/aot/dbi_inventory.json` (104 blocos `DBI_`, offsets absolutos no
+  `BUST2.BIN`, SHA-256, classe de destino pelos ponteiros absolutos do payload).
+- Perfil: `tools/recomp/aot/overlays.json` gerado por `make_profile.py` (schema `psxrecomp AOT methods
+  v1`, `fixed_address_extents`, `allow_missing`, 56 imagens únicas — 159..194 e 252..485 são cópias
+  byte a byte). O overlay principal 3 tem tabelas de dados que o descobridor estático tentava decodificar
+  como código (`UNSUPPORTED_INSTRUCTION` em `0x800956B0..`); resolvido com `excluded_ranges`.
+- `python aot_overlay_pipeline.py extract|static ...` (cwd `C:\tools\psxrecomp\tools`, gcc do WinLibs no
+  PATH). O recompilador procura `bios/SCPH1001.toml` em `--project-root` = pasta do `game.toml`:
+  `tools/recomp/bag2/bios` é uma junção para `C:\tools\psxrecomp\bios`. Resultado: 55/55 shards ok →
+  `generated/overlays_static.c` + 56 unidades, linkadas com
+  `GAME_OVERLAY_STATIC_C "${CMAKE_CURRENT_SOURCE_DIR}/generated/overlays_static.c"` (caminho absoluto:
+  com relativo o glob das unidades `_NNNN.c` falha e o link dá 34k referências indefinidas).
+- Endereços de carga dos overlays: `notes/formats.md` (seção "Overlays DBI_").

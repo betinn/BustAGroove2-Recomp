@@ -43,6 +43,9 @@ psxrecomp_add_runtime_target(psx-runtime
     BIOS_INTERPRETER
     GAME_GENERATED_FULL_C     "${BAG2_GENERATED_FULL}"
     GAME_GENERATED_DISPATCH_C "${BAG2_GENERATED_DISPATCH}"
+    # Overlays DBI_ compilados antecipadamente com o compile_overlays.py --static do fork
+    # (entrada: static-inputs.json do pipeline AOT do upstream; ver notes/recomp.md).
+    GAME_OVERLAY_STATIC_C     "${BAG2_GEN_DIR}/overlays_static.c"
     DEBUG_PORT 4472
     WINDOW_TITLE "Bust A Groove 2 Recompiled"
     DEFAULT_BIOS_PATH "bios/openbios.bin"
