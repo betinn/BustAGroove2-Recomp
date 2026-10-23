@@ -312,3 +312,10 @@ Ajustes:
   desliga. HUD da página mostra vblank/s, CPU livre, underruns, fila e taxa.
 - Teclado: o SDL ouve na janela; a página devolve o foco ao canvas em qualquer clique na área do jogo e
   bloqueia Tab/setas de mudar foco ou rolar.
+- **Latência de áudio (sincronia do ritmo)**: a ponte do fork segurava 160 ms de fila no Windows
+  (`minimumLead`) + `latencyHint: 0.04` → ~237 ms entre o jogo "tocar" e o usuário ouvir. Agora a página
+  cria o `AudioContext` com `latencyHint: 'interactive'` (baseLatency 10 ms) e reimpõe
+  `Module.psxWebAudio.targetLead` a cada segundo a partir do slider "fila de áudio" (padrão 50 ms):
+  atraso total medido ≈ 120 ms (fila ~60 + dispositivo ~58), 0 underruns com 35 % de CPU livre. O
+  HUD mostra o atraso estimado. Abaixo de ~40 ms pode voltar a cortar; o exe nativo (SDL direto) tem
+  latência bem menor que qualquer navegador.

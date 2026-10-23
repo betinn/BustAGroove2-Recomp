@@ -35,7 +35,8 @@
       <div>
         <div id="screen"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Tela do jogo"></canvas><canvas id="gpu"></canvas></div>
         <p><label><input type="checkbox" id="usegpu" checked /> apresentar com WebGPU (sharp bilinear)</label>
-           <label><input type="checkbox" id="scanlines" /> scanlines</label></p>
+           <label><input type="checkbox" id="scanlines" /> scanlines</label>
+           <label style="margin-left:12px">fila de áudio <input type="range" id="audiolead" min="20" max="200" step="10" value="50" style="width:120px;vertical-align:middle" /> <span id="audioleadLbl">50 ms</span></label></p>
         <p id="perf"></p>
       </div>
       <div>

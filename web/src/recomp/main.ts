@@ -183,9 +183,10 @@ ${['up','down','left','right','cross','circle','square','triangle','l1','r1','l2
 function primeWebAudio() {
   const M = window.Module;
   if (!M.psxWebAudio) {
-    const isWindows = /Windows/.test(navigator.userAgent);
+    // 'interactive' pede o menor buffer que o navegador aceitar; a fila da ponte (targetLead) e o
+    // controle dinamico de taxa cuidam da estabilidade. Jogo de ritmo: cada 10 ms contam.
     let context: AudioContext;
-    try { context = new AudioContext({ latencyHint: isWindows ? 0.04 : 'interactive' }); } catch { context = new AudioContext(); }
+    try { context = new AudioContext({ latencyHint: 'interactive' }); } catch { context = new AudioContext(); }
     M.psxWebAudio = { context, nextTime: context.currentTime, sources: new Set(), started: false, underruns: 0 };
   }
   M.psxWebAudio.context.resume().catch(() => {});
@@ -220,6 +221,7 @@ async function start() {
     M.psxWebAudioLocked = false;
     M.callMain(['--game', '/game.toml', '--bios', biosPath, '--disc', `${DISC_DIR}/${cueName}`, '--renderer', 'software', '--no-launcher']);
     pauseBtn.disabled = false;
+    applyAudioLead();
     setStatus('Rodando. Clique no canvas e use o teclado.');
     startPerfHud();
     startWebGpuPresenter();
@@ -254,6 +256,7 @@ function startPerfHud() {
   let last = M._psx_web_perf_vblanks(), lastT = performance.now();
   let lastWait = (M as unknown as { _psx_web_perf_pacer_wait_us?: () => number })._psx_web_perf_pacer_wait_us?.() ?? 0;
   setInterval(() => {
+    applyAudioLead();   // a ponte recalcula targetLead ao abrir o dispositivo; reimpor o valor do slider
     const now = M._psx_web_perf_vblanks!(), t = performance.now();
     const fps = (now - last) * 1000 / (t - lastT);
     const waitFn = (M as unknown as { _psx_web_perf_pacer_wait_us?: () => number })._psx_web_perf_pacer_wait_us;
@@ -262,10 +265,23 @@ function startPerfHud() {
     lastWait = wait;
     const au = M.psxWebAudio;
     const rate = (au as unknown as { rate?: number } | undefined)?.rate;
-    perfEl.textContent = `${fps.toFixed(1)} vblank/s (alvo 59.94) · CPU livre ${idle.toFixed(0)}% · áudio: ${au?.underruns ?? 0} underruns, ${au ? ((au.nextTime - au.context.currentTime) * 1000).toFixed(0) : '-'} ms na fila, taxa ${rate ? rate.toFixed(3) : '1.000'}`;
+    const queue = au ? (au.nextTime - au.context.currentTime) * 1000 : 0;
+    const dev = au ? ((au.context.baseLatency || 0) + ((au.context as AudioContext & { outputLatency?: number }).outputLatency || 0)) * 1000 : 0;
+    perfEl.textContent = `${fps.toFixed(1)} vblank/s (alvo 59.94) · CPU livre ${idle.toFixed(0)}% · áudio: ${au?.underruns ?? 0} underruns, fila ${queue.toFixed(0)} ms + dispositivo ${dev.toFixed(0)} ms ≈ atraso ${(queue + dev).toFixed(0)} ms, taxa ${rate ? rate.toFixed(3) : '1.000'}`;
     last = now; lastT = t;
   }, 1000);
 }
+
+// ---- latencia de audio: a ponte (web_audio_bridge.c) mantem `targetLead` segundos de fila; o fork usa
+// 160 ms no Windows, demais para um jogo de ritmo. O slider ajusta em tempo real.
+const leadIn = $<HTMLInputElement>('audiolead'), leadLbl = $<HTMLSpanElement>('audioleadLbl');
+function applyAudioLead() {
+  const ms = +leadIn.value;
+  leadLbl.textContent = `${ms} ms`;
+  const au = window.Module.psxWebAudio as (typeof window.Module.psxWebAudio & { targetLead?: number }) | undefined;
+  if (au) au.targetLead = ms / 1000;
+}
+leadIn.addEventListener('input', applyAudioLead);
 
 // ---- WebGPU: apresenta o framebuffer do renderer software com filtro "sharp bilinear" ------------
 // O runtime exporta psx_web_frame_ptr/w/h/serial (patch psxrecomp-web-frame-export.patch); o canvas
