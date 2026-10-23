@@ -1,0 +1,38 @@
+diff --git a/runtime/src/main.cpp b/runtime/src/main.cpp
+index 3342056..4f71195 100644
+--- a/runtime/src/main.cpp
++++ b/runtime/src/main.cpp
+@@ -273,6 +273,11 @@ static PlayerInput g_players[2];
+  * 640*scale x 512*scale. Allocated once the supersampling scale is known
+  * (sized for the native 640x512 when supersampling is off). */
+ static uint32_t*     sdl_pixel_buf = nullptr;
++/* BAG2 (tools/recomp/patches/psxrecomp-web-frame-export.patch): last presented software frame,
++ * read by the page's WebGPU presenter (web/src/recomp/webgpu.ts). */
++static std::atomic<uint32_t> g_web_frame_serial{0};
++static std::atomic<uint32_t> g_web_frame_w{0};
++static std::atomic<uint32_t> g_web_frame_h{0};
+ 
+ /* Pepsiman publishes one new gameplay image every two 59.94 Hz vblanks. A
+  * guest-side VSync(2)->VSync(1) patch also runs its fixed-step simulation,
+@@ -1502,6 +1507,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE uint32_t psx_web_geometry_correction_hits(void)
+     return gte_geometry_correction_hits();
+ }
+ 
++extern "C" EMSCRIPTEN_KEEPALIVE uint32_t psx_web_frame_ptr(void) { return (uint32_t)(uintptr_t)sdl_pixel_buf; }
++extern "C" EMSCRIPTEN_KEEPALIVE uint32_t psx_web_frame_w(void) { return g_web_frame_w.load(std::memory_order_acquire); }
++extern "C" EMSCRIPTEN_KEEPALIVE uint32_t psx_web_frame_h(void) { return g_web_frame_h.load(std::memory_order_acquire); }
++extern "C" EMSCRIPTEN_KEEPALIVE uint32_t psx_web_frame_serial(void) { return g_web_frame_serial.load(std::memory_order_acquire); }
++
+ extern "C" EMSCRIPTEN_KEEPALIVE double psx_web_perf_vblanks(void) {
+     return (double)g_web_perf_vblanks.load(std::memory_order_relaxed);
+ }
+@@ -3159,6 +3169,9 @@ static void sdl_vblank_present(void) {
+                             pin_43 ? 1 : 0);
+     } else {
+     SDL_Rect src = { 0, 0, src_w, src_h };
++    g_web_frame_w.store((uint32_t)src_w, std::memory_order_relaxed);
++    g_web_frame_h.store((uint32_t)src_h, std::memory_order_relaxed);
++    g_web_frame_serial.fetch_add(1u, std::memory_order_release);
+     SDL_UpdateTexture(sdl_texture, &src, sdl_pixel_buf,
+                       (int)(src_w * sizeof(uint32_t)));
+ 

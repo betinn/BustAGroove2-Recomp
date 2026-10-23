@@ -45,13 +45,23 @@ psxrecomp_add_runtime_target(psx-runtime
     GAME_GENERATED_DISPATCH_C "${BAG2_GENERATED_DISPATCH}"
     # Overlays DBI_ compilados antecipadamente com o compile_overlays.py --static do fork
     # (entrada: static-inputs.json do pipeline AOT do upstream; ver notes/recomp.md).
-    GAME_OVERLAY_STATIC_C     "${BAG2_GEN_DIR}/overlays_static.c"
+    GAME_OVERLAY_STATIC_C     "${BAG2_GEN_DIR}/ov/overlays_dispatch.c"
     DEBUG_PORT 4472
     WINDOW_TITLE "Bust A Groove 2 Recompiled"
     DEFAULT_BIOS_PATH "bios/openbios.bin"
     DEFAULT_GAME_CONFIG_PATH "${BAG2_DEFAULT_CONFIG}"
     EXE_NAME "bag2"
 )
+
+# Unidades por overlay geradas por tools/recomp/split_static_overlays.py (uma TU por overlay, funcoes
+# static; o dispatcher overlays_dispatch.c reconhece a variante carregada pelos primeiros bytes).
+file(GLOB bag2_ov_units CONFIGURE_DEPENDS "${BAG2_GEN_DIR}/ov/ov_*.c")
+list(LENGTH bag2_ov_units bag2_ov_n)
+message(STATUS "BAG2 web: ${bag2_ov_n} unidades de overlay estatico")
+if(bag2_ov_n GREATER 0)
+    target_sources(psx-runtime PRIVATE ${bag2_ov_units})
+    target_compile_definitions(psx-runtime PRIVATE PSX_HAS_OVERLAY_DISPATCH=1)
+endif()
 
 if(EMSCRIPTEN)
     # WASM SIMD nos caminhos quentes (como no RepsiMan).
@@ -67,7 +77,7 @@ if(EMSCRIPTEN)
     set_target_properties(psx-runtime PROPERTIES SUFFIX ".js")
     target_link_options(psx-runtime PRIVATE
         "-sINVOKE_RUN=0"
-        "-sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV"
+        "-sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV,HEAPU8"
         "-sENVIRONMENT=web,worker")
     # -DBAG2_WEB_DEBUG=ON: asserts do Emscripten + nomes de funcao no .wasm (stack trace legivel
     # num abort()). So muda o link; nao recompila o C gerado.
