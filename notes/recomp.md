@@ -283,3 +283,13 @@ interpretador MIPS (`overlay_backend = "interp"`).
   (`redefinition of 'func_801CC590'`). A build web continua com `overlay_backend = "interp"` até portar o
   despacho guardado do upstream (`psx_ov_static_ranges` + `psx_overlay_static_code_matches`) para o fork,
   ou o suporte Emscripten do fork para o upstream.
+- **Web com overlays estáticos (2026-10-23 07:00)**: `tools/recomp/split_static_overlays.py` corta o
+  `overlays_static.c` do fork em uma TU por overlay (`generated-web/ov/ov_NNN.c`, funções `static`) e gera
+  `overlays_dispatch.c`: por região de carga (4), a variante presente é reconhecida pelos 16 primeiros
+  bytes do payload (únicos entre as 55 imagens) e despachada; `PSX_HAS_OVERLAY_DISPATCH=1` liga a chamada
+  em `dirty_ram_interp.c`. Partida completa no navegador sem `unknown dispatch`; ~56 vblank/s (o gargalo
+  é o renderer software + MDEC, não o despacho). `bag2.wasm` passa de 7,5 para 28,6 MB.
+- **Apresentação WebGPU**: patch `tools/recomp/patches/psxrecomp-web-frame-export.patch` exporta
+  `psx_web_frame_ptr/w/h/serial` (buffer ARGB do renderer software); `web/src/recomp/webgpu.ts` copia o
+  frame do heap (`HEAPU8` exportado) para uma textura `bgra8unorm` e desenha com filtro sharp-bilinear e
+  scanlines opcionais num canvas sobre o do SDL.

@@ -5,7 +5,10 @@
 // o áudio da SPU sai pelo web_audio_bridge.c do fork (Module.psxWebAudio). Os arquivos do disco,
 // o OpenBIOS, game.toml e keybinds.ini são escritos no MEMFS antes de Module.callMain().
 
+import { WebGpuPresenter } from './webgpu';
+
 type EmModule = {
+  HEAPU8?: Uint8Array;
   noInitialRun: boolean;
   canvas: HTMLCanvasElement;
   psxWebAudioLocked: boolean;
@@ -22,6 +25,10 @@ type EmModule = {
   callMain(args: string[]): void;
   _psx_web_perf_vblanks?: () => number;
   _psx_web_set_paused?: (paused: number) => void;
+  _psx_web_frame_ptr?: () => number;
+  _psx_web_frame_w?: () => number;
+  _psx_web_frame_h?: () => number;
+  _psx_web_frame_serial?: () => number;
 };
 declare global { interface Window { Module: EmModule } }
 
@@ -215,6 +222,7 @@ async function start() {
     pauseBtn.disabled = false;
     setStatus('Rodando. Clique no canvas e use o teclado.');
     startPerfHud();
+    startWebGpuPresenter();
   } catch (e) {
     started = false; updateStart();
     log(String((e as Error)?.stack ?? e));
@@ -240,6 +248,38 @@ function startPerfHud() {
     perfEl.textContent = `${fps.toFixed(1)} vblank/s (guest) · ${now} vblanks`;
     last = now; lastT = t;
   }, 1000);
+}
+
+// ---- WebGPU: apresenta o framebuffer do renderer software com filtro "sharp bilinear" ------------
+// O runtime exporta psx_web_frame_ptr/w/h/serial (patch psxrecomp-web-frame-export.patch); o canvas
+// WebGPU fica sobre o canvas do SDL (que continua recebendo o foco/teclado).
+const gpuCanvas = $<HTMLCanvasElement>('gpu');
+const gpuToggle = $<HTMLInputElement>('usegpu');
+const scanToggle = $<HTMLInputElement>('scanlines');
+async function startWebGpuPresenter() {
+  const M = window.Module;
+  if (!M._psx_web_frame_ptr || !M._psx_web_frame_serial) { log('WebGPU: runtime sem exportação de frame (build antiga).'); return; }
+  const presenter = await WebGpuPresenter.create(gpuCanvas).catch(() => undefined);
+  if (!presenter) { log('WebGPU indisponível; usando o canvas do SDL.'); gpuToggle.disabled = true; return; }
+  let lastSerial = -1;
+  const tick = () => {
+    const on = gpuToggle.checked;
+    gpuCanvas.style.display = on ? 'block' : 'none';
+    if (on && M.HEAPU8) {
+      const serial = M._psx_web_frame_serial!();
+      if (serial !== lastSerial) {
+        lastSerial = serial;
+        const ptr = M._psx_web_frame_ptr!(), w = M._psx_web_frame_w!(), h = M._psx_web_frame_h!();
+        if (ptr && w && h) {
+          presenter.scanlines = scanToggle.checked ? 0.35 : 0;
+          // HEAPU8 pode ser substituído quando a memória cresce: ler sempre via Module.HEAPU8.
+          presenter.present(M.HEAPU8.subarray(ptr, ptr + w * h * 4), w, h, gpuCanvas);
+        }
+      }
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 // ---- Module + injeção do bag2.js -------------------------------------------------------------

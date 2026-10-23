@@ -106,3 +106,13 @@ Nomes já confirmados (renomear no projeto Ghidra):
 | estágio | 231..245 (entrada 0) | `0x801DB1B8` | `FUN_800326F8` |
 Capturas de runtime (PSXRecomp) também mostram código executado em `0x80002000`/`0x8000D000` (kernel
 patchado pelo PsyQ) e `0x8004B000` (dentro do exe). Perfil AOT: `tools/recomp/aot/overlays.json`.
+
+## Containers 15–32 / 33–50 (dados de dança por personagem, modo 1 / modo 2)
+Dois blobs por container, ambos listas `{u32 len; u8 data[len]}` terminadas por `len = 0`:
+- `000.bin`: animações no mesmo formato de `notes/model-format.md` (ex.: 015/000 = chunk de 16308 bytes,
+  471 frames, step 2, 19 ossos) — a coreografia da música, anexada à lista de animações do modelo em
+  runtime (`FUN_800313EC` copia a tabela `+0x824` e chama `FUN_800123E8`).
+- `001.bin` (10180 ou 17428 bytes): chunks de faixas `{u16 count; u16 flags; count × 12 bytes}`
+  (`FUN_800140EC`, len arredondado a 4). Primeiro chunk de 015/001: 60 registros `{s16 a; s16 b; s16 0;
+  s16 c; s16 t; s16 0}` com `t` crescente (~23 por registro) e `a` decrescente — parece trilha de câmera
+  ou de eventos sincronizados com o tempo. Semântica em aberto.
