@@ -28,3 +28,5 @@ web/public/recomp/
 tools/recomp/bag2/generated-web/
 tools/recomp/bag2/build-web/
 tools/recomp/aot/work/
+tools/recomp/bag2/bios/
+tools/recomp/aot/work-static/

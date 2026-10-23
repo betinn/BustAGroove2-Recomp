@@ -10,7 +10,6 @@ type EmModule = {
   canvas: HTMLCanvasElement;
   psxWebAudioLocked: boolean;
   psxWebAudio?: { context: AudioContext; nextTime: number; sources: Set<unknown>; started: boolean; underruns: number };
-  mainScriptUrlOrBlob: string;
   locateFile: (path: string) => string;
   print: (t: string) => void;
   printErr: (t: string) => void;
@@ -248,7 +247,8 @@ window.Module = {
   noInitialRun: true,
   canvas,
   psxWebAudioLocked: true,
-  mainScriptUrlOrBlob: RUNTIME_BASE + 'bag2.js',    // as pthreads (workers) recarregam este script
+  // As pthreads (workers) recarregam o bag2.js pelo document.currentScript.src do <script> abaixo
+  // (mainScriptUrlOrBlob não está no INCOMING_MODULE_JS_API desta build).
   locateFile: (p: string) => RUNTIME_BASE + p,       // bag2.wasm etc.
   print: (t: string) => log(t),
   printErr: (t: string) => log('ERR: ' + t),

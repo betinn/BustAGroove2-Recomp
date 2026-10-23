@@ -1,0 +1,25 @@
+diff --git a/runtime/src/memory.c b/runtime/src/memory.c
+index 24fc93a..7efc5a3 100644
+--- a/runtime/src/memory.c
++++ b/runtime/src/memory.c
+@@ -245,8 +245,19 @@ void psx_kernel_bless_stats(uint64_t out[6]) {
+     out[5] = kbless_invalidations;
+ }
+ 
++/* BAG2 (tools/recomp/patches/psxrecomp-web-overlay-cpu-writes.patch): the
++ * overlay region [g_overlay_region_floor, RAM) was only ever marked dirty by CD
++ * DMA. Bust A Groove 2 decompresses its DBI_ overlays with the CPU (BPE at
++ * 0x80035DC4 -> 0x8008F6C0), so the pages never became dirty and the first
++ * dispatch into the overlay hit the FAIL-FAST unknown-dispatch halt. Mark CPU
++ * stores above the floor too, so dirty_ram_dispatch routes them to the
++ * interpreter exactly like a DMA-loaded overlay. */
++extern uint32_t g_overlay_region_floor;
+ static inline void dirty_ram_mark_kernel_write(uint32_t phys) {
+-    if (phys >= DIRTY_RAM_KERNEL_TRACK_BYTES) return;
++    if (phys >= DIRTY_RAM_KERNEL_TRACK_BYTES) {
++        if (phys >= g_overlay_region_floor) dirty_ram_mark_page(phys);
++        return;
++    }
+     dirty_ram_mark_page(phys);
+     kbless_note_write(phys);
+ }

@@ -32,7 +32,11 @@ classes = {
 images = []
 for cls, (addr, why) in classes.items():
     extents = []
+    seen = set()   # identical payloads at the same destination (e.g. containers 159..194 duplicate 87..122)
     for d in sorted((d for d in inv if d['base'] == cls), key=lambda d: d['abs_off']):
+        if d['sha256'] in seen:
+            continue
+        seen.add(d['sha256'])
         extents.append({
             'file': 'BUST2.BIN',
             'file_offset': 0,
@@ -55,9 +59,9 @@ profile = {
         # The three fixed destinations are built with lui/addiu right before the installer call.
         # FUN_8003235C: lui a1,0x801d ; addiu a1,a1,-0x3af0 (= 0x801CC510)  — verified below by `words`.
     ],
-    'expected_records': len(inv),
+    'expected_records': sum(len(i['extents']) for i in images),
     'strict_bounds': True,
     'static_output': 'generated/overlays_static.c',
 }
 json.dump(profile, open(out_path, 'w'), indent=1)
-print(f'{len(inv)} extents in {len(images)} images; disc sha256 {disc_sha}; -> {out_path}')
+print(f'{sum(len(i["extents"]) for i in images)} unique extents of {len(inv)} blocks in {len(images)} images; disc sha256 {disc_sha}; -> {out_path}')
