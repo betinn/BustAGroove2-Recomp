@@ -1,8 +1,14 @@
-# BustAGroove2Web — contexto para sessões do Claude
+# BustAGroove2-Recomp — contexto para sessões do Claude
 
 Bust A Groove 2 (USA, SLUS-01159, **PlayStation 1**) recompilado para .exe nativo de PC via PSXRecomp.
 Projeto pessoal, uso local. A versão para navegador (web/) foi **abandonada** em 2026-10-23; foco 100 % no exe.
-Responder e escrever docs/commits em pt-BR.
+Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp` (a pasta local ainda se
+chama `BustAGroove2Web`).
+
+**Android**: fork GPLv3 do DuckStation chamado **Polygonia** em `C:\Users\sem-m\source\GIT\Polygonia`
+(GitHub `betinn/Polygonia`, público). Tudo sobre ele em `notes/android-fork.md`: commit base, toolchain
+(`C:\tools\android-sdk`, JDK 11/21), bug do OpenBIOS, rename, Play. Keystore em
+`C:\Users\sem-m\Polygonia-keys\` (fora de qualquer repo).
 
 ## Regras fixas
 - **Nenhum dado do jogo entra no git**: .bin/.cue, XA/STR, `extracted/`, texturas extraídas/dumps, `saves/`,

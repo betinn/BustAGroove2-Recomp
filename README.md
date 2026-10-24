@@ -1,7 +1,12 @@
-# BustAGroove2Web
+# BustAGroove2-Recomp
 
-Reconstrução de **Bust A Groove 2 (USA, SLUS-01159)** para rodar no navegador, via engenharia reversa do
-executável original, WebAssembly e WebGPU. Projeto pessoal, uso local apenas.
+**Bust A Groove 2 (USA, SLUS-01159)** recompilado para `.exe` nativo de PC via PSXRecomp (60 fps, 9x
+interno, PGXP, widescreen 16:9, texturas HD). Projeto pessoal, uso local. O repositório nasceu como
+"BustAGroove2Web" (versão para navegador, abandonada em 2026-10-23; resta a pasta `web/`).
+
+**Android**: o jogo roda no celular/tablet pelo [Polygonia](https://github.com/betinn/Polygonia), fork
+GPLv3 do DuckStation (versão de 2021) com boot direto no jogo; detalhes em
+[notes/android-fork.md](notes/android-fork.md).
 
 > Correção importante: o jogo é de **PlayStation 1**, não PS2. CPU MIPS R3000A, GPU 2D com
 > rasterização de triângulos, GTE (coprocessador de geometria), SPU ADPCM, CD-ROM XA. Isso é
