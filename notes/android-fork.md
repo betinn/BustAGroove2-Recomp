@@ -87,9 +87,22 @@ Resultado: BAG2 boota, FMV de abertura a 15 fps (taxa do vídeo) com VPS 60.
 - Teste: APK de debug precisa de `adb install -t`; o Android 16 mostra aviso de página de 16 KB
   para apps depuráveis (NDK r21 não alinha a 16 KB; resolve com NDK r28 na modernização).
 
-## 6. Google Play: alvo de API
+## 6. Google Play: alvo de API e build moderna
 
 Desde 2026-08-31, apps novos e atualizações precisam de **targetSdk 36** (Android 16) para serem
-enviados à Play. O fork de 2021 mira 29, então a versão da loja exige modernizar a build (AGP 8, JDK 17,
-armazenamento por SAF/diretório do app em vez de `/sdcard/duckstation`, edge-to-edge, bibliotecas
-nativas alinhadas a 16 KB).
+enviados à Play, e bibliotecas nativas alinhadas a **16 KB**. Feito (commit "Moderniza a build Android"):
+- AGP 8.7.3 + Gradle 8.9 (JDK 17+; o JDK 21 da Microsoft em `C:\Program Files\Microsoft\jdk-21...`
+  serve como `JAVA_HOME`), compileSdk/targetSdk 36, minSdk 26, NDK `28.2.13676358`, CMake 3.22.1,
+  só `arm64-v8a`, `jniLibs.useLegacyPackaging=false`.
+- SDK extra em `C:\tools\android-sdk`: `platforms;android-36`, `build-tools;36.0.0`, `ndk;28.2.13676358`,
+  `cmake;3.22.1`.
+- Tropeços: `android:exported` obrigatório na `MainActivity`; `cubeb_aaudio.cpp` usa `decltype` de
+  símbolos AAudio acima do minSdk e o NDK 26+ transforma isso em erro ("is unavailable: introduced in
+  Android 28") -> `add_compile_definitions(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)` no `CMakeLists.txt`
+  (o cubeb faz `dlopen` em tempo de execução). O núcleo de 2021 compilou sem outras mudanças no clang 19.
+- Resultado no tablet: sem aviso de 16 KB, boot direto no jogo salvo.
+- Assinatura: keystore `C:\Users\sem-m\Polygonia-keys\polygonia-release.jks` (alias `polygonia`, RSA
+  4096, 30 anos) + `keystore.properties` com a senha gerada aleatoriamente; `LEIA-ME.txt` lá pede
+  backup. `app/build.gradle` lê o caminho de `POLYGONIA_KEYSTORE_PROPERTIES` (padrão = essa pasta).
+- Roteiro da Play e textos da ficha: `Polygonia/docs/play-store.md`; política de privacidade:
+  `Polygonia/docs/privacidade.md`.
