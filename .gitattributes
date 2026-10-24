@@ -1,2 +1,3 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Texto normalizado para LF no repositorio e no checkout (evita avisos de CRLF no Windows).
+* text=auto eol=lf
+*.bat text eol=crlf

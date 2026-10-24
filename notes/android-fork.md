@@ -112,8 +112,8 @@ enviados à Play, e bibliotecas nativas alinhadas a **16 KB**. Feito (commit "Mo
 - Fork: <https://github.com/betinn/Polygonia> (público, GPLv3, histórico completo do upstream até
   `81da9be` + commits do fork; remote `upstream` = stenzek/duckstation). Tag `v0.1.0` com release e o
   APK assinado anexado.
-- PC: <https://github.com/betinn/BustAGroove2-Recomp> (público; pasta local continua
-  `BustAGroove2Web`). `git ls-files` auditado: 77 arquivos, 583 KB, nenhum dado de jogo.
+- PC: <https://github.com/betinn/BustAGroove2-Recomp> (público; pasta local renomeada para
+  `BustAGroove2-Recomp` em 2026-10-24). `git ls-files` auditado: 77 arquivos, 583 KB, nenhum dado de jogo.
 - Artefatos: `C:\Users\sem-m\Polygonia-keys\artefatos\Polygonia-0.1-4197.{aab,apk}`
   (`versionCode` 4041 = nº de commits, `versionName` `0.1-4197`, assinatura SHA-256
   `717e5c32...f910db`). A release assinada foi instalada limpa no tablet e bootou o BAG2.
