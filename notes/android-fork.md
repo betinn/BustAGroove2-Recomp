@@ -117,6 +117,12 @@ enviados à Play, e bibliotecas nativas alinhadas a **16 KB**. Feito (commit "Mo
 - Artefatos: `C:\Users\sem-m\Polygonia-keys\artefatos\Polygonia-0.1-4197.{aab,apk}`
   (`versionCode` 4041 = nº de commits, `versionName` `0.1-4197`, assinatura SHA-256
   `717e5c32...f910db`). A release assinada foi instalada limpa no tablet e bootou o BAG2.
+- **v0.1.1** (2026-10-24, commit `cc308b8`): filtro de textura padrão `Nearest` (o xBR sem mistura
+  de bordas lavava as cores no Mali/Vulkan; chave `Polygonia/DefaultsApplied2` para instalações
+  antigas receberem o padrão), README/`docs/` revisados, `.gitattributes` com `eol=lf`. Artefatos
+  `Polygonia-keys\artefatos\Polygonia-v0.1.1.{aab,apk}` (`versionCode` 4043, `versionName` `v0.1.1`,
+  mesma assinatura). Cores do menu confirmadas no tablet com a build debug. Release no GitHub com o
+  APK; topics `playstation emulator android duckstation-fork gplv3`.
 - Pendências: fazer o teste fechado na Play (roteiro em `docs/play-store.md`); medir uma partida
   inteira na build release com OSD ligado (`Display/ShowFPS`) para confirmar 60 fps sem engasgo com
   buffer 2048; o One UI abre apps lançados via `adb` em janela pop-up (pelo launcher abre normal);
