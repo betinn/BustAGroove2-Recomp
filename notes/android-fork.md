@@ -106,3 +106,18 @@ enviados à Play, e bibliotecas nativas alinhadas a **16 KB**. Feito (commit "Mo
   backup. `app/build.gradle` lê o caminho de `POLYGONIA_KEYSTORE_PROPERTIES` (padrão = essa pasta).
 - Roteiro da Play e textos da ficha: `Polygonia/docs/play-store.md`; política de privacidade:
   `Polygonia/docs/privacidade.md`.
+
+## 7. Repositórios e artefatos (2026-10-24)
+
+- Fork: <https://github.com/betinn/Polygonia> (público, GPLv3, histórico completo do upstream até
+  `81da9be` + commits do fork; remote `upstream` = stenzek/duckstation). Tag `v0.1.0` com release e o
+  APK assinado anexado.
+- PC: <https://github.com/betinn/BustAGroove2-Recomp> (público; pasta local continua
+  `BustAGroove2Web`). `git ls-files` auditado: 77 arquivos, 583 KB, nenhum dado de jogo.
+- Artefatos: `C:\Users\sem-m\Polygonia-keys\artefatos\Polygonia-0.1-4197.{aab,apk}`
+  (`versionCode` 4041 = nº de commits, `versionName` `0.1-4197`, assinatura SHA-256
+  `717e5c32...f910db`). A release assinada foi instalada limpa no tablet e bootou o BAG2.
+- Pendências: fazer o teste fechado na Play (roteiro em `docs/play-store.md`); medir uma partida
+  inteira na build release com OSD ligado (`Display/ShowFPS`) para confirmar 60 fps sem engasgo com
+  buffer 2048; o One UI abre apps lançados via `adb` em janela pop-up (pelo launcher abre normal);
+  xBR completo indisponível no Mali/Vulkan (testar renderer OpenGL se quiser o filtro cheio).
