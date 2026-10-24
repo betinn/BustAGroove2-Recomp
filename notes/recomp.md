@@ -411,3 +411,40 @@ só no RGB, mantendo o alfa discreto).
 de várias partes/paletas saem como peças separadas (editáveis, não personagens reconstruídos); animação de paleta
 gera vários ids da mesma textura; o pack só casa a região USA (hash dos pixels nativos). Texturas vistas depois da
 captura (palcos não visitados) continuam originais até nova rodada de dump + `hd_textures.py` (incremental).
+
+### 12.1 Travamento na partida e Real-ESRGAN (2026-10-23, noite)
+**Sintoma.** Com o pack 4x, a partida caía para 13–35 fps com som engasgando (`render_busy` 95–97 %), piorando com o
+tempo; a abertura, menus e os primeiros ~50 s de partida ficavam a 60 fps. Medido com uma build de diagnóstico
+(`tools/recomp/bag2/build-debug/`, `-DPSX_DEBUG_TOOLS=ON`: servidor TCP na porta 4370, comandos `hd_textures`,
+`press`, `present_shot`, `quit`) e o script de medição `bag2perf.py` (lança o exe, aperta Start/X via TCP e amostra
+a cada 10 s os contadores do mod e a linha de fps do log).
+
+**Causa.** Dois caches do mod HD com tamanho fixo pequeno demais para este jogo:
+- `gpu_hd_textures.cpp`: `kCompositionCount = 256`, `kCompositionBudget = 64 MiB`. Quando um draw não é coberto
+  por **um único** PNG do pack (lote de primitivas abrangendo vários uploads, ou dois recortes do pack casando o
+  mesmo draw), o mod compõe por software um bitmap na escala do pack para aquele retângulo UV exato ("composição",
+  assinatura = página + retângulo UV + hash da VRAM nativa + paleta + partes). Um personagem dançando gera milhares
+  de assinaturas distintas; com 256 entradas o cache girava e refazia 150–3 200 composições/s (até 14 Mpx/s na
+  thread de render).
+- `gpu_gl_renderer.c`: `HD_GL_CACHE_CAP 256`, `HD_GL_CACHE_BUDGET 128 MiB`. Cada upload GL de imagem HD expulsava
+  outra (`gl_uploads == gl_evictions` sempre, 200–1 400/s).
+Mesmo com o pack 2x o quadro era igual (3 200 composições/s): não é peso de pixel, é *churn* de cache.
+
+**Correção.** Patch local no framework (`tools/recomp/patches/psxrecomp-hd-cache-caps.patch`, aplicado em
+`C:\tools\psxrecomp`): composições 2048 entradas / 512 MiB, cache GL 4096 entradas / 1 GiB. Resultado na mesma
+partida (xBR 4x): composições refeitas 7–280 por 10 s, uploads GL ~10 por 10 s, `render_busy` 23–44 %, 60 fps
+estáveis. O processo passa a usar ~1 GB de RAM. Reaplicar o patch se o framework for atualizado
+(`git -C C:\tools\psxrecomp apply <patch>`), depois `-Step runtime`.
+
+**Dedupe dos dumps.** O dumper publica a união dos retângulos usados a cada ~1 s e a união só cresce, então a mesma
+textura+paleta aparece várias vezes com recortes aninhados (710 arquivos = 467 identidades; 238 recortes contidos
+num maior). Dois recortes casando o mesmo draw = `count > 1` no matcher = composição em vez do caminho rápido
+(imagem única no cache GL). `hd_textures.py` agora ignora recortes contidos por padrão (`--no-dedupe` desliga).
+
+**Real-ESRGAN.** `--filter esrgan` usa `realesrgan-ncnn-vulkan.exe` (release oficial v0.2.5.0 de
+xinntao/Real-ESRGAN, em `C:\tools\realesrgan\bin`, GPU via Vulkan; 710 texturas 4x em ~3,5 min na RTX 3070 Ti),
+modelo `realesr-animevideov3` (cartoon; `realesrgan-x4plus` é mais "foto"). Fluxo por textura: RGB com os pixels
+recortados preenchidos pela cor do vizinho opaco (dilatação) -> ESRGAN -> alfa do xBR (valores exatos 0/143/255,
+bordas diagonais suaves) -> RGB zerado onde alfa = 0. Sem isso a rede devolve alfa contínuo (109 valores numa
+textura STP) e franja escura nas bordas. Ganho visual claramente maior que o xBR (bordas vetoriais, gradientes sem
+dithering) — ver `tools/recomp/logs/cap-esr-*.png`. Pack final: 472 PNG, ~99 MB.

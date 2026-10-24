@@ -1,0 +1,37 @@
+diff --git a/runtime/src/gpu_gl_renderer.c b/runtime/src/gpu_gl_renderer.c
+index 15a853a2..92bcc4ef 100644
+--- a/runtime/src/gpu_gl_renderer.c
++++ b/runtime/src/gpu_gl_renderer.c
+@@ -3497,8 +3497,10 @@ static int   s_tb_mask = 0, s_tb_filter = 0;
+ static GLuint s_tb_bank_tex;
+ static GLuint s_tb_hd_tex;
+ 
+-#define HD_GL_CACHE_CAP 256
+-#define HD_GL_CACHE_BUDGET (128u * 1024u * 1024u)
++/* BustAGroove2Web: 256 entries / 128 MiB thrashed on Bust A Groove 2 (every
++ * upload evicted another one during a match, render thread at 97%). */
++#define HD_GL_CACHE_CAP 4096
++#define HD_GL_CACHE_BUDGET (1024u * 1024u * 1024u)
+ typedef struct HdGlTexture {
+     uint64_t generation, key;
+     uint64_t last_use;
+diff --git a/runtime/src/gpu_hd_textures.cpp b/runtime/src/gpu_hd_textures.cpp
+index 62811dd9..b223a95a 100644
+--- a/runtime/src/gpu_hd_textures.cpp
++++ b/runtime/src/gpu_hd_textures.cpp
+@@ -19,10 +19,13 @@
+ 
+ namespace {
+ constexpr size_t kVramWords = 1024u * 512u;
+-constexpr size_t kCompositionBudget = 64u * 1024u * 1024u;
++/* BustAGroove2Web: 64 MiB / 256 entries thrashed on Bust A Groove 2 (3200
++ * composition rebuilds per second in a match); the working set of draw
++ * signatures of a dancing character is in the thousands. */
++constexpr size_t kCompositionBudget = 512u * 1024u * 1024u;
+ /* A tiled scene can use dozens of small compositions per frame. The byte
+  * budget bounds memory; a sixteen-entry limit thrashed below that budget. */
+-constexpr size_t kCompositionCount = 256;
++constexpr size_t kCompositionCount = 2048;
+ constexpr uint32_t kCompositionDimension = 8192;
+ constexpr size_t kMaxParts = 64;
+ struct Composition {

@@ -36,10 +36,14 @@ Responder e escrever docs/commits em pt-BR.
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
-  `mods/preloaded/packages/psx.enhancement.hd-textures/`; 710 texturas capturadas e ampliadas 4x (xBR) por
-  `tools/hd_textures.py` em `build/mods/texture-packs/SLUS-01159/replacements/` (fora do git). Para capturar mais
-  palcos: `build/mods/state.toml` com `dump = "true"`, `replacements = "false"` (strings), jogar, fechar a janela
-  (não `Stop-Process`, senão perde o último lote), rodar o script de novo (incremental). Notas §12.
+  `mods/preloaded/packages/psx.enhancement.hd-textures/`; 710 dumps (467 identidades) ampliados 4x com Real-ESRGAN
+  (`tools/hd_textures.py --filter esrgan`, binário em `C:/tools/realesrgan/bin`, alfa via xBR, recortes aninhados
+  deduplicados) em `build/mods/texture-packs/SLUS-01159/replacements/` (fora do git). Para capturar mais palcos:
+  `build/mods/state.toml` com `dump = "true"`, `replacements = "false"` (strings), jogar, fechar a janela (não
+  `Stop-Process`, senão perde o último lote), rodar o script de novo (incremental). Notas §12 e §12.1.
+- **Framework patcheado localmente** (`tools/recomp/patches/psxrecomp-hd-cache-caps.patch`): caches do mod HD
+  (composições e imagens GL) ampliados; sem isso a partida trava (13–35 fps). Reaplicar se `C:/tools/psxrecomp`
+  for atualizado. Medição de desempenho: `build-debug/` (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370) + `tools/recomp/bag2perf.py`.
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build ...` e `cmake --build ... --target
   psx-runtime` direto (flags na linha 50 do script) com o PATH de `env.ps1`.

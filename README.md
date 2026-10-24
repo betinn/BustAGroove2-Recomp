@@ -20,9 +20,11 @@ Versões prontas em `releases/` (fora do git; só `releases/README.md` é versio
   menus, abertura e HUD em proporção original). Plugin em `tools/recomp/bag2/src/bag2_mods.c` + pacote
   `mods/preloaded/`; detalhes em [notes/recomp.md](notes/recomp.md) §11.
 - `releases/v1.3.0-texturas-hd/` — **atual**: tudo da v1.2.0 + **pacote de texturas HD** (mod embutido
-  `psx.enhancement.hd-textures`, formato DuckStation): 710 texturas do jogo capturadas e ampliadas 4x com xBR
-  (`tools/hd_textures.py`) em `mods/texture-packs/SLUS-01159/replacements/` — HUD, menus, palcos e roupas mais
-  nítidos; só OpenGL. Detalhes em [notes/recomp.md](notes/recomp.md) §12.
+  `psx.enhancement.hd-textures`, formato DuckStation): 472 texturas do jogo capturadas e ampliadas 4x com
+  **Real-ESRGAN** (`tools/hd_textures.py --filter esrgan`, alfa preservado) em
+  `mods/texture-packs/SLUS-01159/replacements/` — HUD, menus, retratos, palcos e roupas nítidos; só OpenGL.
+  Exige o patch local do framework (`tools/recomp/patches/psxrecomp-hd-cache-caps.patch`) para manter 60 fps.
+  Detalhes em [notes/recomp.md](notes/recomp.md) §12 e §12.1.
 
 Executar: `Jogar.bat` (usa o `.cue` da pasta do disco; aceita outro caminho como argumento) ou
 `Bust_A_Groove_2_Recompiled.exe --game game.toml --disc "<arquivo.cue>"`.

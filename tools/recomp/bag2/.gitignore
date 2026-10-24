@@ -4,3 +4,4 @@ generated/
 saves/
 overlay_captures.json
 *.log
+build-debug/
