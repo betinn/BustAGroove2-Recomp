@@ -1,0 +1,5 @@
+numpy==2.5.4
+pillow==13.0.0
+scipy==1.18.1
+moderngl==5.13.0
+imageio==2.38.1

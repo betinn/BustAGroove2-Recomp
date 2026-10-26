@@ -56,6 +56,13 @@ Unidades: personagem tem ~30000 de altura. Eixo Y aponta para baixo no PS1.
 | 0x9C, 0xA0 | u32 nGruposA (NCDS/NCDT), nGruposB (luz especular `ll`/`cdp`) |
 | 0xA4 | u32 nRefs: `u32 {src:8, dst:16<<16}` copia vértice local → buffer global do modelo |
 | 0xA8 | u32 nUses: `u32 {src:16, dst:16<<16}` copia buffer global → local (vértices compartilhados entre ossos) |
+
+Slot do buffer global = **nó × 256 + vértice local** (um nó posterior pode sobrescrever o slot de outro,
+então a ordem dos nós importa). Os `uses` estendem o array local: `dst` = nVerts, nVerts+1, ...; as
+primitivas indexam esse array estendido. Os índices de **normal** das primitivas são globais no modelo
+(concatenação das normais de todos os nós, na ordem dos nós): juntas reusam a normal do osso vizinho,
+transformada pela matriz daquele osso. HEAT: nós 20–23 (sem pai) são mãos alternativas, nós 24–37 (tipo 4)
+um esqueleto de sombra. Leitor em Python: `tools/remake/bag2model.py` + `rig.py` (`notes/remake-visual.md`).
 | 0xAC..0xEA | 32 × s16 contagem de cada lista de primitivas |
 | 0x120 | início dos dados |
 
