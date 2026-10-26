@@ -54,6 +54,14 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build ...` e `cmake --build ... --target
   psx-runtime` direto (flags na linha 50 do script) com o PATH de `env.ps1`.
+- **Remake do HEAT no jogo** (prova de conceito, `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de
+  filtro em `FUN_80029D4C`, listado em `[recompiler] mod_function_entry_funcs`), pacote
+  `mods/preloaded/packages/bag2.remake.heat`, asset `mods/remake/heat.bin` gerado por
+  `tools/remake/export_heat.py` (fora do git). Exige `render_thread = false` (já no `game.toml`).
+  Testes automáticos na build-debug: `tools/remake/game_session.py`, `game_sidebyside.py`.
+- As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
+  antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e
+  `_deps/*-build`, `_deps/*-subbuild` e configurar de novo.
 - Sem servidor TCP de debug na build (`PSX_DEBUG_TOOLS=OFF`): testes pelo computer-use. Toque curto de tecla não
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 

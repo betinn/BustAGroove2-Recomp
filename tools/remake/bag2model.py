@@ -93,32 +93,36 @@ def parse_tim(b: bytes) -> Tim:
 
 
 # ---------------------------------------------------------------- modelo
-# (palavras, quad?, lit?, offset normal/cor, uv offsets por vértice, tex, clut, overlay: (quad, uv, normal offset))
+# (palavras, quad?, lit?, offset normal/cor, uv offsets por vértice, tex, clut, overlay: (uv, offset das normais))
+# Quads: vértices v0..v3 = bytes 1, 2, 3, 0 da palavra 0; UV, normais e cores ficam em sequência v0, v1, v2, v3,
+# mas a ordem na GPU é v0, v3, v1, v2 (FUN_80036874 põe o vértice do byte 0 em xy1), então a diagonal
+# do quad é v1-v3: triângulos (v0, v1, v3) e (v3, v1, v2) — ver QUAD_TRIS.
 L = [
     (2, 0, 1, 4, None, None, None, None), (2, 1, 1, 4, None, None, None, None),
-    (4, 0, 1, 4, [8, 10, 12], 14, 15, None), (4, 1, 1, 4, [6, 12, 8, 10], 14, 15, None),
-    (5, 0, 1, 4, [12, 14, 16], 18, 19, None), (6, 1, 1, 4, [12, 18, 14, 16], 20, 21, None),
+    (4, 0, 1, 4, [8, 10, 12], 14, 15, None), (4, 1, 1, 4, [6, 8, 10, 12], 14, 15, None),
+    (5, 0, 1, 4, [12, 14, 16], 18, 19, None), (6, 1, 1, 4, [12, 14, 16, 18], 20, 21, None),
     (3, 0, 1, 4, None, None, None, None), (3, 1, 1, 4, None, None, None, None),
-    (6, 0, 1, 4, None, 22, 23, ([16, 18, 20], 10)), (8, 1, 1, 4, None, 28, 29, ([20, 26, 22, 24], 12)),
-    (4, 0, 0, 4, [8, 10, 12], 14, 15, None), (5, 1, 0, 4, [8, 14, 10, 12], 16, 17, None),
-    (5, 0, 1, 4, None, 18, 19, ([12, 14, 16], None)), (6, 1, 1, 4, None, 20, 21, ([12, 18, 14, 16], None)),
-    (4, 0, 0, 4, None, None, None, None), (5, 1, 1, 4, None, 16, 17, ([8, 14, 10, 12], None)),
+    (6, 0, 1, 4, None, 22, 23, ([16, 18, 20], 10)), (8, 1, 1, 4, None, 28, 29, ([20, 22, 24, 26], 12)),
+    (4, 0, 0, 4, [8, 10, 12], 14, 15, None), (5, 1, 0, 4, [8, 10, 12, 14], 16, 17, None),
+    (5, 0, 1, 4, None, 18, 19, ([12, 14, 16], None)), (6, 1, 1, 4, None, 20, 21, ([12, 14, 16, 18], None)),
+    (4, 0, 0, 4, None, None, None, None), (5, 1, 1, 4, None, 16, 17, ([8, 10, 12, 14], None)),
     (2, 0, 0, 4, None, None, None, None), (2, 1, 0, 4, None, None, None, None),
     (2, 0, 0, 4, None, None, None, None), (2, 1, 0, 4, None, None, None, None),
     (3, 0, 1, 4, None, None, None, None), (4, 1, 1, 4, None, None, None, None),
     (2, 0, 0, 4, None, None, None, None), (2, 1, 0, 4, None, None, None, None),
     (4, 0, 0, 4, None, None, None, None), (5, 1, 0, 4, None, None, None, None),
-    (6, 0, 0, 4, [16, 18, 20], 22, 23, None), (8, 1, 0, 4, [20, 26, 22, 24], 28, 29, None),
-    (6, 0, 0, 4, None, 22, 23, ([16, 18, 20], None)), (8, 1, 0, 4, None, 28, 29, ([20, 26, 22, 24], None)),
+    (6, 0, 0, 4, [16, 18, 20], 22, 23, None), (8, 1, 0, 4, [20, 22, 24, 26], 28, 29, None),
+    (6, 0, 0, 4, None, 22, 23, ([16, 18, 20], None)), (8, 1, 0, 4, None, 28, 29, ([20, 22, 24, 26], None)),
     (4, 0, 0, 4, None, None, None, None), (5, 1, 0, 4, None, None, None, None),
 ]
+QUAD_TRIS = [[0, 1, 3], [3, 1, 2]]
 GOURAUD = {4, 5, 6, 7, 8, 9, 12, 13, 20, 21, 24, 25, 26, 27, 28, 29, 30, 31}
 
 
 @dataclass
 class Prim:
     lst: int
-    verts: list[int]                 # quad: v0,v1,v2,v3 -> tris 012 e 132
+    verts: list[int]                 # quad: v0,v1,v2,v3 -> triângulos QUAD_TRIS
     normals: list[int] | None = None
     colors: list[int] | None = None
     uv: list[tuple[int, int]] | None = None
@@ -136,6 +140,7 @@ class Mesh:
     refs: list[tuple[int, int]]      # local src -> global dst
     uses: list[tuple[int, int]]      # global src -> local dst
     prims: list[Prim]
+    base_index: int = 0              # MeshHeader+0x98 (identifica o mesh também na RAM do jogo)
 
 
 @dataclass
@@ -203,7 +208,7 @@ def _parse_mesh(b: bytes, p: int):
             prims.append(pr)
             q += words * 4
     mesh = Mesh(verts, np.concatenate(normals) if normals else np.zeros((0, 3)),
-                np.array(ncol, np.float32).reshape(-1, 3), refs, uses, prims)
+                np.array(ncol, np.float32).reshape(-1, 3), refs, uses, prims, u32(p + 0x98))
     return mesh, q
 
 

@@ -1,0 +1,23 @@
+format_version = 5
+id = "bag2.remake.heat"
+version = "1.0.0"
+name = "Remake visual do HEAT (experimental)"
+author = "BustAGroove2-Recomp"
+description = "Troca o desenho do HEAT por uma malha suavizada (Phong Tessellation) com texturas HD e luz nova. Os outros personagens e palcos continuam originais."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-01159"
+
+[[feature]]
+id = "heat-remake"
+name = "Remake do HEAT"
+description = "Experimental. Desligue para o HEAT original."
+group = "Visual"
+default_enabled = true
+
+[[plugin]]
+feature = "heat-remake"
+id = "bag2.heat_remake"

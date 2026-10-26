@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
-from bag2model import Node, node_matrices
+from bag2model import QUAD_TRIS, Node, node_matrices
 
 # Modos de material por face
 BASE, OVER, TEXONLY = 0, 1, 2
@@ -34,12 +34,21 @@ class Rig:
     layer: np.ndarray       # (F,) camada de textura (-1 = sem)
     mode: np.ndarray        # (F,) BASE / OVER / TEXONLY
     layers: list            # [(tex, clut)] de cada camada
+    order: np.ndarray | None = None  # (F,) ordem de inserção na OT do jogo (nó, lista na ordem de FUN_80029588, prim)
+    zpair: np.ndarray | None = None  # (F, 2) vértices cujo Z dá o slot da OT no jogo: (z0 + z1) >> 3
 
 
-def build_rig(nodes: list[Node], skip: set[int] = frozenset()) -> Rig:
+# Ordem em que FUN_80029588 percorre as 32 listas (contagens em 0xAC.. na ordem das chamadas)
+GAME_LIST_ORDER = [0, 6, 2, 4, 8, 1, 7, 3, 5, 9] + list(range(10, 32))
+
+
+def build_rig(nodes: list[Node], skip: set[int] = frozenset(), two_sided: bool = False, dedup: bool = True) -> Rig:
+    """two_sided=True mantém faces com os mesmos vértices em ordem oposta (painel de dois lados): o jogo
+    faz culling por NCLIP, então cada lado é uma face. Com False (offline, sem culling) fica só uma."""
     owner, local = [], []
     slots: dict[int, int] = {}
     tris, fnode, nrm, base, over, uv, layer, mode = [], [], [], [], [], [], [], []
+    order, zpair = [], []
     gn, gno, gc = [], [], []
     for nd in nodes:
         if nd.mesh is not None:
@@ -63,17 +72,25 @@ def build_rig(nodes: list[Node], skip: set[int] = frozenset()) -> Rig:
             slots[dst] = ids[src]
         if nd.index in skip:
             continue
+        list_pos: dict[int, int] = {}
         for p in m.prims:
+            pi = list_pos.get(p.lst, 0); list_pos[p.lst] = pi + 1
             q = p.overlay or p
-            corners = [[0, 1, 2]] if len(p.verts) == 3 else [[0, 1, 2], [1, 3, 2]]
+            corners = [[0, 1, 2]] if len(p.verts) == 3 else QUAD_TRIS
             for c in corners:
                 vid = [ids[p.verts[k]] for k in c]
-                key = tuple(sorted(vid))
-                if key in seen or len(set(vid)) < 3:   # faces duplicadas/degeneradas quebram a topologia
+                if two_sided:   # mesma face = mesma ordem cíclica
+                    i0 = vid.index(min(vid)); key = tuple(vid[i0:] + vid[:i0])
+                else:
+                    key = tuple(sorted(vid))
+                if len(set(vid)) < 3 or (dedup and key in seen):   # duplicadas/degeneradas quebram a topologia
                     continue
                 seen.add(key)
                 tris.append(vid)
                 fnode.append(nd.index)
+                order.append((nd.index, GAME_LIST_ORDER.index(p.lst), pi))
+                # slot da OT: z(v0) + z(v1) nos triângulos, z(v0) + z(v2) nos quads (FUN_80036230 / FUN_80036874)
+                zpair.append((ids[p.verts[0]], ids[p.verts[1 if len(p.verts) == 3 else 2]]))
 
                 def corner_color(pr, k):
                     if pr.normals is not None:
@@ -98,7 +115,8 @@ def build_rig(nodes: list[Node], skip: set[int] = frozenset()) -> Rig:
                     layer.append(-1); uv.append([(0, 0)] * 3); mode.append(BASE)
     return Rig(np.array(owner), np.array(local, float), np.array(tris), np.array(fnode),
                np.array(nrm), gn, np.array(gno), np.array(base, np.float32), np.array(over, np.float32),
-               np.array(uv, np.float32), np.array(layer), np.array(mode), list(layers))
+               np.array(uv, np.float32), np.array(layer), np.array(mode), list(layers),
+               np.array(order), np.array(zpair))
 
 
 def pose_positions(rig: Rig, nodes: list[Node], pose=None):

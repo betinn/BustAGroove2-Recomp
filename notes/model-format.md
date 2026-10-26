@@ -52,10 +52,12 @@ Unidades: personagem tem ~30000 de altura. Eixo Y aponta para baixo no PS1.
 | 0x00 | type = 1 |
 | 0x04..0x90 | ponteiros preenchidos em runtime (zero no arquivo) |
 | 0x94 | u32 nVerts |
-| 0x98 | u32 índice-base nos vértices globais do modelo |
+| 0x98 | u32 índice-base das normais (soma das normais dos nós anteriores; identifica o mesh também na RAM) |
 | 0x9C, 0xA0 | u32 nGruposA (NCDS/NCDT), nGruposB (luz especular `ll`/`cdp`) |
 | 0xA4 | u32 nRefs: `u32 {src:8, dst:16<<16}` copia vértice local → buffer global do modelo |
 | 0xA8 | u32 nUses: `u32 {src:16, dst:16<<16}` copia buffer global → local (vértices compartilhados entre ossos) |
+| 0xAC..0xEA | 32 × s16 contagem de cada lista de primitivas |
+| 0x120 | início dos dados |
 
 Slot do buffer global = **nó × 256 + vértice local** (um nó posterior pode sobrescrever o slot de outro,
 então a ordem dos nós importa). Os `uses` estendem o array local: `dst` = nVerts, nVerts+1, ...; as
@@ -63,16 +65,20 @@ primitivas indexam esse array estendido. Os índices de **normal** das primitiva
 (concatenação das normais de todos os nós, na ordem dos nós): juntas reusam a normal do osso vizinho,
 transformada pela matriz daquele osso. HEAT: nós 20–23 (sem pai) são mãos alternativas, nós 24–37 (tipo 4)
 um esqueleto de sombra. Leitor em Python: `tools/remake/bag2model.py` + `rig.py` (`notes/remake-visual.md`).
-| 0xAC..0xEA | 32 × s16 contagem de cada lista de primitivas |
-| 0x120 | início dos dados |
 
 Dados, em ordem: `nVerts × SVECTOR{s16 x,y,z,pad}`; grupos de normais
 `{u8 r,g,b,code; u32 n; n × SVECTOR normal}` (índice global de normal = posição na concatenação; a cor do
 grupo é a cor do material); `nRefs` u32; `nUses` u32; depois as 32 listas.
 
 ### Listas de primitivas
-Palavra 0 de todo registro: `v3 | v0<<8 | v1<<16 | v2<<24` (índices de vértice, 8 bits; quad = v0,v1,v2,v3 →
-triângulos 012 e 132). UV são bytes (u,v) relativos à origem da textura; quads guardam na ordem uv0, uv2, uv3, uv1.
+Palavra 0 de todo registro: `v3 | v0<<8 | v1<<16 | v2<<24` (índices de vértice, 8 bits). **Quads:** a ordem
+dos vértices na GPU é **v0, v3, v1, v2** (as rotinas de preenchimento, ex. `FUN_80036874`, põem o vértice do
+byte 0 em xy1), então os triângulos que a GPU desenha são (v0, v3, v1) e (v3, v1, v2): a diagonal é v1–v3.
+UV são bytes (u,v) relativos à origem da textura. Nos quads a tabela abaixo usa o índice da GPU: "uv0, uv2,
+uv3, uv1" em sequência = UV de v0, v1, v2, v3 em sequência (o mesmo vale para normais e cores). Corrigido em
+2026-10-26: a leitura antiga (GPU = v0, v1, v2, v3, triângulos 012 e 132) cruzava a diagonal e embaralhava as
+texturas dos quads (calça, mangas, sapatos, óculos do HEAT). Com a ordem certa a malha do HEAT é fechada e
+manifold (0 arestas abertas). Slot da OT: `(z0 + z1) >> 3` com v0, v1 nos triângulos e v0, v2 nos quads.
 `tex` = byte: bits 0–4 índice de textura, bits 5–7 semitransparência. `clut` = byte: linha da CLUT (+y).
 
 | k | contagem em | palavras | tipo | cor | layout |

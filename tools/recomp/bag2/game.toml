@@ -33,6 +33,9 @@ bios_config = "C:/tools/psxrecomp/bios/OpenBIOS.toml"   # perfil de BIOS (modelo
 out_dir   = "generated"
 strict    = true
 discovery = "whole-image"
+# Hook do remake do HEAT (src/bag2_heat.c): entrada de FUN_80029D4C, que desenha a árvore de ossos de
+# um personagem. Inerte sem o plugin bag2.heat_remake ativo (notes/remake-visual.md §no jogo).
+mod_function_entry_funcs = ["0x80029D4C"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"
@@ -50,7 +53,9 @@ internal_resolution        = "4k"           # 9x (2160 linhas) resolvido para 10
 resolution_reference_lines = 240
 window_width               = 1920          # janela inicial (F11 = tela cheia)
 vsync                      = "on"
-render_thread              = true          # GL numa thread própria: stalls do driver não travam o jogo
+render_thread              = false         # desligado pelo remake do HEAT (src/bag2_heat.c): cada troca de banco de
+                                           # textura devolve o contexto GL à thread do jogo e copia a VRAM (≈40 fps);
+                                           # sem a thread o jogo segue a 60. true = GL numa thread própria
 # Geometria/texturas: PGXP corrige o "tremor" dos vértices e a distorção afim das texturas do PS1.
 geometry_correction   = true
 perspective_texturing = true

@@ -53,6 +53,8 @@ endif()
 
 # Plugins estaticos do jogo (widescreen 16:9), selecionados pelo pacote em mods/preloaded.
 target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_mods.c")
+# Remake do HEAT (prova de conceito): hook no desenho do personagem, pacote mods/preloaded/.../bag2.remake.heat.
+target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_heat.c")
 
 foreach(_cfg game.toml settings.toml)
     add_custom_command(TARGET psx-runtime POST_BUILD
