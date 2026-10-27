@@ -1,0 +1,293 @@
+# Patch local do PSXRecomp para o remake (fase 1, notes/remake-plano.md): API de desenho de host para plugins.
+# Aplicar em C:/tools/psxrecomp depois de psxrecomp-hd-cache-caps.patch e psxrecomp-texture-bank-render-thread.patch:
+#   git apply --ignore-whitespace <este arquivo>
+# Um pacote marcador na arena de pacotes (GP0 00h com "HDR") vira RTH_HOSTDRAW no fluxo da thread de render;
+# no replay o callback do plugin desenha no FBO de alta resolução (e no espelho da tela larga).
+--- a/runtime/include/mod_plugins.h
++++ b/runtime/include/mod_plugins.h
+@@ -184,6 +184,46 @@
+  * precise perspective rendering without transient host-pointer side tables.
+  * Allocate during activation; do not mix stock game packets into this arena. */
+ uint32_t psx_mod_alloc_texture_packet_memory(uint32_t size, uint32_t alignment);
++/* bag2 (patch local psxrecomp-host-draw.patch): desenho de host. Um pacote marcador na arena acima,
++ * ligado na OT como qualquer pacote, faz o renderizador GL chamar um callback do plugin na posição
++ * dele na ordem de desenho, com o FBO de alta resolução ligado. Layout na arena:
++ *   u32 tag (tamanho 1, como qualquer nó da OT), u32 PSX_MOD_HOST_DRAW_NOP (GP0 00h: NOP para o PS1),
++ *   PSXModHostDrawHeader, e logo depois `bytes` de payload (fora do nó: a GPU emulada não os lê).
++ * O payload é copiado por valor no fluxo da thread de render: nada de ponteiros de host na RAM do
++ * jogo, e savestate/rewind restauram a arena junto com o resto. Só OpenGL. */
++#define PSX_MOD_HOST_DRAW_NOP   0x00484452u   /* GP0 00h com "HDR" nos 24 bits baixos */
++#define PSX_MOD_HOST_DRAW_MAGIC 0x31504448u   /* "HDP1" */
++#define PSX_MOD_HOST_DRAW_MAX_BYTES (64u * 1024u)
++typedef struct PSXModHostDrawHeader {
++    uint32_t magic;          /* PSX_MOD_HOST_DRAW_MAGIC */
++    uint16_t id;             /* callback registrado (1..15) */
++    uint16_t flags;          /* livre para o plugin (repassado ao callback) */
++    uint32_t bytes;          /* tamanho do payload (múltiplo de 4, até PSX_MOD_HOST_DRAW_MAX_BYTES) */
++    int32_t  bbox[4];        /* x0, y0, x1, y1 na tela do PS1 (antes do deslocamento de desenho);
++                                x1 < x0 = nada visível (o callback roda só com pass = -1) */
++} PSXModHostDrawHeader;
++typedef struct PSXModHostDrawTarget {
++    uint32_t fbo;            /* framebuffer ligado (cor RGBA8 + profundidade/stencil 24/8); 0 em pass -1 */
++    int32_t  pass;           /* 0 superfície canônica (VRAM em alta resolução), 1 espelho da tela larga,
++                                -1 sem alvo (marcador sem nada visível: só preparar recursos) */
++    int32_t  scale;          /* pixels de host por pixel do PS1 */
++    int32_t  viewport[4];    /* já aplicado */
++    int32_t  scissor[4];     /* recorte já aplicado (pixels de host): área de desenho do jogo */
++    float    x_off, x_half;  /* posição na VRAM (pixels do PS1, já com o deslocamento de desenho) ->
++                                NDC: x = (vx + shift + x_off) / x_half - 1, y = (vy + shift) / y_half - 1 */
++    float    y_half, shift;
++    int32_t  draw_off_x, draw_off_y;   /* deslocamento de desenho (GP0 E5h) do pacote */
++    int32_t  area[4];        /* área de desenho (x1, y1, x2, y2 inclusivos, pixels do PS1 na VRAM) */
++    uint16_t flags;          /* do cabeçalho */
++    uint16_t alpha_is_mask;  /* 1: o alfa da cor é o bit 15 do PS1 (escrever 0 em pixel opaco comum) */
++    void* (*get_proc)(const char* name);   /* carregador de funções GL */
++} PSXModHostDrawTarget;
++/* Roda na thread que tem o contexto GL (a de render, ou a do jogo num ponto de sincronia). O estado
++ * GL que o renderizador espera (programa, VAO, buffers, texturas das unidades 0..7, blend,
++ * profundidade, stencil, cull, máscara de cor, recorte) é restaurado depois; o callback não pode
++ * trocar o FBO ligado nem o viewport. */
++typedef void (*PSXModHostDrawFn)(const PSXModHostDrawTarget* target, const void* payload, uint32_t bytes);
++int psx_mod_register_host_draw(uint16_t id, PSXModHostDrawFn fn);
+ uint8_t psx_mod_read_byte(uint32_t address);
+ void psx_mod_write_byte(uint32_t address, uint8_t value);
+ uint16_t psx_mod_read_half(uint32_t address);
+--- a/runtime/include/mod_texture_banks.h
++++ b/runtime/include/mod_texture_banks.h
+@@ -7,6 +7,12 @@
+ uint16_t mod_texture_packet_bank(uint32_t source, const uint32_t* words, uint32_t count);
+ int mod_texture_packet_precision(uint32_t source, float q[3], float xy[6]);
+ int mod_texture_bank_batchable(int immutable, int mask_check, int semi);
++/* bag2 (patch local): marcador de desenho de host (mod_plugins.h, PSX_MOD_HOST_DRAW_NOP). gpu.c chama
++ * no GP0 00h vindo da arena; devolve 1 se era um marcador válido (repassado ao renderizador). */
++int mod_host_draw_marker(uint32_t source, int32_t draw_off_x, int32_t draw_off_y);
++struct PSXModHostDrawTarget;
++typedef void (*PSXModHostDrawFnInternal)(const struct PSXModHostDrawTarget*, const void*, uint32_t);
++PSXModHostDrawFnInternal mod_host_draw_fn(uint16_t id);
+ #ifdef __cplusplus
+ }
+ #endif
+--- a/runtime/include/gpu_gl_renderer.h
++++ b/runtime/include/gpu_gl_renderer.h
+@@ -26,6 +26,11 @@
+ /* Retain texture indices while sampling current guest CLUTs (fades/animation). */
+ int gl_renderer_select_texture_bank_live_clut(uint16_t id);
+ int gl_renderer_texture_banks_supported(void);
++/* bag2 (patch local psxrecomp-host-draw.patch): marcador de desenho de host (mod_plugins.h). Thread do
++ * jogo; grava RTH_HOSTDRAW com a thread de render, senão desenha na hora. */
++struct PSXModHostDrawHeader;
++int gl_renderer_host_draw(const struct PSXModHostDrawHeader *h, int32_t offx, int32_t offy, const void *payload);
++uint64_t gl_renderer_host_draw_stats(uint64_t *mirrors, uint64_t *skipped);
+ /* HD texture presentation uses an independent native SW VRAM authority.
+  * Both entry points drain pending draws before changing or deleting textures. */
+ void gl_renderer_set_hd_texture_mode(int enabled);
+--- a/runtime/src/mod_texture_banks.c
++++ b/runtime/src/mod_texture_banks.c
+@@ -106,3 +106,38 @@
+     }
+     return 0;
+ }
++
++/* bag2 (patch local psxrecomp-host-draw.patch): desenho de host (mod_plugins.h). */
++int gl_renderer_host_draw(const PSXModHostDrawHeader* h, int32_t offx, int32_t offy, const void* payload);
++static PSXModHostDrawFn host_draw_fns[16];
++
++int psx_mod_register_host_draw(uint16_t id, PSXModHostDrawFn fn) {
++    if (!id || id >= 16u) return 0;
++    host_draw_fns[id] = fn;
++    return 1;
++}
++
++PSXModHostDrawFnInternal mod_host_draw_fn(uint16_t id) {
++    return id && id < 16u ? (PSXModHostDrawFnInternal)host_draw_fns[id] : NULL;
++}
++
++int mod_host_draw_marker(uint32_t source, int32_t draw_off_x, int32_t draw_off_y) {
++    unsigned i;
++    uint32_t address = source & 0x1FFFFFFFu;
++    const uint32_t hb = (uint32_t)sizeof(PSXModHostDrawHeader);
++    for (i = 0; i < arena_count; ++i) {
++        PSXModHostDrawHeader h;
++        const uint8_t* src;
++        if (address < arenas[i].begin || address - arenas[i].begin > arenas[i].size - 4u - hb) continue;
++        src = psx_mod_gpu_dma_host_ptr(source + 4u, hb);
++        if (!src) return 0;
++        memcpy(&h, src, hb);
++        if (h.magic != PSX_MOD_HOST_DRAW_MAGIC || !mod_host_draw_fn(h.id) || (h.bytes & 3u) ||
++            h.bytes > PSX_MOD_HOST_DRAW_MAX_BYTES ||
++            address - arenas[i].begin + 4u + hb + h.bytes > arenas[i].size) return 0;
++        src = h.bytes ? psx_mod_gpu_dma_host_ptr(source + 4u + hb, h.bytes) : src;
++        if (!src) return 0;
++        return gl_renderer_host_draw(&h, draw_off_x, draw_off_y, h.bytes ? src : NULL);
++    }
++    return 0;
++}
+--- a/runtime/src/gpu.c
++++ b/runtime/src/gpu.c
+@@ -6080,6 +6080,11 @@
+ 
+ static void gp0_exec_nop(void) {
+     /* 0x00 / 0x01 — nothing to do */
++    /* bag2 (patch local psxrecomp-host-draw.patch): marcador de desenho de host vindo da arena de pacotes
++     * (mod_plugins.h). Para o PS1 continua um NOP de uma palavra. */
++    if (gp0_cmd_buf[0] == PSX_MOD_HOST_DRAW_NOP && gp0_cmd_source_addr != 0xFFFFFFFFu &&
++        gr_backend() == GR_BACKEND_OPENGL)
++        (void)mod_host_draw_marker(gp0_cmd_source_addr, draw_offset_x, draw_offset_y);
+ }
+ 
+ static void gp0_exec_fill_rect(void) {
+--- a/runtime/src/gpu_gl_renderer.c
++++ b/runtime/src/gpu_gl_renderer.c
+@@ -470,7 +470,8 @@
+     RTH_WIDE_RECOVERY, RTH_INTERP_SUSPENDED, RTH_PRESENT_VRAM,
+     RTH_PRESENT_WIDE, RTH_STATE, RTH_PEEK, RTH_RING_CAPTURE, RTH_DYN_STEP,
+     RTH_FRAME, RTH_FG_SRC, RTH_DEPTH, RTH_HD_NOTE, RTH_DITHER, RTH_WIDE_FEEDBACK,
+-    RTH_BANK   /* bag2: seleção de banco de textura gravada no fluxo (sem sync por pacote) */
++    RTH_BANK,  /* bag2: seleção de banco de textura gravada no fluxo (sem sync por pacote) */
++    RTH_HOSTDRAW   /* bag2: desenho de host de um plugin (psxrecomp-host-draw.patch) */
+ };
+ /* GP0(A0) whose payload gpu.c is still streaming into its array (the
+  * facade's vram_upload_open, emulation thread), tracked whatever the HD
+@@ -14468,6 +14469,134 @@
+     .wide_feedback_rect = rtb_wide_feedback_rect,
+ };
+ 
++/* ---- bag2 (patch local psxrecomp-host-draw.patch): desenho de host -------
++ * Um marcador na arena de pacotes (mod_plugins.h, PSX_MOD_HOST_DRAW_NOP) chama aqui, na thread do jogo,
++ * na posição dele na ordem de desenho. Com a thread de render o pedido vira um registro RTH_HOSTDRAW
++ * com o payload copiado por valor; no replay (ou direto, sem a thread) o callback do plugin desenha
++ * com o FBO de alta resolução ligado: primeiro a superfície canônica e, se o retângulo sai do quadro
++ * 4:3, o espelho da tela larga (como um lote de triângulos). Registro: [0] id | flags << 16,
++ * [1] bytes, [2..5] bbox na tela, [6..7] deslocamento de desenho, [8..] payload. */
++#define HOSTDRAW_HDR_INTS 8
++static uint64_t s_hostdraw_calls = 0, s_hostdraw_mirrors = 0, s_hostdraw_skipped = 0;
++static void *hostdraw_get_proc(const char *name) { return (void *)SDL_GL_GetProcAddress(name); }
++typedef struct { GLint tex2d[8], active, abuf, unpack_align, unpack_row; } HostDrawSaved;
++static void hostdraw_save(HostDrawSaved *s) {
++    glGetIntegerv(0x84E0 /* GL_ACTIVE_TEXTURE */, &s->active);
++    for (int u = 0; u < 8; u++) {
++        p_glActiveTexture(PSXGL_TEXTURE0 + u);
++        glGetIntegerv(GL_TEXTURE_BINDING_2D, &s->tex2d[u]);
++    }
++    p_glActiveTexture((GLenum)s->active);
++    glGetIntegerv(0x8894 /* GL_ARRAY_BUFFER_BINDING */, &s->abuf);
++    glGetIntegerv(GL_UNPACK_ALIGNMENT, &s->unpack_align);
++    glGetIntegerv(PSXGL_UNPACK_ROW_LENGTH, &s->unpack_row);
++}
++/* O estado que o resto do renderizador supõe fora de um desenho (hr_end e os padrões do GL); a caixa de
++ * recorte volta à do alvo (hostdraw_fill_target). */
++static void hostdraw_restore(const HostDrawSaved *s, const PSXModHostDrawTarget *t) {
++    if (t->pass >= 0) glScissor(t->scissor[0], t->scissor[1], t->scissor[2], t->scissor[3]);
++    p_glUseProgram(0);
++    p_glBindVertexArray(0);
++    p_glBindBuffer(PSXGL_ARRAY_BUFFER, (GLuint)s->abuf);
++    for (int u = 0; u < 8; u++) {
++        p_glActiveTexture(PSXGL_TEXTURE0 + u);
++        glBindTexture(GL_TEXTURE_2D, (GLuint)s->tex2d[u]);
++    }
++    p_glActiveTexture((GLenum)s->active);
++    glPixelStorei(GL_UNPACK_ALIGNMENT, s->unpack_align);
++    glPixelStorei(PSXGL_UNPACK_ROW_LENGTH, s->unpack_row);
++    glDisable(GL_DEPTH_TEST);
++    glDepthMask(GL_TRUE);
++    glDepthFunc(GL_LESS);
++    glDisable(GL_CULL_FACE);
++    glFrontFace(GL_CCW);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glDisable(GL_BLEND);
++    glDisable(GL_STENCIL_TEST);
++}
++static void hostdraw_fill_target(PSXModHostDrawTarget *t, GLuint fbo, int pass, int scale,
++                                 int vw, int vh, float x_off, float x_half) {
++    t->fbo = fbo; t->pass = pass; t->scale = scale;
++    t->viewport[0] = 0; t->viewport[1] = 0; t->viewport[2] = vw; t->viewport[3] = vh;
++    glGetIntegerv(GL_SCISSOR_BOX, t->scissor);
++    t->x_off = x_off; t->x_half = x_half;
++}
++static void glb_host_draw(const int32_t *v) {
++    const uint16_t id = (uint16_t)(v[0] & 0xFFFF);
++    const uint32_t bytes = (uint32_t)v[1];
++    const void *payload = bytes ? (const void *)(v + HOSTDRAW_HDR_INTS) : NULL;
++    PSXModHostDrawFnInternal fn = mod_host_draw_fn(id);
++    if (!fn) return;
++    PSXModHostDrawTarget t;
++    memset(&t, 0, sizeof t);
++    t.flags = (uint16_t)((uint32_t)v[0] >> 16);
++    t.alpha_is_mask = 1;
++    t.get_proc = hostdraw_get_proc;
++    t.draw_off_x = v[6]; t.draw_off_y = v[7];
++    t.area[0] = s_area_x1; t.area[1] = s_area_y1; t.area[2] = s_area_x2; t.area[3] = s_area_y2;
++    t.y_half = 256.0f; t.shift = s_shift_hr;
++    const int x0 = v[2] + v[6], y0 = v[3] + v[7], x1 = v[4] + v[6], y1 = v[5] + v[7];
++    HostDrawSaved sv;
++    if (!s_raster_ok) { s_hostdraw_skipped++; return; }   /* antes do contexto GL */
++    /* x fora da área ainda pode cair nas margens da tela larga; só y recorta de verdade */
++    if (s_hiw || x1 < x0 || y1 < y0 || y1 < s_area_y1 || y0 > s_area_y2) {
++        s_hostdraw_skipped++;
++        hostdraw_save(&sv);
++        t.pass = -1;
++        fn(&t, payload, bytes);
++        hostdraw_restore(&sv, &t);
++        return;
++    }
++    s_hostdraw_calls++;
++    flush_flat_batch();
++    flush_tex_batch();
++    wide_stencil_ready();
++    hostdraw_save(&sv);
++    hr_begin(1);
++    hostdraw_fill_target(&t, s_hr_fbo, 0, s_hr_scale, VRAM_W * s_hr_scale, VRAM_H * s_hr_scale, 0.0f, 512.0f);
++    fn(&t, payload, bytes);
++    hostdraw_restore(&sv, &t);
++    if (g_wide_cur && s_ws_ablate != 1 && !mirror_x_center_only(x0, x1)) {
++        hiw_flush_queue();   /* espelhos já enfileirados vêm antes (ordem de pintor na superfície larga) */
++        const int dx = wide_dx();
++        p_glBindFramebuffer(PSXGL_FRAMEBUFFER, g_wide_cur);
++        glViewport(0, 0, g_wide_w * s_out_scale, VRAM_H * s_out_scale);
++        wide_band_scissor_x(view_pad_left, g_wide_w - view_pad_left - view_pad_right);
++        hostdraw_fill_target(&t, g_wide_cur, 1, s_out_scale, g_wide_w * s_out_scale, VRAM_H * s_out_scale,
++                             (float)dx, (float)g_wide_w / 2.0f);
++        fn(&t, payload, bytes);
++        hostdraw_restore(&sv, &t);
++        const float q[8] = { (float)x0, (float)y0, (float)x1, (float)y0, (float)x0, (float)y1, (float)x1, (float)y1 };
++        wst_note_draw(g_wide_cur, q, 4, 2, dx, 1.0f, 0.0f, s_mask_check);
++        s_hostdraw_mirrors++;
++    }
++    hr_end();
++    {
++        int xs[2] = { x0, x1 }, ys[2] = { y0, y1 };
++        mark_prim_dirty(xs, ys, 2, 1);
++    }
++    if (s_depth_used) DEPTH_REQUEST_CLEAR(DCLR_FILL);   /* o callback usou a profundidade do FBO */
++}
++/* gpu.c (via mod_host_draw_marker), thread do jogo. */
++int gl_renderer_host_draw(const PSXModHostDrawHeader *h, int32_t offx, int32_t offy, const void *payload) {
++    static int32_t rec[HOSTDRAW_HDR_INTS + PSX_MOD_HOST_DRAW_MAX_BYTES / 4u];
++    if (!h || h->bytes > PSX_MOD_HOST_DRAW_MAX_BYTES || (h->bytes && !payload)) return 0;
++    rec[0] = (int32_t)((uint32_t)h->id | (uint32_t)h->flags << 16);
++    rec[1] = (int32_t)h->bytes;
++    memcpy(&rec[2], h->bbox, sizeof h->bbox);
++    rec[6] = offx; rec[7] = offy;
++    if (h->bytes) memcpy(&rec[HOSTDRAW_HDR_INTS], payload, h->bytes);
++    if (rth_record_mode())
++        return rth_rec_ints(RTH_HOSTDRAW, 0, HOSTDRAW_HDR_INTS + (int)(h->bytes / 4u), rec);
++    glb_host_draw(rec);
++    return 1;
++}
++uint64_t gl_renderer_host_draw_stats(uint64_t *mirrors, uint64_t *skipped) {
++    if (mirrors) *mirrors = s_hostdraw_mirrors;
++    if (skipped) *skipped = s_hostdraw_skipped;
++    return s_hostdraw_calls;
++}
++
+ /* ---- replay (render thread) ---------------------------------------------- */
+ static void gl_rth_exec(void *user, const RtCmd *c, const void *payload) {
+     (void)user;
+@@ -14482,6 +14611,7 @@
+     switch (c->op) {
+     case RTH_SEMI:      glb_set_semi_transparency(v[0], v[1]); break;
+     case RTH_BANK:      (void)glb_select_texture_bank((uint16_t)v[0], v[1]); break;
++    case RTH_HOSTDRAW:  glb_host_draw(v); break;
+     case RTH_DITHER:    glb_set_dither(v[0]); break;
+     case RTH_MASK:      glb_set_mask_bits(v[0], v[1]); break;
+     case RTH_TWIN:      glb_set_texture_window((uint32_t)v[0]); break;

@@ -41,9 +41,11 @@ def main():
             n0 = len(log_lines(s))
             c0 = {c['name']: c['count'] for c in s.cmd({'cmd': 'mod_counters'})['counters']}
             a0 = s.cmd({'cmd': 'audio_stats'})
+            s.cmd({'cmd': 'mod_cmd', 'name': 'heat_stats', 'args': ''})   # zera a janela da thread de render
             time.sleep(secs)
             c1 = {c['name']: c['count'] for c in s.cmd({'cmd': 'mod_counters'})['counters']}
             a1 = s.cmd({'cmd': 'audio_stats'})
+            rt = s.cmd({'cmd': 'mod_cmd', 'name': 'heat_stats', 'args': ''}).get('reply', '')
             lines = log_lines(s)[n0:]
             fps = [float(re.search(r' fps=([\d.]+)', l).group(1)) for l in lines]
             busy = [float(re.search(r'emu_busy=([\d.]+)', l).group(1)) for l in lines]
@@ -62,6 +64,7 @@ def main():
                 'bag2_heat.pk_base')), flush=True)
             print(f'   áudio: underruns {audio.get("underruns")} pump_skips {audio.get("pump_skips")} '
                   f'pump_calls {audio.get("pump_calls")}', flush=True)
+            print(f'   desenho de host: marcadores/quadro {d.get("bag2_heat.markers", 0) / fr:.1f} | {rt}', flush=True)
     finally:
         s.stop()
 

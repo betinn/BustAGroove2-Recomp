@@ -40,7 +40,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-26)
+## Estado (2026-10-27)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
@@ -49,20 +49,25 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   deduplicados) em `build/mods/texture-packs/SLUS-01159/replacements/` (fora do git). Para capturar mais palcos:
   `build/mods/state.toml` com `dump = "true"`, `replacements = "false"` (strings), jogar, fechar a janela (não
   `Stop-Process`, senão perde o último lote), rodar o script de novo (incremental). Notas §12 e §12.1.
-- **Framework patcheado localmente** (`tools/recomp/patches/psxrecomp-hd-cache-caps.patch` e, por cima,
-  `psxrecomp-texture-bank-render-thread.patch`): caches do mod HD
-  (composições e imagens GL) ampliados; sem isso a partida trava (13–35 fps). Reaplicar se `C:/tools/psxrecomp`
-  for atualizado. Medição de desempenho: `build-debug/` (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370) + `tools/recomp/bag2perf.py`.
+- **Framework patcheado localmente**, três patches em `tools/recomp/patches/`, nesta ordem:
+  `psxrecomp-hd-cache-caps.patch` (caches do mod HD ampliados; sem isso a partida trava, 13–35 fps),
+  `psxrecomp-texture-bank-render-thread.patch` (bancos de textura na thread de render, para o fallback por pacotes)
+  e `psxrecomp-host-draw.patch` (desenho de host do remake; sem ele o plugin não compila). Reaplicar
+  (`git apply --ignore-whitespace`) se `C:/tools/psxrecomp` for atualizado. Medição de desempenho: `build-debug/`
+  (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370) + `tools/remake/game_perf.py`.
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build ...` e `cmake --build ... --target
   psx-runtime` direto (flags na linha 50 do script) com o PATH de `env.ps1`.
-- **Remake do HEAT no jogo** (fase 0 de `notes/remake-plano.md` concluída; técnica em `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de
-  filtro em `FUN_80029D4C`, listado em `[recompiler] mod_function_entry_funcs`), pacote
-  `mods/preloaded/packages/bag2.remake.heat`, asset `mods/remake/heat.bin` gerado por
-  `tools/remake/export_heat.py` (fora do git). Exige o patch local
-  `tools/recomp/patches/psxrecomp-texture-bank-render-thread.patch` no framework (sem ele, ~30-40 fps).
-  Medir: `tools/remake/game_perf.py` (fps por segundo, thread do jogo, underruns de áudio).
-  Testes automáticos na build-debug: `tools/remake/game_session.py`, `game_sidebyside.py`.
+- **Remake do HEAT no jogo** (fases 0 e 1 de `notes/remake-plano.md` concluídas; técnica em
+  `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de filtro em `FUN_80029D4C`, listado em
+  `[recompiler] mod_function_entry_funcs`) entrega a pose num marcador na OT e o renderizador GL desenha com o
+  núcleo portátil `src/remake/` (C99, GL 3.3/GLES 3.0: Phong Tessellation por instancing, luz por pixel,
+  texturas HD com mipmaps; o mesmo código vai para o Polygonia). Pacote `mods/preloaded/packages/bag2.remake.heat`,
+  asset v3 `mods/remake/heat.bin` (50 MB) gerado por `tools/remake/export_heat.py` (fora do git). Exige o patch
+  local `psxrecomp-host-draw.patch`. Caminho por pacotes da fase 0 = fallback (`heat_mode` flags bit 2).
+  Medido (60 s por janela): HEAT original jogo 47–52 %, render 50–62 %; remake novo 59,9 fps em todos os segundos, jogo 40–44 %, render 33–48 %; 4 HEATs (modo 6) 59,9, jogo 40 %, render 33 %; 0 underruns. Medir: `tools/remake/game_perf.py` (no máximo 2 variantes de 60 s por sessão). Testes na
+  build-debug: `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3 ou 7), comandos `heat_mode`,
+  `heat_light`, `heat_stats`.
 - As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
   antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e
   `_deps/*-build`, `_deps/*-subbuild` e configurar de novo.
@@ -70,8 +75,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 
 ## Próximo passo
-- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Próxima fase: 1, atalho
-  de render no PSXRecomp (malha direto no renderizador GL, shader moderno, núcleo portátil para o Polygonia), só PC.
+- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Próxima fase: 2,
+  detalhe nos personagens (mãos, orelhas, mapas de normal; sombra própria e luzes do palco também cabem aqui).
   Ao avançar uma fase: atualizar a tabela de estado do `notes/remake-plano.md`, a linha "Remake do HEAT" acima e
   os achados em `notes/remake-visual.md`.
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).

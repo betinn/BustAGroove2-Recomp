@@ -1,21 +1,21 @@
-/* Remake do HEAT dentro do jogo (prova de conceito; notes/remake-visual.md, seção "No jogo").
+/* Remake do HEAT dentro do jogo (notes/remake-visual.md, seção "No jogo"; plano em notes/remake-plano.md).
  *
  * Hook de filtro em FUN_80029D4C, que recebe em $a0 o nó raiz de um personagem e desenha a árvore de
  * ossos (FUN_80029C6C: filho em +0x94, irmão em +0x98; +0x6C = MATRIX câmera×osso já pronta para o
  * GTE, +0x8C = MeshHeader, +0xA0 = tipo). Quando a árvore é a do HEAT (conferido pelo MeshHeader de
  * cada osso: nº de vértices em +0x94 e índice-base de normais em +0x98), o plugin pula o desenho
- * original e emite os próprios triângulos:
- *   - malha soldada exportada por tools/remake/export_heat.py (mods/remake/heat.bin, fora do git);
- *   - cada vértice no espaço da câmera = matriz do osso dono (a mesma que o jogo põe no GTE);
- *   - Phong Tessellation por face visível (culling pelo mesmo NCLIP > 0 do jogo), luz por vértice
- *     nova (principal + preenchimento + contraluz + oclusão ambiente pré-calculada);
- *   - pacotes GT3 numa arena de DMA do runtime (docs/RETAINED-TERRAIN-EXPERIMENT.md): banco de textura
- *     HD no byte alto de C1/C2 e sufixo com x/y em float e 1/z (perspectiva correta);
- *   - ligados na tabela de ordenação (OT) do jogo com o mesmo índice (z >> 2) que as primitivas
- *     originais usam, então o HEAT continua ordenado contra o palco e o outro dançarino.
- * Comandos TCP (build-debug): heat_mode 0|1|2 (original | remake | os dois), heat_dump <arquivo>. */
+ * original e desenha a malha nova (núcleo portátil em src/remake/, asset mods/remake/heat.bin v3 de
+ * tools/remake/export_heat.py, fora do git). Dois caminhos:
+ *   - desenho de host (padrão, fase 1): a pose vira um pacote marcador na arena de DMA, ligado no slot
+ *     da OT da face mais próxima; quando a GPU emulada chega nele, o renderizador GL chama
+ *     heat_host_draw com o FBO de alta resolução (patch local psxrecomp-host-draw.patch), e o shader do
+ *     núcleo faz Phong Tessellation, luz por pixel e texturas HD com mipmaps;
+ *   - pacotes GT3 (fase 0, fallback e comparação, heat_mode flags bit 2): milhares de triângulos com
+ *     banco de textura HD e sufixo de precisão, ligados na OT com o slot de cada face.
+ * Comandos TCP (build-debug): heat_mode, heat_light, heat_stats, heat_dump. */
 #include "mod_plugins.h"
 #include "cpu_state.h"
+#include "remake/rmk.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -40,119 +40,83 @@ static double now_us(void) { struct timespec t; timespec_get(&t, TIME_UTC); retu
 #define BANKS_PER_LAYER 8
 static const int k_bank_rows[BANKS_PER_LAYER] = {0, 64, 128, 192, 512, 576, 640, 704};
 
-#pragma pack(push, 1)
-typedef struct { int16_t x, y, z; uint8_t owner, ao; } HVert;
-typedef struct {
-    uint16_t v[3], zp[2]; uint8_t mode; int8_t layer;
-    uint8_t uv[3][2]; uint8_t base[3][3]; uint8_t over[3][3];
-} HTri;
-#pragma pack(pop)
+#define HOST_DRAW_ID 1
+#define HD_FLAG_PREPARE 1u           /* marcador só para criar os recursos GL aos poucos */
+#define MARKS_PER_HALF 8u            /* marcadores por quadro (1 HEAT + 3 cópias + preparo dos 2 jogadores) */
 
+typedef RmkVert HVert;
+typedef RmkTri HTri;
 typedef struct { float x, y, z; } V3;
 
-static struct {
-    int loaded;
-    uint32_t n_nodes, n_verts, n_tris, n_layers, hd_scale;
-    uint16_t node_nverts[64]; uint32_t node_base[64];
-    int mesh_nodes;                 /* nós com mesh (devem ser os primeiros, na ordem da árvore) */
-    HVert* verts; HTri* tris;
-    uint16_t white_bank;
-} A;
+static RmkAsset A;                   /* asset v3 (imutável depois da ativação: lido também pela thread de render) */
+static int s_loaded;
 
-static uint8_t* s_amask[64];         /* máscara de alfa 1024x1024 por camada HD (1 byte por texel) */
-static uint32_t s_arena;             /* endereço guest da arena (2 metades) */
+static uint8_t* s_amask[64];         /* máscara de alfa por camada HD (caminho por pacotes) */
+static uint32_t s_arena;             /* arena dos pacotes GT3 (2 metades) */
 static uint32_t s_arena_off, s_last_parity = 0xFFFFFFFFu;
+static uint32_t s_marks;             /* arena dos marcadores de desenho de host (2 metades) */
+static uint32_t s_mark_bytes, s_mark_off, s_mark_parity = 0xFFFFFFFFu;
 static int s_mode = 1;               /* 0 original, 1 remake, 2 os dois sobrepostos, 3 os dois lado a lado,
-                                        4..6 mais 1..3 cópias do remake ao lado (teste de carga) */
-static float s_shift;                /* deslocamento x do remake no modo 3 (pixels do PS1) */
-static int s_level = 4;              /* máximo de divisões por aresta (4 -> até 16 triângulos por face) */
+                                        4..6 mais 1..3 cópias do remake ao lado (teste de carga),
+                                        7 original + pacotes (fase 0) + desenho de host lado a lado */
+static float s_shift;                /* deslocamento x do remake nos modos 3..6 (pixels do PS1) */
+static int s_level = 4;              /* pacotes: máximo de divisões por aresta (4 -> até 16 triângulos por face) */
 static float s_alpha = 0.6f;         /* Phong Tessellation */
-/* bit 0 = sem cor base sob textura (depuração); bit 1 = dentro de cada slot da OT, overlays agrupados por banco e
- * depois as bases, em vez da ordem de inserção do jogo. Padrão ligado: corta as trocas de textura (cada uma fecha
- * um lote do GL) e a thread de render cai de ~79 % para ~49 % por HEAT; nas capturas não se vê diferença. */
+/* bit 0 = pacotes sem cor base sob textura (depuração); bit 1 = pacotes agrupados por banco dentro do slot da
+ * OT (corta as trocas de textura, ~79 % -> ~49 % da thread de render por HEAT); bit 2 = caminho por pacotes
+ * (fase 0) em vez do desenho de host; bit 3 = desenho de host sem Phong (malha original); bit 4 = sem textura. */
 static int s_flags = 2;
+static float s_light[7] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 0.01f};   /* exposição, principal, preenchimento,
+                                                         contraluz, ambiente, rugosidade, tolerância de profundidade */
+static float s_zr[2];                /* faixa de Z do último remake (comando heat_mode) */
 static volatile int s_dump_request;
 static char s_dump_path[260] = "heat_dump.txt";
+static float s_bbox[4];              /* último retângulo do remake na tela (pixels do PS1), para capturas */
+
+/* thread de render (desenho de host): escritos só lá, lidos pelos comandos */
+static RmkGL* s_gl;
+static volatile int s_rt_ready, s_rt_failed;
+static volatile double s_rt_us;
+static volatile uint32_t s_rt_draws, s_rt_prepares;
+static uint32_t s_serial;
 
 static uint32_t rd32(uint32_t a) { return psx_mod_read_word(a); }
 static int16_t rd16(uint32_t a) { return (int16_t)psx_mod_read_half(a); }
 static void wr32(uint32_t a, uint32_t v) { psx_mod_write_word(a, v); }
-
-/* ------------------------------------------------------------------ carga do pacote */
-static int load_asset(const char* path) {
-    FILE* f = fopen(path, "rb");
-    if (!f) return 0;
-    char magic[4];
-    uint32_t hdr[5];
-    int ok = fread(magic, 1, 4, f) == 4 && !memcmp(magic, "HTR2", 4) && fread(hdr, 4, 5, f) == 5;
-    if (ok) {
-        A.n_nodes = hdr[0]; A.n_verts = hdr[1]; A.n_tris = hdr[2]; A.n_layers = hdr[3]; A.hd_scale = hdr[4];
-        ok = A.n_nodes <= 64 && A.n_verts < 65536;
-    }
-    for (uint32_t i = 0; ok && i < A.n_nodes; i++) {
-        uint16_t nv, pad; uint32_t base;
-        ok = fread(&nv, 2, 1, f) == 1 && fread(&pad, 2, 1, f) == 1 && fread(&base, 4, 1, f) == 1;
-        A.node_nverts[i] = nv; A.node_base[i] = base;
-    }
-    A.mesh_nodes = 0;
-    while (ok && A.mesh_nodes < (int)A.n_nodes && A.node_nverts[A.mesh_nodes]) A.mesh_nodes++;
-    if (ok) {
-        A.verts = (HVert*)malloc(sizeof(HVert) * A.n_verts);
-        A.tris = (HTri*)malloc(sizeof(HTri) * A.n_tris);
-        ok = A.verts && A.tris && fread(A.verts, sizeof(HVert), A.n_verts, f) == A.n_verts &&
-             fread(A.tris, sizeof(HTri), A.n_tris, f) == A.n_tris;
-    }
-    /* camadas HD: 1024x1024 cada, cortadas em bancos de 1024x512 com início de linha em k_bank_rows,
-     * para que qualquer janela de 256x256 alinhada a 64 caiba num banco (UV do GT3 tem 8 bits). */
-    uint16_t* rows = NULL;
-    uint16_t* band = (uint16_t*)malloc(1024u * 512u * 2u);
-    for (uint32_t l = 0; ok && l < A.n_layers; l++) {
-        uint16_t wh[2];
-        ok = fread(wh, 2, 2, f) == 2 && wh[0] == 1024 && wh[1] == 1024;
-        if (!ok) break;
-        rows = (uint16_t*)realloc(rows, 1024u * 1024u * 2u);
-        ok = rows && band && fread(rows, 2, 1024u * 1024u, f) == 1024u * 1024u;
-        if (ok && l < 64 && (s_amask[l] = (uint8_t*)malloc(1024u * 1024u)) != NULL)
-            for (uint32_t i = 0; i < 1024u * 1024u; i++) s_amask[l][i] = rows[i] != 0;
-        for (int k = 0; ok && k < BANKS_PER_LAYER; k++) {
-            memset(band, 0, 1024u * 512u * 2u);
-            int r0 = k_bank_rows[k];
-            int n = 1024 - r0 < 512 ? 1024 - r0 : 512;
-            memcpy(band, rows + (size_t)r0 * 1024u, (size_t)n * 1024u * 2u);
-            ok = psx_mod_define_texture_bank((uint16_t)(1 + l * BANKS_PER_LAYER + k), 1024, 512, band);
-        }
-    }
-    if (ok) {   /* banco branco para as faces só de cor (GT3 com texel branco = cor pura) */
-        for (int i = 0; i < 64 * 256; i++) band[i] = 0x7FFF;
-        A.white_bank = (uint16_t)(1 + A.n_layers * BANKS_PER_LAYER);
-        ok = psx_mod_define_texture_bank(A.white_bank, 64, 256, band);
-    }
-    free(rows); free(band); fclose(f);
-    return ok;
+static void write_arena(uint32_t addr, const uint32_t* w, uint32_t bytes) {
+    if (!psx_mod_write_gpu_dma(addr, w, bytes))
+        for (uint32_t i = 0; i < bytes / 4u; i++) wr32(addr + 4u * i, w[i]);
 }
 
-/* A arena tem de ser alocada na ativação; os bancos de textura só existem depois que o renderer sobe
- * (a ativação roda antes da janela), então o pacote é carregado no primeiro desenho. */
+/* ------------------------------------------------------------------ ativação */
+/* O asset é lido na ativação (antes do jogo rodar: nada de leitura de 48 MB no meio de uma música). As
+ * arenas também têm de ser alocadas aqui. Os recursos GL só existem depois que o renderer sobe: o desenho
+ * de host os cria aos poucos (marcadores de preparo), os bancos dos pacotes no primeiro uso. */
 static void heat_activate(void) {
+    if (!s_loaded) {
+        s_loaded = rmk_asset_load(&A, "mods/remake/heat.bin");
+        psx_mod_counter_add(s_loaded ? "bag2_heat.asset_ok" : "bag2_heat.asset_missing", 1);
+        if (s_loaded) {
+            for (uint32_t l = 0; l < A.n_layers && l < 64; l++) {
+                const size_t n = (size_t)A.tex_size * A.tex_size;
+                if (!(s_amask[l] = (uint8_t*)malloc(n))) continue;
+                const uint8_t* px = A.layers + n * 4u * l;
+                for (size_t i = 0; i < n; i++) s_amask[l][i] = px[4 * i + 3] >= 128;
+            }
+        }
+    }
+    if (s_loaded && !s_marks) {
+        s_mark_bytes = (uint32_t)(8u + sizeof(PSXModHostDrawHeader) + sizeof(RmkFrame) + 12u * A.n_verts + 15u) & ~15u;
+        s_marks = psx_mod_alloc_texture_packet_memory(2u * MARKS_PER_HALF * s_mark_bytes, 64u);
+        if (!s_marks) psx_mod_counter_add("bag2_heat.marks_fail", 1);
+    }
     if (!s_arena) {
         s_arena = psx_mod_alloc_texture_packet_memory(2u * MAX_PKTS * PKT_BYTES, 64u);
         if (!s_arena) psx_mod_counter_add("bag2_heat.arena_fail", 1);
     }
 }
 
-static int ensure_loaded(void) {
-    static int tried;
-    if (A.loaded || tried) return A.loaded;
-    if (!psx_mod_texture_banks_supported()) return 0;   /* tenta de novo no próximo quadro */
-    tried = 1;
-    A.loaded = load_asset("mods/remake/heat.bin");
-    psx_mod_counter_add(A.loaded ? "bag2_heat.asset_ok" : "bag2_heat.asset_missing", 1);
-    return A.loaded;
-}
-
 /* ------------------------------------------------------------------ árvore de ossos */
-typedef struct { float m[9], t[3]; } NodeMat;
-
 static int collect(uint32_t node, uint32_t* out, int n) {
     while (node && n < MAX_NODES) {
         if (rd32(node + 0xA0) == 1) out[n++] = node;
@@ -164,7 +128,7 @@ static int collect(uint32_t node, uint32_t* out, int n) {
 
 static int is_heat(const uint32_t* nodes, int n) {
     /* a árvore desenhada tem só os ossos 0..19; os nós 20..23 do arquivo (mãos alternativas) ficam fora */
-    if (!A.loaded || n < 16 || n > A.mesh_nodes) return 0;
+    if (!s_loaded || n < 16 || n > A.mesh_nodes) return 0;
     for (int i = 0; i < n; i++) {
         uint32_t mesh = rd32(nodes[i] + 0x8C);
         if (!mesh || rd32(mesh + 0x94) != A.node_nverts[i] || rd32(mesh + 0x98) != A.node_base[i]) return 0;
@@ -172,7 +136,170 @@ static int is_heat(const uint32_t* nodes, int n) {
     return 1;
 }
 
-/* ------------------------------------------------------------------ emissão */
+static void read_bones(const uint32_t* nodes, int n, RmkBone* b) {
+    for (int i = 0; i < n; i++) {
+        int16_t m[9];
+        int32_t t[3];
+        for (int k = 0; k < 9; k++) m[k] = rd16(nodes[i] + 0x6C + 2 * k);
+        for (int k = 0; k < 3; k++) t[k] = (int32_t)rd32(nodes[i] + 0x80 + 4 * k);
+        rmk_bone_from_gte(&b[i], m, t);
+    }
+}
+
+static RmkProj gte_proj(const struct CPUState* cpu) {
+    RmkProj p;
+    p.ofx = (float)(int32_t)cpu->gte_ctrl[24] / 65536.0f;
+    p.ofy = (float)(int32_t)cpu->gte_ctrl[25] / 65536.0f;
+    p.h = (float)(cpu->gte_ctrl[26] & 0xFFFFu);
+    return p;
+}
+
+/* ================================================================== desenho de host (fase 1) */
+/* Liga um marcador no slot `slot` da OT do quadro. Layout: tag (1 palavra a seguir), NOP com
+ * PSX_MOD_HOST_DRAW_NOP, cabeçalho, RmkFrame + posições (fora do nó: a GPU emulada não lê). */
+static int emit_marker(uint32_t slot, uint16_t flags, const RmkFrame* fr, const float* pos) {
+    static uint32_t buf[(8u + sizeof(PSXModHostDrawHeader) + sizeof(RmkFrame)) / 4u + 3u * 65536u];
+    if (!s_marks) return 0;
+    const uint32_t parity = rd32(FRAME_PARITY) & 1u;
+    if (parity != s_mark_parity) { s_mark_parity = parity; s_mark_off = 0; }
+    if (s_mark_off + s_mark_bytes > MARKS_PER_HALF * s_mark_bytes) return 0;
+    const uint32_t addr = s_marks + parity * MARKS_PER_HALF * s_mark_bytes + s_mark_off;
+    PSXModHostDrawHeader h;
+    memset(&h, 0, sizeof h);
+    h.magic = PSX_MOD_HOST_DRAW_MAGIC;
+    h.id = HOST_DRAW_ID;
+    h.flags = flags;
+    h.bytes = fr ? (uint32_t)(sizeof(RmkFrame) + 12u * A.n_verts) : 0u;
+    if (fr) {
+        h.bbox[0] = (int32_t)floorf(fr->bbox[0]); h.bbox[1] = (int32_t)floorf(fr->bbox[1]);
+        h.bbox[2] = (int32_t)ceilf(fr->bbox[2]); h.bbox[3] = (int32_t)ceilf(fr->bbox[3]);
+    } else {
+        h.bbox[0] = 0; h.bbox[1] = 0; h.bbox[2] = -1; h.bbox[3] = -1;   /* nada visível: só o callback */
+    }
+    const uint32_t ot = rd32(OT_PTR) - 0x180u + 4u * slot;
+    buf[0] = 1u << 24 | (rd32(ot) & 0xFFFFFFu);
+    buf[1] = PSX_MOD_HOST_DRAW_NOP;
+    memcpy(&buf[2], &h, sizeof h);
+    uint32_t bytes = 8u + (uint32_t)sizeof h;
+    if (fr) {
+        memcpy((uint8_t*)buf + bytes, fr, sizeof *fr);
+        memcpy((uint8_t*)buf + bytes + sizeof *fr, pos, 12u * A.n_verts);
+        bytes += h.bytes;
+    }
+    write_arena(addr, buf, bytes);
+    wr32(ot, addr & 0xFFFFFFu);
+    s_mark_off += s_mark_bytes;
+    return 1;
+}
+
+static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, float shift) {
+    memset(fr, 0, sizeof *fr);
+    fr->magic = RMK_FRAME_MAGIC;
+    fr->n_verts = A.n_verts;
+    fr->serial = ++s_serial;
+    fr->flags = ((s_flags & 8) ? RMK_FLAG_FLAT : 0u) | ((s_flags & 16) ? RMK_FLAG_NO_TEX : 0u);
+    fr->ofx = pr->ofx; fr->ofy = pr->ofy; fr->h = pr->h; fr->shift_x = shift;
+    float zn = fi->zmin * 0.9f - 16.0f, zf = fi->zmax * 1.1f + 16.0f;
+    if (zn < 16.0f) zn = 16.0f;
+    if (zf < zn + 64.0f) zf = zn + 64.0f;
+    fr->znear = zn; fr->zfar = zf;
+    fr->alpha = s_alpha;
+    fr->expo = s_light[0]; fr->key = s_light[1]; fr->fill = s_light[2]; fr->rim = s_light[3];
+    fr->amb = s_light[4]; fr->rough = s_light[5]; fr->zbias = s_light[6];
+    memcpy(fr->bbox, fi->bbox, sizeof fr->bbox);
+    s_zr[0] = fi->zmin; s_zr[1] = fi->zmax;
+}
+
+/* Um HEAT pelo desenho de host (shift = deslocamento na tela, para comparação e carga). */
+static void host_heat(const RmkProj* pr, const float* pos, float shift) {
+    const double t0 = now_us();
+    RmkFrameInfo fi;
+    rmk_frame_info(&A, pos, pr, shift, &fi);
+    if (!fi.visible) return;
+    int slot = fi.ot_near;
+    slot = slot < OT_MIN ? OT_MIN : slot > OT_MAX ? OT_MAX : slot;
+    RmkFrame fr;
+    host_frame(&fr, pr, &fi, shift);
+    const double t1 = now_us();
+    if (emit_marker((uint32_t)slot, 0, &fr, pos)) psx_mod_counter_add("bag2_heat.markers", 1);
+    memcpy(s_bbox, fi.bbox, sizeof s_bbox);
+    psx_mod_counter_add("bag2_heat.us_geometry", (uint32_t)(t1 - t0));
+    psx_mod_counter_add("bag2_heat.us_emit", (uint32_t)(now_us() - t1));
+    psx_mod_counter_add("bag2_heat.frames", 1);
+}
+
+/* Thread que tem o contexto GL (render, ou a do jogo num ponto de sincronia). */
+static void heat_host_draw(const PSXModHostDrawTarget* t, const void* payload, uint32_t bytes) {
+    const double t0 = now_us();
+    if (!s_gl && !s_rt_failed) {
+        s_gl = rmk_gl_create(t->get_proc, 0);
+        if (!s_gl) s_rt_failed = 1;
+    }
+    if (!s_rt_ready && !s_rt_failed) {
+        s_rt_prepares++;
+        if (rmk_gl_prepare(s_gl, &A)) s_rt_ready = 1;
+        else if (*rmk_gl_error(s_gl)) {
+            fprintf(stdout, "bag2_heat: desenho de host desligado: %s\n", rmk_gl_error(s_gl));
+            fflush(stdout);
+            s_rt_failed = 1;
+        }
+    }
+    if ((t->flags & HD_FLAG_PREPARE) || t->pass < 0 || !s_rt_ready) return;
+    const RmkFrame* fr = (const RmkFrame*)payload;
+    if (!fr || bytes < sizeof *fr || fr->magic != RMK_FRAME_MAGIC || fr->n_verts != A.n_verts ||
+        bytes < sizeof *fr + 12u * fr->n_verts) return;
+    RmkTarget rt;
+    rt.ndc[0] = 1.0f / t->x_half;
+    rt.ndc[1] = ((float)t->draw_off_x + t->shift + t->x_off) / t->x_half - 1.0f;
+    rt.ndc[2] = 1.0f / t->y_half;
+    rt.ndc[3] = ((float)t->draw_off_y + t->shift) / t->y_half - 1.0f;
+    memcpy(rt.viewport, t->viewport, sizeof rt.viewport);
+    memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
+    memcpy(rt.bbox, fr->bbox, sizeof rt.bbox);
+    rmk_gl_draw(s_gl, &A, fr, (const float*)(fr + 1), &rt);
+    s_rt_draws++;
+    s_rt_us += now_us() - t0;
+}
+
+/* ================================================================== pacotes GT3 (fase 0, fallback) */
+static uint16_t s_white_bank;
+static int s_banks_state;            /* 0 ainda não, 1 prontos, -1 falhou */
+
+/* camadas HD em 15 bits, cortadas em bancos de 1024x512 com início de linha em k_bank_rows, para que
+ * qualquer janela de 256x256 alinhada a 64 caiba num banco (UV do GT3 tem 8 bits). */
+static int ensure_banks(void) {
+    if (s_banks_state) return s_banks_state > 0;
+    if (!psx_mod_texture_banks_supported()) return 0;   /* tenta de novo no próximo quadro */
+    int ok = A.tex_size == 1024;
+    uint16_t* band = (uint16_t*)malloc(1024u * 512u * 2u);
+    uint16_t* rows = (uint16_t*)malloc(1024u * 1024u * 2u);
+    ok = ok && band && rows;
+    for (uint32_t l = 0; ok && l < A.n_layers; l++) {
+        const uint8_t* px = A.layers + (size_t)1024u * 1024u * 4u * l;
+        for (uint32_t i = 0; i < 1024u * 1024u; i++) {
+            const uint8_t* p = &px[4 * i];
+            uint32_t v = (uint32_t)(p[0] >> 3) | (uint32_t)(p[1] >> 3) << 5 | (uint32_t)(p[2] >> 3) << 10;
+            if (!v) v = 0x8000u;              /* preto opaco: bit STP, senão 0x0000 vira transparente */
+            rows[i] = (uint16_t)(p[3] >= 128 ? v : 0u);
+        }
+        for (int k = 0; ok && k < BANKS_PER_LAYER; k++) {
+            memset(band, 0, 1024u * 512u * 2u);
+            const int r0 = k_bank_rows[k], n = 1024 - r0 < 512 ? 1024 - r0 : 512;
+            memcpy(band, rows + (size_t)r0 * 1024u, (size_t)n * 1024u * 2u);
+            ok = psx_mod_define_texture_bank((uint16_t)(1 + l * BANKS_PER_LAYER + k), 1024, 512, band);
+        }
+    }
+    if (ok) {   /* banco branco para as faces só de cor (GT3 com texel branco = cor pura) */
+        for (int i = 0; i < 64 * 256; i++) band[i] = 0x7FFF;
+        s_white_bank = (uint16_t)(1 + A.n_layers * BANKS_PER_LAYER);
+        ok = psx_mod_define_texture_bank(s_white_bank, 64, 256, band);
+    }
+    free(rows); free(band);
+    s_banks_state = ok ? 1 : -1;
+    psx_mod_counter_add(ok ? "bag2_heat.banks_ok" : "bag2_heat.banks_fail", 1);
+    return ok;
+}
+
 #define LMAX 6
 #define GRID_PTS ((LMAX + 1) * (LMAX + 2) / 2)
 #define KIDS_ALL 91                  /* soma de L² para L = 1..6 (cache de cobertura) */
@@ -206,10 +333,10 @@ static float s_tol = 0.25f;                /* desvio máximo da corda, em pixels
 static uint32_t s_budget = 3300;           /* máximo de triângulos (filhos) por desenho do HEAT */
 static float s_tol_used;                   /* tolerância efetiva do último quadro (sobe em closes) */
 static float* s_dev; static uint8_t* s_luv;
-static float s_bbox[4];                    /* último retângulo do HEAT na tela (pixels do PS1), para capturas */
 /* Cobertura do overlay por filho e por nível (UV é fixo): bit 0 = algum texel opaco, bit 1 = todos.
  * Filho todo opaco dispensa a cor base; filho sem texel dispensa o overlay. */
 static uint8_t* s_cover;
+static const float s_hd_scale = 4.0f;      /* texels HD por texel do PS1 */
 
 static void for_each_kid(int L, void (*fn)(void*, int kid, int a, int b, int c), void* user) {
     int kid = 0;
@@ -236,8 +363,8 @@ static void cover_kid(void* user, int kid, int a, int b, int c) {
         float bb[3]; grid_bary(cx->L, ids[k], bb);
         uv[k][0] = uv[k][1] = 0;
         for (int q = 0; q < 3; q++) {
-            uv[k][0] += bb[q] * (cx->t->uv[q][0] * (float)A.hd_scale + A.hd_scale * 0.5f);
-            uv[k][1] += bb[q] * (cx->t->uv[q][1] * (float)A.hd_scale + A.hd_scale * 0.5f);
+            uv[k][0] += bb[q] * (cx->t->uv[q][0] * s_hd_scale + s_hd_scale * 0.5f);
+            uv[k][1] += bb[q] * (cx->t->uv[q][1] * s_hd_scale + s_hd_scale * 0.5f);
         }
     }
     int any = 0, all = 1;
@@ -299,7 +426,7 @@ static uint32_t rgb(float r, float g, float b) {
  * base é desenhada e a textura vai por cima, como o pacote G3+GT3 do jogo). Faces seguidas costumam usar
  * o mesmo banco, o que mantém os lotes do GL grandes. */
 static void prepare(Pkt* pk, int oi, uint32_t face, const GridPt* g[3], int textured, uint16_t layer_bank0) {
-    int x0 = 0, y0 = 0, ybit = 0; uint16_t bank = A.white_bank;
+    int x0 = 0, y0 = 0, ybit = 0; uint16_t bank = s_white_bank;
     if (textured) {
         float umin = fminf(fminf(g[0]->u, g[1]->u), g[2]->u), vmin = fminf(fminf(g[0]->v, g[1]->v), g[2]->v);
         x0 = ((int)umin / 64) * 64; if (x0 > 768) x0 = 768; if (x0 < 0) x0 = 0;
@@ -358,15 +485,12 @@ static void add_kid(void* user, int kid, int a, int b, int c) {
     ch->z = (cx->g[a].z + cx->g[b].z + cx->g[c].z) / 3.0f;
 }
 
-static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
+static void draw_heat_packets(const struct CPUState* cpu, const uint32_t* nodes, int n) {
     const double t0 = now_us();
-    NodeMat M[MAX_NODES];
-    for (int i = 0; i < n; i++) {
-        for (int k = 0; k < 9; k++) M[i].m[k] = rd16(nodes[i] + 0x6C + 2 * k) / 4096.0f;
-        for (int k = 0; k < 3; k++) M[i].t[k] = (float)(int32_t)rd32(nodes[i] + 0x80 + 4 * k);
-    }
-    const float ofx = (float)(int32_t)cpu->gte_ctrl[24] / 65536.0f, ofy = (float)(int32_t)cpu->gte_ctrl[25] / 65536.0f;
-    const float H = (float)(cpu->gte_ctrl[26] & 0xFFFFu);
+    RmkBone M[MAX_NODES];
+    read_bones(nodes, n, M);
+    const RmkProj pr = gte_proj(cpu);
+    const float ofx = pr.ofx, ofy = pr.ofy, H = pr.h;
     const int Lmax = s_level < 1 ? 1 : s_level > LMAX ? LMAX : s_level;
     if (!s_P) {
         s_P = (V3*)malloc(sizeof(V3) * A.n_verts); s_N = (V3*)malloc(sizeof(V3) * A.n_verts);
@@ -382,14 +506,8 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
         s_lk = norm(v3(-0.45f, -0.80f, -0.55f)); s_lf = norm(v3(0.75f, -0.15f, -0.55f)); s_lr = norm(v3(0.25f, -0.45f, 1.0f));
         compute_cover();
     }
-    for (uint32_t i = 0; i < A.n_verts; i++) {
-        const HVert* hv = &A.verts[i];
-        const NodeMat* m = &M[hv->owner < n ? hv->owner : 0];
-        float x = hv->x, y = hv->y, z = hv->z;
-        s_P[i] = v3(m->m[0] * x + m->m[1] * y + m->m[2] * z + m->t[0], m->m[3] * x + m->m[4] * y + m->m[5] * z + m->t[1],
-                    m->m[6] * x + m->m[7] * y + m->m[8] * z + m->t[2]);
-        s_N[i] = v3(0, 0, 0);
-    }
+    rmk_skin(&A, M, n, (float*)s_P);
+    for (uint32_t i = 0; i < A.n_verts; i++) s_N[i] = v3(0, 0, 0);
     /* visibilidade (NCLIP > 0, como FUN_80036230) e normais por vértice */
     float orient = 0;
     for (uint32_t f = 0; f < A.n_tris; f++) {
@@ -438,7 +556,7 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
                 umin = fminf(umin, t->uv[k][0]); umax = fmaxf(umax, t->uv[k][0]);
                 vmin = fminf(vmin, t->uv[k][1]); vmax = fmaxf(vmax, t->uv[k][1]);
             }
-            int Luv = (int)ceilf(fmaxf(umax - umin, vmax - vmin) * (float)A.hd_scale / 192.0f);
+            int Luv = (int)ceilf(fmaxf(umax - umin, vmax - vmin) * s_hd_scale / 192.0f);
             s_luv[f] = (uint8_t)(Luv < 1 ? 1 : Luv > LMAX ? LMAX : Luv);
         }
     }
@@ -488,8 +606,8 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
                 float a = 0;
                 for (int q2 = 0; q2 < 3; q2++) gp->base[q2] = gp->over[q2] = 0;
                 for (int k = 0; k < 3; k++) {
-                    gp->u += bb[k] * (t->uv[k][0] * (float)A.hd_scale + A.hd_scale * 0.5f);
-                    gp->v += bb[k] * (t->uv[k][1] * (float)A.hd_scale + A.hd_scale * 0.5f);
+                    gp->u += bb[k] * (t->uv[k][0] * s_hd_scale + s_hd_scale * 0.5f);
+                    gp->v += bb[k] * (t->uv[k][1] * s_hd_scale + s_hd_scale * 0.5f);
                     a += bb[k] * ao[k];
                     for (int q2 = 0; q2 < 3; q2++) { gp->base[q2] += bb[k] * t->base[k][q2]; gp->over[q2] += bb[k] * t->over[k][q2]; }
                 }
@@ -539,8 +657,7 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
         }
         wr32(ot, prev);
     }
-    if (emitted && !psx_mod_write_gpu_dma(base_addr, s_out, emitted * PKT_BYTES))
-        for (uint32_t i = 0; i < emitted * (PKT_BYTES / 4u); i++) wr32(base_addr + 4u * i, s_out[i]);
+    if (emitted) write_arena(base_addr, s_out, emitted * PKT_BYTES);
     s_arena_off += emitted * PKT_BYTES;
     const double t2 = now_us();
     psx_mod_counter_add("bag2_heat.us_geometry", (uint32_t)(t1 - t0));
@@ -574,22 +691,58 @@ static void dump_tree(struct CPUState* cpu) {
     fclose(f);
 }
 
+static int use_host_path(void) { return !(s_flags & 4) && s_marks && !s_rt_failed && psx_mod_texture_banks_supported(); }
+
 static int heat_filter(struct CPUState* cpu, uint32_t address) {
     (void)address;
     psx_mod_counter_add("bag2_heat.draw_tree", 1);
     if (s_dump_request) { dump_tree(cpu); s_dump_request--; }
-    if (s_mode == 0 || !s_arena || !ensure_loaded()) return 0;
+    if (s_mode == 0 || !s_loaded) return 0;
+    const int host = use_host_path();
+    /* Recursos GL do desenho de host: criados aos poucos, por marcadores de preparo ligados por qualquer
+     * personagem (o primeiro aparece bem antes de uma partida: abertura, seleção). Até ficarem prontos, o
+     * HEAT original continua. */
+    if (host && !s_rt_ready) {
+        if (emit_marker(OT_MAX, HD_FLAG_PREPARE, NULL, NULL)) psx_mod_counter_add("bag2_heat.prepare_marks", 1);
+        return 0;
+    }
     uint32_t nodes[MAX_NODES];
     int n = collect(cpu->gpr[4], nodes, 0);
     if (!is_heat(nodes, n)) return 0;
-    s_shift = 0;
-    if (s_mode == 3) s_shift = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
-    draw_heat(cpu, nodes, n);
-    if (s_mode >= 4) {   /* teste de carga: mais (modo - 3) cópias do remake ao lado (simula outros personagens) */
-        const float w = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
-        for (int c = 1; c <= s_mode - 3; c++) { s_shift = w * c; draw_heat(cpu, nodes, n); }
+    if ((!host || s_mode == 7) && (!s_arena || !ensure_banks())) return 0;
+    const float w = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
+    if (s_mode == 7) {   /* comparação de 3: original, pacotes (fase 0) à direita, desenho de host mais à direita */
+        static float* pos7;
+        if (!pos7 && !(pos7 = (float*)malloc(12u * A.n_verts))) return 0;
+        RmkBone M[MAX_NODES];
+        read_bones(nodes, n, M);
+        rmk_skin(&A, M, n, pos7);
+        const RmkProj pr = gte_proj(cpu);
+        s_shift = w;
+        draw_heat_packets(cpu, nodes, n);
         s_shift = 0;
+        if (host) host_heat(&pr, pos7, 2.0f * w);   /* por último: s_bbox fica com o retângulo deste */
+        return 0;
     }
+    const int copies = s_mode >= 4 ? s_mode - 3 : 0;   /* teste de carga: cópias do remake ao lado */
+    s_shift = s_mode == 3 ? w : 0.0f;
+    if (host) {
+        static float* pos;
+        if (!pos && !(pos = (float*)malloc(12u * A.n_verts))) return 0;
+        RmkBone M[MAX_NODES];
+        read_bones(nodes, n, M);
+        rmk_skin(&A, M, n, pos);
+        const RmkProj pr = gte_proj(cpu);
+        host_heat(&pr, pos, s_shift);
+        float bb[4];
+        memcpy(bb, s_bbox, sizeof bb);
+        for (int c = 1; c <= copies; c++) host_heat(&pr, pos, w * c);
+        if (copies) memcpy(s_bbox, bb, sizeof bb);
+    } else {
+        draw_heat_packets(cpu, nodes, n);
+        for (int c = 1; c <= copies; c++) { s_shift = w * c; draw_heat_packets(cpu, nodes, n); }
+    }
+    s_shift = 0;
     return s_mode == 1 || s_mode >= 4;   /* 1 e 4+ pulam o original; 2 e 3 desenham os dois (comparar) */
 }
 
@@ -606,17 +759,51 @@ static int heat_mode_cmd(const char* args, char* reply, int cap) {
     if (bud > 0) s_budget = (uint32_t)bud;
     if (fl >= 0) s_flags = fl;
     if (tol > 0) s_tol = tol;
-    if (m >= 0 && m <= 6) s_mode = m;
+    if (m >= 0 && m <= 7) s_mode = m;
     if (lv >= 1 && lv <= 6) s_level = lv;
     if (al >= 0 && al <= 1) s_alpha = al;
-    snprintf(reply, cap, "mode=%d level=%d alpha=%.2f tol=%.3f (efetiva %.3f) budget=%u loaded=%d arena=%08X "
-             "bbox=%.1f,%.1f,%.1f,%.1f", s_mode, s_level, s_alpha, s_tol, s_tol_used, s_budget, A.loaded, s_arena, s_bbox[0], s_bbox[1], s_bbox[2], s_bbox[3]);
+    snprintf(reply, cap, "mode=%d level=%d alpha=%.2f tol=%.3f (efetiva %.3f) budget=%u flags=%d loaded=%d host=%d "
+             "rt_ready=%d rt_failed=%d arena=%08X z=%.0f..%.0f bbox=%.1f,%.1f,%.1f,%.1f", s_mode, s_level, s_alpha, s_tol,
+             s_tol_used, s_budget, s_flags, s_loaded, use_host_path(), s_rt_ready, s_rt_failed, s_arena, s_zr[0], s_zr[1],
+             s_bbox[0], s_bbox[1], s_bbox[2], s_bbox[3]);
+    return 0;
+}
+
+static int heat_light_cmd(const char* args, char* reply, int cap) {
+    float v[7] = {-1, -1, -1, -1, -1, -1, -1};
+    if (args) sscanf(args, "%f %f %f %f %f %f %f", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]);
+    for (int i = 0; i < 7; i++) if (v[i] >= 0) s_light[i] = v[i];
+    snprintf(reply, cap, "expo=%.2f key=%.2f fill=%.2f rim=%.2f amb=%.2f rough=%.2f zbias=%.4f", s_light[0], s_light[1],
+             s_light[2], s_light[3], s_light[4], s_light[5], s_light[6]);
+    return 0;
+}
+
+/* Desde a última chamada: desenhos de host e tempo médio de CPU na thread de render; do renderizador
+ * (patch local), desenhos com alvo, espelhos na superfície larga e marcadores sem nada visível. */
+extern uint64_t gl_renderer_host_draw_stats(uint64_t* mirrors, uint64_t* skipped);
+static int heat_stats_cmd(const char* args, char* reply, int cap) {
+    (void)args;
+    static uint32_t d0;
+    static double u0;
+    static uint64_t c0, m0, k0;
+    const uint32_t d = s_rt_draws;
+    const double u = s_rt_us;
+    uint64_t m = 0, k = 0;
+    const uint64_t c = gl_renderer_host_draw_stats(&m, &k);
+    snprintf(reply, cap, "rt_draws=%u rt_us_per_draw=%.1f gl_calls=%llu gl_mirrors=%llu gl_skipped=%llu rt_prepares=%u "
+             "rt_ready=%d rt_failed=%d err=%s", d - d0, d > d0 ? (u - u0) / (double)(d - d0) : 0.0,
+             (unsigned long long)(c - c0), (unsigned long long)(m - m0), (unsigned long long)(k - k0), s_rt_prepares,
+             s_rt_ready, s_rt_failed, s_gl ? rmk_gl_error(s_gl) : "");
+    d0 = d; u0 = u; c0 = c; m0 = m; k0 = k;
     return 0;
 }
 
 PSX_MOD_CONSTRUCTOR(bag2_heat_register) {
     (void)psx_mod_register_activation_plugin("bag2.heat_remake", heat_activate);
     (void)psx_mod_register_function_filter_plugin("bag2.heat_remake", DRAW_TREE_FN, heat_filter);
+    (void)psx_mod_register_host_draw(HOST_DRAW_ID, heat_host_draw);
     (void)psx_mod_register_command("heat_dump", heat_dump_cmd);
     (void)psx_mod_register_command("heat_mode", heat_mode_cmd);
+    (void)psx_mod_register_command("heat_light", heat_light_cmd);
+    (void)psx_mod_register_command("heat_stats", heat_stats_cmd);
 }

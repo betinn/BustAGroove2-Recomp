@@ -17,26 +17,31 @@ já é construído pensando nele (fase 5).
 | Fase | O que | Estado |
 |---|---|---|
 | 0 | Piloto offline + prova de conceito no jogo (HEAT por pacotes GT3) | **feito** (commits 6f0816a..d7cc0d4) |
-| 1 | Atalho de render: malha direto no renderizador GL, shader moderno, núcleo portátil | próximo |
-| 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, IA 3D) | pendente |
+| 1 | Atalho de render: malha direto no renderizador GL, shader moderno, núcleo portátil | **feito** (2026-10-27) |
+| 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, IA 3D) | próximo |
 | 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | pendente |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | pendente |
 | 5 | Port para o Polygonia (Android) | pendente |
 | 6 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 0)
-- HEAT remake roda no exe: plugin `tools/recomp/bag2/src/bag2_heat.c`, hook de filtro em `FUN_80029D4C`,
-  pacotes GT3 com bancos de textura HD numa arena de DMA, ligados na OT do jogo. Pacote
-  `bag2.remake.heat` ligado por padrão. Asset `mods/remake/heat.bin` (25 MB, fora do git) por
-  `tools/remake/export_heat.py`.
-- Desempenho medido (partida de 150 s, `tools/remake/game_perf.py`): 59,9 fps em todos os segundos, thread
-  do jogo 61 % (base 48 %), 0 underruns. Dois remakes simulados (modo 4): 60 no limite (82 %, máx. 91 %);
-  três: 58 fps e underruns. Gargalo: cada triângulo passa pelo DMA/GP0 emulado (~0,2 us por palavra) e a
-  luz é por vértice. Por isso a fase 1.
-- Visual no jogo: Phong Tessellation, texturas HD, luz por vértice nova. Ainda abaixo dos renders offline
-  (`tools/recomp/logs/remake/heat/compare_*.png`, luz por pixel).
+## Onde estamos (fim da fase 1)
+- HEAT remake roda no exe pelo **desenho de host**: plugin `tools/recomp/bag2/src/bag2_heat.c` (hook de filtro
+  em `FUN_80029D4C`) entrega a pose num marcador na OT do jogo; o renderizador GL chama o núcleo portátil
+  `src/remake/` (Phong Tessellation por instancing, luz por pixel, texturas HD com mipmaps). Patch local novo
+  `tools/recomp/patches/psxrecomp-host-draw.patch` (terceiro). Pacote `bag2.remake.heat` ligado por padrão.
+  Asset v3 `mods/remake/heat.bin` (50 MB, RGBA8, fora do git) por `tools/remake/export_heat.py`. O caminho por
+  pacotes da fase 0 continua como fallback (heat_mode flags bit 2).
+- Desempenho medido: original 59,9 fps, thread do jogo 47–52 %, render 50–62 %; remake novo 59,9 sem nenhum segundo abaixo de 59,5 (mín. 59,7), jogo 40–44 %, render 33–48 %; modo 6 (4 HEATs) 59,9 (mín. 59,9), jogo 40 %, render 33 %; 0 underruns em todas as janelas de 60 s. Fase 0 por pacotes: jogo 60–61 %, render 47–52 %, e o modo 6 dela caía para 32,6 fps com 2204 underruns.
+- Corrigido nesta fase: a ordem dos atributos dos quads (a estampa da calça, sapatos e mangas saía em cacos no
+  remake e nos renders offline de 26/10).
+- Visual: ainda sem sombra própria (fica a do jogo) e com luz fixa na câmera (não usa as luzes do palco).
 
-## Fase 1 — Atalho de render (só PC, preparando o Polygonia)
+## Fase 1 — Atalho de render (só PC, preparando o Polygonia) — feita em 2026-10-27
+**Resultado:** o HEAT é desenhado pelo renderizador GL por um callback de host (patch local
+`psxrecomp-host-draw.patch`), com Phong Tessellation por instancing e luz por pixel no shader do núcleo
+portátil `tools/recomp/bag2/src/remake/`. Detalhes, números e capturas em `notes/remake-visual.md` ("Fase 1 no
+jogo"). Resumo da medição: original 59,9 fps, thread do jogo 47–52 %, render 50–62 %; remake novo 59,9 sem nenhum segundo abaixo de 59,5 (mín. 59,7), jogo 40–44 %, render 33–48 %; modo 6 (4 HEATs) 59,9 (mín. 59,9), jogo 40 %, render 33 %; 0 underruns em todas as janelas de 60 s. Fase 0 por pacotes: jogo 60–61 %, render 47–52 %, e o modo 6 dela caía para 32,6 fps com 2204 underruns.
+
 **Meta:** o HEAT desenhado pelo renderizador GL direto da malha de host, com shader próprio, sem passar
 pelo DMA/GP0 emulado. Critérios de pronto:
 - Visual: luz por pixel (difusa com wrap, especular GGX, contraluz, ambiente de hemisfério, oclusão
@@ -114,15 +119,24 @@ O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins
 Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo no runtime.
 
 ## Aprendizados que valem para todas as fases (resumo; detalhes em `notes/remake-visual.md`)
-- Formato: quads na GPU em ordem v0, v3, v1, v2 (diagonal v1–v3, UV em sequência); slot de vértice
-  compartilhado = nó × 256 + local; índices de normal globais; MeshHeader+0x98 = base de normais.
+- Formato: quads com diagonal v1–v3 e atributos (UV, normal, cor) trocados entre v0 e v2: v0 usa o de índice 2,
+  v1 o 1, v2 o 0, v3 o 3 (`QUAD_ATTR`, medido na GPU em 27/10; antes a estampa da calça/sapatos/mangas saía
+  em cacos); slot de vértice compartilhado = nó × 256 + local; índices de normal globais; MeshHeader+0x98 =
+  base de normais. Para conferir formato contra o jogo: `gpu_frame_dump` + `heat_dump` do mesmo quadro.
 - Jogo: árvore de ossos em `FUN_80029C6C` (filho +0x94, irmão +0x98, MATRIX câmera×osso em +0x6C, T em
   +0x80, mesh em +0x8C, tipo em +0xA0); o HEAT desenhado tem só os nós 0–19. Tela: `OFX + H·X/Z` com OFX/OFY
   em gte_ctrl[24]/[25] (16.16), H em gte_ctrl[26]; a tela nativa larga tem 512 colunas (OFX 256).
 - Ordem: culling NCLIP > 0; slot da OT `(z0 + z1) >> 3` (v0, v1 em triângulos; v0, v2 em quads); OT em
   `DAT_8006EE88 - 0x180`, entradas 95..4191, reversa (o último ligado sai primeiro); paridade do quadro em
   `0x8006EE90`. O modelo tem camadas coplanares (decalques): a ordem dentro do slot importa.
-- PSXRecomp: ativação de plugin roda antes do renderizador (carregar bancos/recursos GL no primeiro uso);
-  `render_thread` + qualquer `GL_RT_SYNC` por primitiva derruba o fps; trocar textura fecha o lote do GL.
+- PSXRecomp: ativação de plugin roda antes do renderizador (ler arquivos ali; recursos GL só depois, aos
+  poucos, por marcadores de preparo); `render_thread` + qualquer `GL_RT_SYNC` por primitiva derruba o fps;
+  trocar textura fecha o lote do GL. Desenho de host (patch 3): marcador GP0 00h "HDR" na arena, payload por
+  valor no fluxo da thread de render, callback com o FBO 9x e o espelho da tela larga.
+- O jogo desenha cada dançarino a 30 Hz (a árvore de ossos sai 30 vezes por segundo por personagem; a tela
+  roda a 60). A música de uma partida dura ~150 s: `game_perf.py` com no máximo 2 variantes de 60 s por sessão.
+- Ordem dentro do personagem: o modelo conta com a ordem de pintor da OT; no GL, z-buffer de dois passos
+  (profundidade, depois cor na ordem do jogo com tolerância de 1 % de z), como o PGXP do framework.
+- Editar arquivos do framework com o Edit: `sed -i` do Git Bash troca CRLF por LF no arquivo inteiro.
 - Testes: build-debug (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370), `tools/remake/game_session.py` (rota de menus por
   tempo), `game_sidebyside.py`, `game_compare.py`, `game_perf.py`. `screenshot_hires` (4608×2160) leva ~1 s.

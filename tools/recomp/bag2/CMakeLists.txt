@@ -53,8 +53,12 @@ endif()
 
 # Plugins estaticos do jogo (widescreen 16:9), selecionados pelo pacote em mods/preloaded.
 target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_mods.c")
-# Remake do HEAT (prova de conceito): hook no desenho do personagem, pacote mods/preloaded/.../bag2.remake.heat.
-target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_heat.c")
+# Remake do HEAT: hook no desenho do personagem (adaptador do PC), pacote mods/preloaded/.../bag2.remake.heat,
+# e o núcleo portátil em src/remake/ (C99, sem PSXRecomp; o mesmo vai para o Polygonia).
+target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_heat.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_asset.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_pose.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_gl.c")
 
 foreach(_cfg game.toml settings.toml)
     add_custom_command(TARGET psx-runtime POST_BUILD

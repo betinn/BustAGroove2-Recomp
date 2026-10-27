@@ -116,6 +116,12 @@ L = [
     (4, 0, 0, 4, None, None, None, None), (5, 1, 0, 4, None, None, None, None),
 ]
 QUAD_TRIS = [[0, 1, 3], [3, 1, 2]]
+# Atributo (UV, normal, cor) de cada vértice v0..v3 do quad, como índice na lista lida dos offsets acima.
+# Medido na GPU em 2026-10-27 (gpu_frame_dump + heat_dump do mesmo quadro, 229 GT4/FT4 do HEAT casados com
+# ~1 px de erro, tipos 3, 5 e 9): os slots A, B, C, D do GP0 recebem os vértices v2, v3, v1, v0 e os
+# atributos 0, 3, 1, 2. Ou seja, v0 e v2 trocam de atributo em relação à sequência; v1 e v3 ficam. Sem isso
+# a calça e os sapatos saíam com a chama em cacos. Triângulos: identidade (540 casados).
+QUAD_ATTR = [2, 1, 0, 3]
 GOURAUD = {4, 5, 6, 7, 8, 9, 12, 13, 20, 21, 24, 25, 26, 27, 28, 29, 30, 31}
 
 
@@ -205,6 +211,14 @@ def _parse_mesh(b: bytes, p: int):
                                   if onat is not None else pr.normals)
                     ov.colors = pr.colors
                     pr.overlay = ov
+            if quad:   # atributos por canto do quad: o vértice k usa o atributo QUAD_ATTR[k] (ver QUAD_ATTR)
+                for o in (pr, pr.overlay):
+                    if o is None:
+                        continue
+                    for name in ('uv', 'normals', 'colors'):
+                        a = getattr(o, name)
+                        if a is not None and len(a) == 4:
+                            setattr(o, name, [a[i] for i in QUAD_ATTR])
             prims.append(pr)
             q += words * 4
     mesh = Mesh(verts, np.concatenate(normals) if normals else np.zeros((0, 3)),

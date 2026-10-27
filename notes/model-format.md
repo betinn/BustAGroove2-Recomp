@@ -71,14 +71,19 @@ Dados, em ordem: `nVerts × SVECTOR{s16 x,y,z,pad}`; grupos de normais
 grupo é a cor do material); `nRefs` u32; `nUses` u32; depois as 32 listas.
 
 ### Listas de primitivas
-Palavra 0 de todo registro: `v3 | v0<<8 | v1<<16 | v2<<24` (índices de vértice, 8 bits). **Quads:** a ordem
-dos vértices na GPU é **v0, v3, v1, v2** (as rotinas de preenchimento, ex. `FUN_80036874`, põem o vértice do
-byte 0 em xy1), então os triângulos que a GPU desenha são (v0, v3, v1) e (v3, v1, v2): a diagonal é v1–v3.
-UV são bytes (u,v) relativos à origem da textura. Nos quads a tabela abaixo usa o índice da GPU: "uv0, uv2,
-uv3, uv1" em sequência = UV de v0, v1, v2, v3 em sequência (o mesmo vale para normais e cores). Corrigido em
-2026-10-26: a leitura antiga (GPU = v0, v1, v2, v3, triângulos 012 e 132) cruzava a diagonal e embaralhava as
-texturas dos quads (calça, mangas, sapatos, óculos do HEAT). Com a ordem certa a malha do HEAT é fechada e
-manifold (0 arestas abertas). Slot da OT: `(z0 + z1) >> 3` com v0, v1 nos triângulos e v0, v2 nos quads.
+Palavra 0 de todo registro: `v3 | v0<<8 | v1<<16 | v2<<24` (índices de vértice, 8 bits). **Quads:** a
+diagonal é v1–v3, triângulos (v0, v1, v3) e (v3, v1, v2); com isso a malha do HEAT é fechada e manifold (0
+arestas abertas; a leitura de antes de 2026-10-26, triângulos 012 e 132, cruzava a diagonal).
+**Atributos por canto do quad (medido na GPU em 2026-10-27):** os slots A, B, C, D do GT4/FT4 que o jogo manda
+recebem os vértices **v2, v3, v1, v0** e os atributos de índice **0, 3, 1, 2** na ordem dos offsets da tabela
+abaixo (ex. GT4 k5: índice 0 = @12, 1 = @14, 2 = @16, 3 = @18). Ou seja, v0 usa o atributo 2, v1 o 1, v2 o 0 e
+v3 o 3 (`QUAD_ATTR` em `tools/remake/bag2model.py`); vale para UV, normais e cores. Medição: `gpu_frame_dump` e
+`heat_dump` do mesmo quadro, 229 quads texturizados do HEAT (tipos 3, 5 e 9) casados pelo conjunto de UV e pela
+posição na tela (~1 px); triângulos: identidade (540 casados). A leitura de 2026-10-26 ("UV em sequência
+v0..v3") trocava os atributos de v0 e v2: a calça, os sapatos e as mangas saíam com a estampa em cacos no remake
+e nos renders offline. Slot da OT: `(z0 + z1) >> 3` com v0, v1 nos triângulos e v0, v2 nos quads.
+UV são bytes (u,v) relativos à origem da página de textura. Na tabela, os rótulos "uv0, uv2, uv3, uv1" dos quads
+são só a ordem dos offsets (índices 0..3); o vértice de cada um é o do parágrafo acima.
 `tex` = byte: bits 0–4 índice de textura, bits 5–7 semitransparência. `clut` = byte: linha da CLUT (+y).
 
 | k | contagem em | palavras | tipo | cor | layout |
