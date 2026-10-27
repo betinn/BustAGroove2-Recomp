@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exporta o HEAT para o plugin do jogo (src/bag2_heat.c + núcleo src/remake/): malha soldada, atributos
-por canto, oclusão ambiente por vértice, as texturas HD (Real-ESRGAN 4x) em RGBA8 e as mãos com dedos de
-cada gesto (tools/remake/hands.py) como grupos de faces.
+por canto, oclusão ambiente por vértice, as texturas HD (Real-ESRGAN 4x) em RGBA8, as mãos com dedos de
+cada gesto (tools/remake/hands.py) como grupos de faces e as orelhas novas (tools/remake/ears.py).
 
 Uso: python tools/remake/export_heat.py [saída]   (padrão: build-debug/mods/remake/heat.bin e build/...)
 O arquivo é derivado do disco do usuário: fica fora do git (pastas build*/ são ignoradas).
@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(HERE, '..'))
 from bag2model import CHARS, load_character  # noqa: E402
 from rig import build_rig, pose_positions  # noqa: E402
 from heat_remake import DISC, OUT, hd_layers, ps1_layers  # noqa: E402
+import ears as E  # noqa: E402
 import hands as H  # noqa: E402
 
 BAG2 = os.path.join(HERE, '..', 'recomp', 'bag2')
@@ -81,6 +82,7 @@ def main():
     layers = ps1_layers(base_rig, tims)
     hd = hd_layers(layers, os.path.join(OUT, name.lower(), 'textures'))
     rig, groups = H.attach_hands(base_rig, nodes, hd, cache_dir=os.path.join(OUT, name.lower(), 'maos'))
+    rig = E.attach_ears(rig)
     perm = np.lexsort(rig.order.T[::-1])
     for k in FACE_FIELDS:
         setattr(rig, k, getattr(rig, k)[perm])

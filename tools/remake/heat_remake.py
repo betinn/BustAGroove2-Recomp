@@ -73,7 +73,8 @@ class Character:
     """hands=True (HEAT): mãos novas com dedos (tools/remake/hands.py) no MODERNIZADO; o ORIGINAL usa a mão
     original do mesmo gesto. Gesto atual: self.gesture = (esquerda, direita), índices em hands.GESTURES."""
 
-    def __init__(self, name='HEAT', levels=2, crease_deg=80.0, method='phong', pin_open=True, hands=None):
+    def __init__(self, name='HEAT', levels=2, crease_deg=80.0, method='phong', pin_open=True, hands=None,
+                 ears=True):
         self.method, self.levels = method, levels
         k = CHARS.index(name)
         self.nodes, self.anims, self.tims, _ = load_character(DISC, k)
@@ -89,6 +90,9 @@ class Character:
             hd = hd_layers(layers, os.path.join(OUT, name.lower(), 'textures'))
             self.rig, self.hand_groups = H.attach_hands(base, self.nodes, hd,
                                                         cache_dir=os.path.join(OUT, name.lower(), 'maos'))
+            if ears:
+                import ears as E
+                self.rig = E.attach_ears(self.rig)
         else:
             self.rig = build_rig(self.nodes, SKIP.get(name, set()))
             flipped = orient_faces(self.rig, self.nodes)
