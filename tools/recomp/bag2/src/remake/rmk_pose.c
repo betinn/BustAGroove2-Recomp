@@ -10,8 +10,35 @@ void rmk_bone_from_gte(RmkBone* b, const int16_t m[9], const int32_t t[3]) {
     for (int k = 0; k < 3; k++) b->t[k] = (float)t[k];
 }
 
-void rmk_skin(const RmkAsset* a, const RmkBone* bones, int n_bones, float* pos) {
-    for (uint32_t i = 0; i < a->n_verts; i++) {
+uint32_t rmk_active_verts(const RmkAsset* a, uint32_t mask) {
+    uint32_t n = a->n_body;
+    for (uint32_t g = 1; g <= a->n_groups; g++)
+        if ((mask >> g) & 1u) n += a->groups[g].nv;
+    return n;
+}
+
+void rmk_compact(const RmkAsset* a, uint32_t mask, const float* full, float* compact) {
+    memcpy(compact, full, 12u * a->n_body);
+    uint32_t o = a->n_body;
+    for (uint32_t g = 1; g <= a->n_groups; g++) {
+        if (!((mask >> g) & 1u)) continue;
+        memcpy(compact + 3u * o, full + 3u * a->groups[g].v0, 12u * a->groups[g].nv);
+        o += a->groups[g].nv;
+    }
+}
+
+void rmk_expand(const RmkAsset* a, uint32_t mask, const float* compact, float* full) {
+    memcpy(full, compact, 12u * a->n_body);
+    uint32_t o = a->n_body;
+    for (uint32_t g = 1; g <= a->n_groups; g++) {
+        if (!((mask >> g) & 1u)) continue;
+        memcpy(full + 3u * a->groups[g].v0, compact + 3u * o, 12u * a->groups[g].nv);
+        o += a->groups[g].nv;
+    }
+}
+
+static void skin_range(const RmkAsset* a, const RmkBone* bones, int n_bones, uint32_t i0, uint32_t i1, float* pos) {
+    for (uint32_t i = i0; i < i1; i++) {
         const RmkVert* v = &a->verts[i];
         const RmkBone* b = &bones[v->owner < n_bones ? v->owner : 0];
         const float x = v->x, y = v->y, z = v->z;
@@ -20,6 +47,12 @@ void rmk_skin(const RmkAsset* a, const RmkBone* bones, int n_bones, float* pos) 
         p[1] = b->m[3] * x + b->m[4] * y + b->m[5] * z + b->t[1];
         p[2] = b->m[6] * x + b->m[7] * y + b->m[8] * z + b->t[2];
     }
+}
+
+void rmk_skin(const RmkAsset* a, const RmkBone* bones, int n_bones, uint32_t mask, float* pos) {
+    skin_range(a, bones, n_bones, 0, a->n_body, pos);
+    for (uint32_t g = 1; g <= a->n_groups; g++)
+        if ((mask >> g) & 1u) skin_range(a, bones, n_bones, a->groups[g].v0, a->groups[g].v0 + a->groups[g].nv, pos);
 }
 
 static void face_normal(const float* a, const float* b, const float* c, float n[3]) {
@@ -35,11 +68,13 @@ static int face_visible(const float* a, const float* b, const float* c, const fl
     return n[0] * a[0] + n[1] * a[1] + n[2] * a[2] > 0.0f;
 }
 
-void rmk_frame_info(const RmkAsset* a, const float* pos, const RmkProj* pr, float shift_x, RmkFrameInfo* out) {
+void rmk_frame_info(const RmkAsset* a, const float* pos, uint32_t mask, const RmkProj* pr, float shift_x,
+                    RmkFrameInfo* out) {
     float bb[4] = {1e9f, 1e9f, -1e9f, -1e9f}, zmin = 1e9f, zmax = -1e9f;
     int ot = 1 << 30, vis = 0;
     for (uint32_t f = 0; f < a->n_tris; f++) {
         const RmkTri* t = &a->tris[f];
+        if (!RMK_FACE_ON(t, mask)) continue;
         const float *p0 = &pos[3 * t->v[0]], *p1 = &pos[3 * t->v[1]], *p2 = &pos[3 * t->v[2]];
         float n[3];
         face_normal(p0, p1, p2, n);
@@ -67,11 +102,12 @@ void rmk_frame_info(const RmkAsset* a, const float* pos, const RmkProj* pr, floa
     out->visible = vis;
 }
 
-void rmk_pack_geometry(const RmkAsset* a, const float* pos, float* out) {
+void rmk_pack_geometry(const RmkAsset* a, const float* pos, uint32_t mask, float* out) {
     memset(out, 0, sizeof(float) * 8u * a->n_verts);
     float orient = 0.0f;
     for (uint32_t f = 0; f < a->n_tris; f++) {
         const RmkTri* t = &a->tris[f];
+        if (!RMK_FACE_ON(t, mask)) continue;
         const float *p0 = &pos[3 * t->v[0]], *p1 = &pos[3 * t->v[1]], *p2 = &pos[3 * t->v[2]];
         float n[3];
         face_normal(p0, p1, p2, n);
@@ -83,12 +119,16 @@ void rmk_pack_geometry(const RmkAsset* a, const float* pos, float* out) {
             orient -= n[0] * (p0[0] + p1[0] + p2[0]) + n[1] * (p0[1] + p1[1] + p2[1]) + n[2] * (p0[2] + p1[2] + p2[2]);
     }
     const float sgn = orient < 0.0f ? -1.0f : 1.0f;   /* normais da face visível apontam para a câmera */
-    for (uint32_t i = 0; i < a->n_verts; i++) {
-        float* o = &out[8u * i];
-        o[0] = pos[3 * i]; o[1] = pos[3 * i + 1]; o[2] = pos[3 * i + 2];
-        o[3] = a->verts[i].ao / 255.0f;
-        const float l = sqrtf(o[4] * o[4] + o[5] * o[5] + o[6] * o[6]);
-        if (l > 1e-12f) { o[4] *= sgn / l; o[5] *= sgn / l; o[6] *= sgn / l; }
-        else { o[4] = 0.0f; o[5] = 0.0f; o[6] = -1.0f; }
+    for (uint32_t g = 0; g <= a->n_groups; g++) {
+        if (g && !((mask >> g) & 1u)) continue;
+        const uint32_t i0 = g ? a->groups[g].v0 : 0, i1 = g ? i0 + a->groups[g].nv : a->n_body;
+        for (uint32_t i = i0; i < i1; i++) {
+            float* o = &out[8u * i];
+            o[0] = pos[3 * i]; o[1] = pos[3 * i + 1]; o[2] = pos[3 * i + 2];
+            o[3] = a->verts[i].ao / 255.0f;
+            const float l = sqrtf(o[4] * o[4] + o[5] * o[5] + o[6] * o[6]);
+            if (l > 1e-12f) { o[4] *= sgn / l; o[5] *= sgn / l; o[6] *= sgn / l; }
+            else { o[4] = 0.0f; o[5] = 0.0f; o[6] = -1.0f; }
+        }
     }
 }

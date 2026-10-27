@@ -4,8 +4,11 @@
  * ossos (FUN_80029C6C: filho em +0x94, irmão em +0x98; +0x6C = MATRIX câmera×osso já pronta para o
  * GTE, +0x8C = MeshHeader, +0xA0 = tipo). Quando a árvore é a do HEAT (conferido pelo MeshHeader de
  * cada osso: nº de vértices em +0x94 e índice-base de normais em +0x98), o plugin pula o desenho
- * original e desenha a malha nova (núcleo portátil em src/remake/, asset mods/remake/heat.bin v3 de
- * tools/remake/export_heat.py, fora do git). Dois caminhos:
+ * original e desenha a malha nova (núcleo portátil em src/remake/, asset mods/remake/heat.bin v4 de
+ * tools/remake/export_heat.py, fora do git). Mãos (fase 2): o jogo troca o mesh inteiro da mão em alguns
+ * gestos (o script da dança religa o irmão do antebraço, nó 15/18 +0x98, para o nó 16/20/21 ou 19/22/23);
+ * o nó na posição 16/19 da árvore diz o gesto, e o asset tem uma mão com dedos por gesto (grupos). Dois
+ * caminhos:
  *   - desenho de host (padrão, fase 1): a pose vira um pacote marcador na arena de DMA, ligado no slot
  *     da OT da face mais próxima; quando a GPU emulada chega nele, o renderizador GL chama
  *     heat_host_draw com o FBO de alta resolução (patch local psxrecomp-host-draw.patch), e o shader do
@@ -60,6 +63,7 @@ static int s_mode = 1;               /* 0 original, 1 remake, 2 os dois sobrepos
                                         4..6 mais 1..3 cópias do remake ao lado (teste de carga),
                                         7 original + pacotes (fase 0) + desenho de host lado a lado */
 static float s_shift;                /* deslocamento x do remake nos modos 3..6 (pixels do PS1) */
+static float s_last_shift;           /* o do último desenho (capturas) */
 static int s_level = 4;              /* pacotes: máximo de divisões por aresta (4 -> até 16 triângulos por face) */
 static float s_alpha = 0.6f;         /* Phong Tessellation */
 /* bit 0 = pacotes sem cor base sob textura (depuração); bit 1 = pacotes agrupados por banco dentro do slot da
@@ -72,6 +76,9 @@ static float s_zr[2];                /* faixa de Z do último remake (comando he
 static volatile int s_dump_request;
 static char s_dump_path[260] = "heat_dump.txt";
 static float s_bbox[4];              /* último retângulo do remake na tela (pixels do PS1), para capturas */
+static uint32_t s_last_mask;         /* grupos (gestos) do último HEAT desenhado */
+static float s_hand_xy[2][3];        /* osso de cada mão na tela (pixels do PS1, sem deslocamento) e z */
+static int s_force[2] = {-1, -1};    /* heat_force: gesto forçado em cada mão (teste), -1 = o do jogo */
 
 /* thread de render (desenho de host): escritos só lá, lidos pelos comandos */
 static RmkGL* s_gl;
@@ -86,6 +93,18 @@ static void wr32(uint32_t a, uint32_t v) { psx_mod_write_word(a, v); }
 static void write_arena(uint32_t addr, const uint32_t* w, uint32_t bytes) {
     if (!psx_mod_write_gpu_dma(addr, w, bytes))
         for (uint32_t i = 0; i < bytes / 4u; i++) wr32(addr + 4u * i, w[i]);
+}
+
+/* Pior caso de vértices num quadro: corpo + o maior gesto de cada posição de mão. */
+static uint32_t max_active_verts(void) {
+    uint32_t n = A.n_body;
+    for (uint32_t pos = 0; pos < RMK_MAX_NODES; pos++) {
+        uint32_t m = 0;
+        for (uint32_t g = 1; g <= A.n_groups; g++)
+            if (A.groups[g].tree_pos == pos && A.groups[g].nv > m) m = A.groups[g].nv;
+        n += m;
+    }
+    return n;
 }
 
 /* ------------------------------------------------------------------ ativação */
@@ -106,7 +125,7 @@ static void heat_activate(void) {
         }
     }
     if (s_loaded && !s_marks) {
-        s_mark_bytes = (uint32_t)(8u + sizeof(PSXModHostDrawHeader) + sizeof(RmkFrame) + 12u * A.n_verts + 15u) & ~15u;
+        s_mark_bytes = (uint32_t)(8u + sizeof(PSXModHostDrawHeader) + sizeof(RmkFrame) + 12u * max_active_verts() + 15u) & ~15u;
         s_marks = psx_mod_alloc_texture_packet_memory(2u * MARKS_PER_HALF * s_mark_bytes, 64u);
         if (!s_marks) psx_mod_counter_add("bag2_heat.marks_fail", 1);
     }
@@ -126,14 +145,35 @@ static int collect(uint32_t node, uint32_t* out, int n) {
     return n;
 }
 
-static int is_heat(const uint32_t* nodes, int n) {
-    /* a árvore desenhada tem só os ossos 0..19; os nós 20..23 do arquivo (mãos alternativas) ficam fora */
+/* 0 se a árvore não é a do HEAT; senão a máscara de grupos ativos (bit 0 = corpo, bit g = gesto g). A árvore
+ * desenhada tem 20 ossos; nas posições das mãos (16, 19) o jogo liga o nó do gesto (16/20/21, 19/22/23),
+ * reconhecido pelo MeshHeader. */
+static uint32_t heat_groups(const uint32_t* nodes, int n) {
     if (!s_loaded || n < 16 || n > A.mesh_nodes) return 0;
+    uint32_t mask = 1u;
     for (int i = 0; i < n; i++) {
         uint32_t mesh = rd32(nodes[i] + 0x8C);
-        if (!mesh || rd32(mesh + 0x94) != A.node_nverts[i] || rd32(mesh + 0x98) != A.node_base[i]) return 0;
+        if (!mesh) return 0;
+        const uint32_t nv = rd32(mesh + 0x94), base = rd32(mesh + 0x98);
+        int hand = 0, found = 0;
+        for (uint32_t g = 1; g <= A.n_groups; g++) {
+            if (A.groups[g].tree_pos != (uint32_t)i) continue;
+            hand = 1;
+            if (nv == A.groups[g].sig_nverts && base == A.groups[g].sig_base) { mask |= 1u << g; found = 1; break; }
+        }
+        if (hand ? !found : (nv != A.node_nverts[i] || base != A.node_base[i])) return 0;
     }
-    return 1;
+    return mask;
+}
+
+/* quadros por gesto ativo (contadores bag2_heat.grupo<g>) */
+static void count_groups(uint32_t mask) {
+    static const char* names[RMK_MAX_GROUPS] = {"bag2_heat.grupo0", "bag2_heat.grupo1", "bag2_heat.grupo2",
+        "bag2_heat.grupo3", "bag2_heat.grupo4", "bag2_heat.grupo5", "bag2_heat.grupo6", "bag2_heat.grupo7",
+        "bag2_heat.grupo8", "bag2_heat.grupo9", "bag2_heat.grupo10", "bag2_heat.grupo11", "bag2_heat.grupo12",
+        "bag2_heat.grupo13", "bag2_heat.grupo14", "bag2_heat.grupo15"};
+    for (uint32_t g = 1; g <= A.n_groups; g++)
+        if ((mask >> g) & 1u) psx_mod_counter_add(names[g], 1);
 }
 
 static void read_bones(const uint32_t* nodes, int n, RmkBone* b) {
@@ -159,6 +199,7 @@ static RmkProj gte_proj(const struct CPUState* cpu) {
  * PSX_MOD_HOST_DRAW_NOP, cabeçalho, RmkFrame + posições (fora do nó: a GPU emulada não lê). */
 static int emit_marker(uint32_t slot, uint16_t flags, const RmkFrame* fr, const float* pos) {
     static uint32_t buf[(8u + sizeof(PSXModHostDrawHeader) + sizeof(RmkFrame)) / 4u + 3u * 65536u];
+    /* pos: vetor completo; vai compacto (corpo + gestos ativos), fr->n_verts vértices */
     if (!s_marks) return 0;
     const uint32_t parity = rd32(FRAME_PARITY) & 1u;
     if (parity != s_mark_parity) { s_mark_parity = parity; s_mark_off = 0; }
@@ -169,7 +210,7 @@ static int emit_marker(uint32_t slot, uint16_t flags, const RmkFrame* fr, const 
     h.magic = PSX_MOD_HOST_DRAW_MAGIC;
     h.id = HOST_DRAW_ID;
     h.flags = flags;
-    h.bytes = fr ? (uint32_t)(sizeof(RmkFrame) + 12u * A.n_verts) : 0u;
+    h.bytes = fr ? (uint32_t)(sizeof(RmkFrame) + 12u * fr->n_verts) : 0u;
     if (fr) {
         h.bbox[0] = (int32_t)floorf(fr->bbox[0]); h.bbox[1] = (int32_t)floorf(fr->bbox[1]);
         h.bbox[2] = (int32_t)ceilf(fr->bbox[2]); h.bbox[3] = (int32_t)ceilf(fr->bbox[3]);
@@ -183,7 +224,7 @@ static int emit_marker(uint32_t slot, uint16_t flags, const RmkFrame* fr, const 
     uint32_t bytes = 8u + (uint32_t)sizeof h;
     if (fr) {
         memcpy((uint8_t*)buf + bytes, fr, sizeof *fr);
-        memcpy((uint8_t*)buf + bytes + sizeof *fr, pos, 12u * A.n_verts);
+        rmk_compact(&A, fr->groups, pos, (float*)((uint8_t*)buf + bytes + sizeof *fr));
         bytes += h.bytes;
     }
     write_arena(addr, buf, bytes);
@@ -192,10 +233,11 @@ static int emit_marker(uint32_t slot, uint16_t flags, const RmkFrame* fr, const 
     return 1;
 }
 
-static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, float shift) {
+static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, float shift, uint32_t mask) {
     memset(fr, 0, sizeof *fr);
     fr->magic = RMK_FRAME_MAGIC;
-    fr->n_verts = A.n_verts;
+    fr->groups = mask;
+    fr->n_verts = rmk_active_verts(&A, mask);
     fr->serial = ++s_serial;
     fr->flags = ((s_flags & 8) ? RMK_FLAG_FLAT : 0u) | ((s_flags & 16) ? RMK_FLAG_NO_TEX : 0u);
     fr->ofx = pr->ofx; fr->ofy = pr->ofy; fr->h = pr->h; fr->shift_x = shift;
@@ -211,15 +253,15 @@ static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, 
 }
 
 /* Um HEAT pelo desenho de host (shift = deslocamento na tela, para comparação e carga). */
-static void host_heat(const RmkProj* pr, const float* pos, float shift) {
+static void host_heat(const RmkProj* pr, const float* pos, uint32_t mask, float shift) {
     const double t0 = now_us();
     RmkFrameInfo fi;
-    rmk_frame_info(&A, pos, pr, shift, &fi);
+    rmk_frame_info(&A, pos, mask, pr, shift, &fi);
     if (!fi.visible) return;
     int slot = fi.ot_near;
     slot = slot < OT_MIN ? OT_MIN : slot > OT_MAX ? OT_MAX : slot;
     RmkFrame fr;
-    host_frame(&fr, pr, &fi, shift);
+    host_frame(&fr, pr, &fi, shift, mask);
     const double t1 = now_us();
     if (emit_marker((uint32_t)slot, 0, &fr, pos)) psx_mod_counter_add("bag2_heat.markers", 1);
     memcpy(s_bbox, fi.bbox, sizeof s_bbox);
@@ -246,8 +288,11 @@ static void heat_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     }
     if ((t->flags & HD_FLAG_PREPARE) || t->pass < 0 || !s_rt_ready) return;
     const RmkFrame* fr = (const RmkFrame*)payload;
-    if (!fr || bytes < sizeof *fr || fr->magic != RMK_FRAME_MAGIC || fr->n_verts != A.n_verts ||
-        bytes < sizeof *fr + 12u * fr->n_verts) return;
+    static float* full;              /* posições no vetor completo do asset (só a thread de render) */
+    if (!full && !(full = (float*)calloc(3u * A.n_verts, sizeof(float)))) return;
+    if (!fr || bytes < sizeof *fr || fr->magic != RMK_FRAME_MAGIC || (fr->groups & ~((2u << A.n_groups) - 1u)) ||
+        fr->n_verts != rmk_active_verts(&A, fr->groups) || bytes < sizeof *fr + 12u * fr->n_verts) return;
+    rmk_expand(&A, fr->groups, (const float*)(fr + 1), full);
     RmkTarget rt;
     rt.ndc[0] = 1.0f / t->x_half;
     rt.ndc[1] = ((float)t->draw_off_x + t->shift + t->x_off) / t->x_half - 1.0f;
@@ -256,7 +301,7 @@ static void heat_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     memcpy(rt.viewport, t->viewport, sizeof rt.viewport);
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     memcpy(rt.bbox, fr->bbox, sizeof rt.bbox);
-    rmk_gl_draw(s_gl, &A, fr, (const float*)(fr + 1), &rt);
+    rmk_gl_draw(s_gl, &A, fr, full, &rt);
     s_rt_draws++;
     s_rt_us += now_us() - t0;
 }
@@ -485,7 +530,7 @@ static void add_kid(void* user, int kid, int a, int b, int c) {
     ch->z = (cx->g[a].z + cx->g[b].z + cx->g[c].z) / 3.0f;
 }
 
-static void draw_heat_packets(const struct CPUState* cpu, const uint32_t* nodes, int n) {
+static void draw_heat_packets(const struct CPUState* cpu, const uint32_t* nodes, int n, uint32_t mask) {
     const double t0 = now_us();
     RmkBone M[MAX_NODES];
     read_bones(nodes, n, M);
@@ -506,16 +551,17 @@ static void draw_heat_packets(const struct CPUState* cpu, const uint32_t* nodes,
         s_lk = norm(v3(-0.45f, -0.80f, -0.55f)); s_lf = norm(v3(0.75f, -0.15f, -0.55f)); s_lr = norm(v3(0.25f, -0.45f, 1.0f));
         compute_cover();
     }
-    rmk_skin(&A, M, n, (float*)s_P);
+    rmk_skin(&A, M, n, mask, (float*)s_P);
     for (uint32_t i = 0; i < A.n_verts; i++) s_N[i] = v3(0, 0, 0);
     /* visibilidade (NCLIP > 0, como FUN_80036230) e normais por vértice */
     float orient = 0;
     for (uint32_t f = 0; f < A.n_tris; f++) {
         const HTri* t = &A.tris[f];
+        s_vis[f] = 0;
+        if (!RMK_FACE_ON(t, mask)) continue;
         V3 a = s_P[t->v[0]], b = s_P[t->v[1]], c = s_P[t->v[2]];
         V3 fn = cross(sub(b, a), sub(c, a));
         for (int k = 0; k < 3; k++) s_N[t->v[k]] = add(s_N[t->v[k]], fn);
-        s_vis[f] = 0;
         if (a.z < 64 || b.z < 64 || c.z < 64) continue;
         float ax = a.x / a.z, ay = a.y / a.z, bx = b.x / b.z, by = b.y / b.z, cx = c.x / c.z, cy = c.y / c.z;
         if ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay) > 0) { s_vis[f] = 1; orient += dot(fn, mul(add(add(a, b), c), -1.0f)); }
@@ -678,8 +724,8 @@ static void dump_tree(struct CPUState* cpu) {
     if (!f) return;
     uint32_t nodes[MAX_NODES];
     int n = collect(cpu->gpr[4], nodes, 0);
-    fprintf(f, "=== draw_tree root=%08X ra=%08X s2=%08X s2+4=%02X heat=%d\ngte_ctrl:", cpu->gpr[4], cpu->gpr[31],
-            cpu->gpr[18], psx_mod_read_byte(cpu->gpr[18] + 4), is_heat(nodes, n));
+    fprintf(f, "=== draw_tree root=%08X ra=%08X s2=%08X s2+4=%02X heat=%u\ngte_ctrl:", cpu->gpr[4], cpu->gpr[31],
+            cpu->gpr[18], psx_mod_read_byte(cpu->gpr[18] + 4), heat_groups(nodes, n));
     for (int i = 0; i < 32; i++) fprintf(f, " %d:%08X", i, cpu->gte_ctrl[i]);
     fprintf(f, "\n");
     for (int i = 0; i < n; i++) {
@@ -689,6 +735,19 @@ static void dump_tree(struct CPUState* cpu) {
         fprintf(f, " T= %d %d %d\n", (int32_t)rd32(nodes[i] + 0x80), (int32_t)rd32(nodes[i] + 0x84), (int32_t)rd32(nodes[i] + 0x88));
     }
     fclose(f);
+}
+
+/* Teste: faz o que o script da dança faz num gesto (liga o nó da mão do gesto como irmão do antebraço,
+ * nó 15/18 +0x98), na thread do jogo, antes de desenhar. Os nós do HEAT ficam num vetor de 0xB0 bytes a
+ * partir da raiz (nó 0). Só na árvore do HEAT (MeshHeader da raiz e do nó 16 conferidos). */
+static void force_gesture(uint32_t root) {
+    static const int fore[2] = {15, 18}, hand[2][3] = {{16, 20, 21}, {19, 22, 23}};
+    const uint32_t m0 = rd32(root + 0x8C), m16 = rd32(root + 16u * 0xB0u + 0x8C);
+    if (!m0 || rd32(m0 + 0x98) != A.node_base[0] || !m16 || rd32(m16 + 0x98) != A.node_base[16]) return;
+    for (int s = 0; s < 2; s++) {
+        if (s_force[s] < 0 || s_force[s] > 2) continue;
+        wr32(root + (uint32_t)fore[s] * 0xB0u + 0x98u, root + (uint32_t)hand[s][s_force[s]] * 0xB0u);
+    }
 }
 
 static int use_host_path(void) { return !(s_flags & 4) && s_marks && !s_rt_failed && psx_mod_texture_banks_supported(); }
@@ -706,9 +765,13 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
         if (emit_marker(OT_MAX, HD_FLAG_PREPARE, NULL, NULL)) psx_mod_counter_add("bag2_heat.prepare_marks", 1);
         return 0;
     }
+    if (s_force[0] >= 0 || s_force[1] >= 0) force_gesture(cpu->gpr[4]);
     uint32_t nodes[MAX_NODES];
     int n = collect(cpu->gpr[4], nodes, 0);
-    if (!is_heat(nodes, n)) return 0;
+    const uint32_t mask = heat_groups(nodes, n);
+    if (!mask) return 0;
+    count_groups(mask);
+    s_last_mask = mask;
     if ((!host || s_mode == 7) && (!s_arena || !ensure_banks())) return 0;
     const float w = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
     if (s_mode == 7) {   /* comparação de 3: original, pacotes (fase 0) à direita, desenho de host mais à direita */
@@ -716,31 +779,38 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
         if (!pos7 && !(pos7 = (float*)malloc(12u * A.n_verts))) return 0;
         RmkBone M[MAX_NODES];
         read_bones(nodes, n, M);
-        rmk_skin(&A, M, n, pos7);
+        rmk_skin(&A, M, n, mask, pos7);
         const RmkProj pr = gte_proj(cpu);
         s_shift = w;
-        draw_heat_packets(cpu, nodes, n);
+        draw_heat_packets(cpu, nodes, n, mask);
         s_shift = 0;
-        if (host) host_heat(&pr, pos7, 2.0f * w);   /* por último: s_bbox fica com o retângulo deste */
+        if (host) host_heat(&pr, pos7, mask, 2.0f * w);   /* por último: s_bbox fica com o retângulo deste */
         return 0;
     }
     const int copies = s_mode >= 4 ? s_mode - 3 : 0;   /* teste de carga: cópias do remake ao lado */
     s_shift = s_mode == 3 ? w : 0.0f;
+    s_last_shift = s_shift;
     if (host) {
         static float* pos;
         if (!pos && !(pos = (float*)malloc(12u * A.n_verts))) return 0;
         RmkBone M[MAX_NODES];
         read_bones(nodes, n, M);
-        rmk_skin(&A, M, n, pos);
+        rmk_skin(&A, M, n, mask, pos);
         const RmkProj pr = gte_proj(cpu);
-        host_heat(&pr, pos, s_shift);
+        for (int k = 0; k < 2; k++) {   /* para recortar as mãos nas capturas (heat_mode) */
+            const RmkBone* b = &M[k ? 19 : 16];
+            const float z = b->t[2] > 32.0f ? b->t[2] : 32.0f;
+            s_hand_xy[k][0] = pr.ofx + pr.h * b->t[0] / z; s_hand_xy[k][1] = pr.ofy + pr.h * b->t[1] / z;
+            s_hand_xy[k][2] = z;
+        }
+        host_heat(&pr, pos, mask, s_shift);
         float bb[4];
         memcpy(bb, s_bbox, sizeof bb);
-        for (int c = 1; c <= copies; c++) host_heat(&pr, pos, w * c);
+        for (int c = 1; c <= copies; c++) host_heat(&pr, pos, mask, w * c);
         if (copies) memcpy(s_bbox, bb, sizeof bb);
     } else {
-        draw_heat_packets(cpu, nodes, n);
-        for (int c = 1; c <= copies; c++) { s_shift = w * c; draw_heat_packets(cpu, nodes, n); }
+        draw_heat_packets(cpu, nodes, n, mask);
+        for (int c = 1; c <= copies; c++) { s_shift = w * c; draw_heat_packets(cpu, nodes, n, mask); }
     }
     s_shift = 0;
     return s_mode == 1 || s_mode >= 4;   /* 1 e 4+ pulam o original; 2 e 3 desenham os dois (comparar) */
@@ -763,9 +833,18 @@ static int heat_mode_cmd(const char* args, char* reply, int cap) {
     if (lv >= 1 && lv <= 6) s_level = lv;
     if (al >= 0 && al <= 1) s_alpha = al;
     snprintf(reply, cap, "mode=%d level=%d alpha=%.2f tol=%.3f (efetiva %.3f) budget=%u flags=%d loaded=%d host=%d "
-             "rt_ready=%d rt_failed=%d arena=%08X z=%.0f..%.0f bbox=%.1f,%.1f,%.1f,%.1f", s_mode, s_level, s_alpha, s_tol,
+             "rt_ready=%d rt_failed=%d arena=%08X z=%.0f..%.0f bbox=%.1f,%.1f,%.1f,%.1f mask=%X maos=%.1f,%.1f,%.1f,%.1f,%.1f,%.1f shift=%.1f", s_mode, s_level, s_alpha, s_tol,
              s_tol_used, s_budget, s_flags, s_loaded, use_host_path(), s_rt_ready, s_rt_failed, s_arena, s_zr[0], s_zr[1],
-             s_bbox[0], s_bbox[1], s_bbox[2], s_bbox[3]);
+             s_bbox[0], s_bbox[1], s_bbox[2], s_bbox[3], s_last_mask, s_hand_xy[0][0], s_hand_xy[0][1], s_hand_xy[0][2],
+             s_hand_xy[1][0], s_hand_xy[1][1], s_hand_xy[1][2], s_last_shift);
+    return 0;
+}
+
+static int heat_force_cmd(const char* args, char* reply, int cap) {
+    int l = -1, r = -1;
+    if (args) sscanf(args, "%d %d", &l, &r);
+    s_force[0] = l; s_force[1] = r;
+    snprintf(reply, cap, "gesto forçado: esquerda %d direita %d (-1 = o do jogo)", l, r);
     return 0;
 }
 
@@ -805,5 +884,6 @@ PSX_MOD_CONSTRUCTOR(bag2_heat_register) {
     (void)psx_mod_register_command("heat_dump", heat_dump_cmd);
     (void)psx_mod_register_command("heat_mode", heat_mode_cmd);
     (void)psx_mod_register_command("heat_light", heat_light_cmd);
+    (void)psx_mod_register_command("heat_force", heat_force_cmd);
     (void)psx_mod_register_command("heat_stats", heat_stats_cmd);
 }

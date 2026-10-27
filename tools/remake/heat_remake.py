@@ -70,24 +70,48 @@ def hd_layers(layers, cache_dir, scale=4, model='realesrgan-x4plus-anime'):
 
 
 class Character:
-    def __init__(self, name='HEAT', levels=2, crease_deg=80.0, method='phong', pin_open=True):
+    """hands=True (HEAT): mãos novas com dedos (tools/remake/hands.py) no MODERNIZADO; o ORIGINAL usa a mão
+    original do mesmo gesto. Gesto atual: self.gesture = (esquerda, direita), índices em hands.GESTURES."""
+
+    def __init__(self, name='HEAT', levels=2, crease_deg=80.0, method='phong', pin_open=True, hands=None):
         self.method, self.levels = method, levels
         k = CHARS.index(name)
         self.nodes, self.anims, self.tims, _ = load_character(DISC, k)
-        self.rig = build_rig(self.nodes, SKIP.get(name, set()))
-        flipped = orient_faces(self.rig, self.nodes)
-        p_rest, _ = pose_positions(self.rig, self.nodes)
-        self.sub = subdivide(self.rig.tris, len(self.rig.owner), levels, p_rest, crease_deg, pin_open)
-        self.used = np.unique(self.rig.tris)   # vértices desenhados (sem as mãos alternativas)
+        self.hands = (name == 'HEAT') if hands is None else hands
+        self.gesture = (0, 0)
+        if self.hands:
+            import hands as H
+            base = build_rig(self.nodes, set())
+            flipped = orient_faces(base, self.nodes)
+            # ORIGINAL: corpo + mãos originais de cada gesto (as alternativas no osso da mão, como no jogo)
+            self.rig_orig, _ = H.attach_hands(base, self.nodes, None, only_original=True)
+            layers = ps1_layers(base, self.tims)
+            hd = hd_layers(layers, os.path.join(OUT, name.lower(), 'textures'))
+            self.rig, self.hand_groups = H.attach_hands(base, self.nodes, hd,
+                                                        cache_dir=os.path.join(OUT, name.lower(), 'maos'))
+        else:
+            self.rig = build_rig(self.nodes, SKIP.get(name, set()))
+            flipped = orient_faces(self.rig, self.nodes)
+            self.rig_orig = self.rig
         r = self.rig
+        self.used = np.unique(r.tris[self.faces(r)])   # vértices desenhados no gesto padrão
         print(f'{name}: {len(r.owner)} vértices, {len(r.tris)} triângulos ({flipped} reorientados), '
-              f'{len(r.layers)} camadas de textura; suavizado ({method}): {len(r.tris) * 4 ** levels} triângulos')
-        # atributos por canto da malha subdividida (interpolação linear dentro da face original)
-        par, B = self.sub.parent, self.sub.bary
-        self.s_base = np.einsum('fkj,fjd->fkd', B, r.base[par])
-        self.s_over = np.einsum('fkj,fjd->fkd', B, r.over[par])
-        self.s_uv = np.einsum('fkj,fjd->fkd', B, r.uv[par])
-        self.s_layer, self.s_mode = r.layer[par], r.mode[par]
+              f'{len(r.layers)} camadas de textura')
+        if method == 'loop':
+            p_rest, _ = pose_positions(r, self.nodes)
+            self.sub = subdivide(r.tris, len(r.owner), levels, p_rest, crease_deg, pin_open)
+            # atributos por canto da malha subdividida (interpolação linear dentro da face original)
+            par, B = self.sub.parent, self.sub.bary
+            self.s_base = np.einsum('fkj,fjd->fkd', B, r.base[par])
+            self.s_over = np.einsum('fkj,fjd->fkd', B, r.over[par])
+            self.s_uv = np.einsum('fkj,fjd->fkd', B, r.uv[par])
+            self.s_layer, self.s_mode = r.layer[par], r.mode[par]
+
+    def faces(self, r):
+        """Faces desenhadas com o gesto atual (todas, sem mãos novas)."""
+        if getattr(r, 'hand', None) is None:
+            return np.ones(len(r.tris), bool)
+        return np.isin(r.hand, (0, 1 + self.gesture[0], 4 + self.gesture[1]))
 
     def pose(self, anim, frame):
         if anim is None or anim < 0:
@@ -95,28 +119,31 @@ class Character:
         return pose_at(self.anims[anim], frame)
 
     def original(self, pose):
-        r = self.rig
+        r = self.rig_orig
         p, mats = pose_positions(r, self.nodes, pose)
-        uv = r.uv + 0.5
-        return pack(p[r.tris], original_normals(r, mats), r.base, r.over, uv, r.layer, r.mode), p
+        m = self.faces(r)
+        uv = r.uv[m] + 0.5
+        return pack(p[r.tris[m]], original_normals(r, mats)[m], r.base[m], r.over[m], uv, r.layer[m], r.mode[m]), p
 
     def modern(self, pose, rd=None, flat_mesh=False, ao=True):
         """Malha suavizada (ou a original, com flat_mesh) com normais novas e oclusão ambiente."""
         r = self.rig
         p, _ = pose_positions(r, self.nodes, pose)
+        m = self.faces(r)
+        T, base, over, uv, layer, mode = r.tris[m], r.base[m], r.over[m], r.uv[m], r.layer[m], r.mode[m]
         if flat_mesh:   # malha original, só iluminação/textura novas (para isolar o efeito da suavização)
-            q, tris, base, over, uv, layer, mode = p, r.tris, r.base, r.over, r.uv, r.layer, r.mode
+            q, tris = p, T
         elif self.method == 'phong':
             # Phong Tessellation: 4^levels triângulos por face, normais de sombreamento interpoladas
-            cn = smooth_normals(p, r.tris)
-            pts, par, B = phong_tessellate(p, r.tris, vertex_normals(p, r.tris), 2 ** self.levels)
+            cn = smooth_normals(p, T)
+            pts, par, B = phong_tessellate(p, T, vertex_normals(p, T), 2 ** self.levels)
             n = np.einsum('fkj,fjd->fkd', B, cn[par])
             n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-9)
             tris = np.arange(len(pts) * 3).reshape(-1, 3)
             q = pts.reshape(-1, 3)
             lerp = lambda a: np.einsum('fkj,fjd->fkd', B, a[par])
             occ = rd.ambient_occlusion(q, tris, smooth=0)[tris] if ao and rd is not None else None
-            return pack(pts, n, lerp(r.base), lerp(r.over), lerp(r.uv) + 0.5, r.layer[par], r.mode[par], occ)
+            return pack(pts, n, lerp(base), lerp(over), lerp(uv) + 0.5, layer[par], mode[par], occ)
         else:
             q, tris = self.sub.S @ p, self.sub.tris
             base, over, uv, layer, mode = self.s_base, self.s_over, self.s_uv, self.s_layer, self.s_mode
@@ -186,7 +213,7 @@ def main():
     ap.add_argument('--levels', type=int, default=2)
     ap.add_argument('--crease', type=float, default=80.0, help='ângulo diedro (graus) acima do qual a aresta fica viva')
     ap.add_argument('--method', choices=['phong', 'loop'], default='phong', help='suavização da malha')
-    ap.add_argument('--only', choices=['compare', 'metodos', 'turntable', 'anim', 'all'], default='all')
+    ap.add_argument('--only', choices=['compare', 'metodos', 'turntable', 'anim', 'maos', 'all'], default='all')
     ap.add_argument('--list-anims', action='store_true')
     ap.add_argument('--styles', default='ps1,hd,modern,toon')
     args = ap.parse_args()
@@ -223,6 +250,35 @@ def main():
         fn = os.path.join(out, f'compare_rosto_a{args.anim}_f{int(args.frame)}.png')
         side_by_side([label(imgs[s], TITLES[s]) for s in styles]).save(fn)
         print(fn)
+    if args.only in ('maos', 'all') and ch.hands:
+        # mãos com dedos (fase 2): cada gesto, as duas mãos, 4 ângulos, ORIGINAL x MODERNIZADO
+        import hands as H
+        for g, gname in enumerate(H.GESTURES):
+            ch.gesture = (g, g)
+            p_g = pose_positions(ch.rig, ch.nodes, pose)[0]
+            drawn = np.unique(ch.rig.tris[ch.faces(ch.rig)])
+            rows = []
+            for bone in (16, 19):
+                sel = np.intersect1d(np.nonzero(ch.rig.owner == bone)[0], drawn)
+                imgs = []
+                for yaw in (args.yaw, args.yaw + 90, args.yaw + 180, args.yaw + 270):
+                    r = render_set(ch, rd, pose, yaw, (360, 360), p_g[sel], styles=('hd', 'modern'), pitch=10,
+                                   margin=0.8, floor_y=floor_y)
+                    imgs += [r['hd'], r['modern']]
+                rows.append(side_by_side(imgs))
+            img = Image.new('RGB', (rows[0].width, rows[0].height * 2 + 6))
+            img.paste(rows[0], (0, 0)); img.paste(rows[1], (0, rows[0].height + 6))
+            fn = os.path.join(out, f'maos_{gname}.png')
+            d = ImageDraw.Draw(img)
+            try:
+                f = ImageFont.truetype('C:/Windows/Fonts/segoeuib.ttf', 22)
+            except OSError:
+                f = ImageFont.load_default()
+            d.text((10, 8), f'mão {gname}: pares ORIGINAL | MODERNIZADO; esquerda em cima, direita embaixo',
+                   fill=(235, 235, 240), font=f, stroke_width=2, stroke_fill=(0, 0, 0))
+            img.save(fn)
+            print(fn)
+        ch.gesture = (0, 0)
     if args.only in ('metodos', 'all'):
         # mesma pose e luz, só muda a geometria: original, Loop (borda presa / borda curva), Phong
         variants = {'malha original': (ch, True),

@@ -88,6 +88,7 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, BindTexture, (GLenum_ t, GLuint_ x)) \
     X(void, BindVertexArray, (GLuint_ a)) \
     X(void, BufferData, (GLenum_ t, GLsizeiptr_ n, const void* d, GLenum_ u)) \
+    X(void, BufferSubData, (GLenum_ t, GLsizeiptr_ o, GLsizeiptr_ n, const void* d)) \
     X(void, Clear, (uint32_t m)) \
     X(void, ColorMask, (GLboolean_ r, GLboolean_ g, GLboolean_ b, GLboolean_ a)) \
     X(void, CompileShader, (GLuint_ s)) \
@@ -152,6 +153,7 @@ struct RmkGL {
     int gles, step, ready, failed;
     GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, geo[GEO_RING];
     int geo_w, geo_h, ring, have_serial;
+    uint32_t n_draw;                 /* faces ativas no último quadro (grupos do gesto) */
     uint32_t last_serial;
     float* staging;
     Inst* inst;                      /* por face, na ordem do asset */
@@ -447,24 +449,31 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
 static int ifloor(float f) { int i = (int)f; return (float)i > f ? i - 1 : i; }
 
 /* Ordem de desenho do jogo (FUN_80036230 + OT reversa): slot (z0 + z1) >> 3 do maior para o menor; dentro
- * do slot, a face ligada por último (maior índice do asset) primeiro. Contagem por slot, estável. */
+ * do slot, a face ligada por último (maior índice do asset) primeiro. Contagem por slot, estável. Só as
+ * faces dos grupos ativos; devolve quantas. */
 #define SLOTS 4200
-static void order_faces(RmkGL* g, const RmkAsset* a, const float* pos) {
+#define SLOT_OFF 0xFFFFu
+static uint32_t order_faces(RmkGL* g, const RmkAsset* a, const float* pos, uint32_t mask) {
     static uint32_t start[SLOTS + 1];
     memset(start, 0, sizeof start);
+    uint32_t n = 0;
     for (uint32_t f = 0; f < a->n_tris; f++) {
         const RmkTri* t = &a->tris[f];
+        if (!RMK_FACE_ON(t, mask)) { g->slot[f] = SLOT_OFF; continue; }
         int s = ((int)pos[3 * t->zp[0] + 2] + (int)pos[3 * t->zp[1] + 2]) >> 3;
         s = s < 0 ? 0 : s >= SLOTS ? SLOTS - 1 : s;
         g->slot[f] = (uint16_t)(SLOTS - 1 - s);           /* crescente = do mais longe ao mais perto */
         start[g->slot[f] + 1]++;
+        n++;
     }
     for (int s = 0; s < SLOTS; s++) start[s + 1] += start[s];
-    for (uint32_t k = a->n_tris; k-- > 0;) g->inst_order[start[g->slot[k]]++] = g->inst[k];
+    for (uint32_t k = a->n_tris; k-- > 0;)
+        if (g->slot[k] != SLOT_OFF) g->inst_order[start[g->slot[k]]++] = g->inst[k];
+    return n;
 }
 
 void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t) {
-    if (!g || !g->ready || fr->n_verts != a->n_verts) return;
+    if (!g || !g->ready || fr->n_verts != rmk_active_verts(a, fr->groups | 1u)) return;
     /* retângulo do desenho em pixels do alvo, dentro do recorte */
     const float nx0 = t->bbox[0] * t->ndc[0] + t->ndc[1], nx1 = t->bbox[2] * t->ndc[0] + t->ndc[1];
     const float ny0 = t->bbox[1] * t->ndc[2] + t->ndc[3], ny1 = t->bbox[3] * t->ndc[2] + t->ndc[3];
@@ -479,15 +488,16 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     if (x1 <= x0 || y1 <= y0) return;
     if (!g->have_serial || fr->serial != g->last_serial) {   /* o espelho da tela larga reaproveita */
         g->ring = (g->ring + 1) % GEO_RING;
-        rmk_pack_geometry(a, pos, g->staging);
+        rmk_pack_geometry(a, pos, fr->groups | 1u, g->staging);
         g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
         g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
         g->ActiveTexture(R_TEXTURE0 + 8);
         g->BindTexture(R_TEXTURE_2D, g->geo[g->ring]);
         g->TexSubImage2D(R_TEXTURE_2D, 0, 0, 0, g->geo_w, g->geo_h, R_RGBA, R_FLOAT, g->staging);
-        order_faces(g, a, pos);
+        g->n_draw = order_faces(g, a, pos, fr->groups | 1u);
         g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-        g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), g->inst_order, R_STREAM_DRAW);
+        g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);   /* órfão */
+        g->BufferSubData(R_ARRAY_BUFFER, 0, (GLsizeiptr_)(sizeof(Inst) * g->n_draw), g->inst_order);
         g->last_serial = fr->serial;
         g->have_serial = 1;
     }
@@ -537,13 +547,13 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->DepthFunc(R_LESS);
     g->Uniform4f(g->u_depth, dA, dB, alpha, 0.0f);
     g->Uniform1i(g->u_prepass, 1);
-    g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)a->n_tris);
+    g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
     /* (2) cor na ordem de pintor do jogo, dentro da tolerância */
     g->ColorMask(1, 1, 1, 1);
     g->DepthMask(0);
     g->DepthFunc(R_LEQUAL);
     g->Uniform4f(g->u_depth, dA, dB, alpha, fr->zbias);
     g->Uniform1i(g->u_prepass, 0);
-    g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)a->n_tris);
+    g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
     g->BindVertexArray(0);
 }
