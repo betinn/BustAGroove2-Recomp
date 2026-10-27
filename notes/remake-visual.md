@@ -1,4 +1,4 @@
-# Remake visual do HEAT (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host e detalhe 2026-10-27)
+# Remake visual do HEAT e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27)
 
 Pergunta: dá para modernizar o visual dos personagens **sem artista humano**, partindo das malhas
 originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animação? Feito só com o HEAT
@@ -11,6 +11,8 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
    Os outros personagens e os palcos ficam originais.
 4. **No jogo, fase 2**: mãos com dedos por gesto, orelhas, nariz, mapas de normal, luz do palco, sombra própria e a
    expressão do rosto do original (seção "Fase 2 no jogo"), ainda a 60 fps em todos os segundos.
+5. **No jogo, fase 3** (palco): bloom e graduação depois da cena e antes do HUD, pulso no tempo da música e sombra
+   macia do HEAT no chão (seção "Fase 3 no jogo").
 
 ## Como reproduzir
 ```
@@ -358,6 +360,110 @@ Offline (`tools/recomp/logs/remake/heat/`): `maos_{aberta,punho,aponta}.png`, `o
 - Mapas de normal: 0,9 s de CPU na ativação; para o Polygonia (CPU mais lenta) vale gravar os mapas no asset.
 - Experimento de IA imagem→3D feito offline (Hunyuan3D-2mini): resultado pior que o remake atual, não entra no jogo
   (ver a seção do experimento).
+
+## Fase 3 no jogo: palco (2026-10-27)
+Formato do palco, OT, sombra do jogo e variáveis da música em `notes/formats.md` ("Palco em partida"). Três peças
+feitas (pós-efeito, pulso, sombra no chão); geometria do palco e dumps HD dos outros palcos não (ver "Limites").
+
+### Pós-efeito no meio do quadro (`src/remake/rmk_post.c`, adaptador `src/bag2_stage.c`)
+- **Por que não o `.pfx` do framework**: a máscara 3D dele (stencil bit 1) só marca primitivas "provadas" pelo PGXP e
+  as aditivas; neste jogo quase nada do 3D sai provado (captura com `postfx/debug_mask.pfx`: só as linhas aditivas
+  do laser ficaram marcadas, chão, cenário e KITTY-N não). E marcar tudo custaria um passo de stencil extra por
+  lote. Sem máscara, o bloom e a graduação pegariam o HUD.
+- **Como ficou**: a cada quadro de partida o plugin `bag2.stage_remake` (pacote `bag2.remake.stage`, ligado por
+  padrão) liga um pedido de desenho de host (id 2) no **slot 96** da OT, o último da cena: o HUD está numa OT de 4
+  entradas pendurada na entrada 0 (slot 95, que o jogo sobrescreve; o primeiro teste no 95 sumia) e sai depois, sem
+  passar pelo efeito. Menus e FMV não têm marcador (partida = `0x8008A2C8` != 0; 0 marcadores antes da partida).
+  Gancho: entrada de `FUN_8002BEB4`, um marcador por quadro do jogo (`0x8006EE78`).
+- **Callback** (thread de render, núcleo portátil GL 3.3/GLES 3.0, sem extensão): cópia do retângulo para uma
+  textura, brilho em 1/4 (média 4x4, rampa no máximo do RGB entre `thr` e `thr + joelho`, peso pela saturação para
+  pele, roupa clara e chão branco não virarem névoa), descidas até 1/64 e subidas somadas (filtro duplo, halo largo e
+  liso), **adaptação** (o nível 1/64 diz quanto brilho há em volta: telão e chão claros atenuam, neon fino em fundo
+  escuro fica inteiro) e composição: exposição, vibração, curva S, sombras frias e realces quentes, vinheta, bloom por
+  "screen", alfa (bit 15 do PS1) intacto. Alvos RGBA8 e RGB10_A2.
+- **Tela larga**: o centro 4:3 só chega à superfície larga na apresentação (`blit_wide_center_from_canonical`).
+  No passo do espelho o callback emenda o centro da superfície canônica, processa a faixa inteira e devolve o centro
+  processado (o halo atravessa a borda do 4:3 sem corte; sem emenda visível nas capturas). Em 4:3 processa no
+  passo 0.
+- Comando `stage_post "<on> <flags> <bloom> <limiar> <joelho> <peso sem cor> <pulso> <pulso exp.> <exposição>
+  <curva> <saturação> <vinheta> <atraso> <frio> <quente> <adaptação>"` (flags: 2 sem bloom, 4 sem graduação,
+  8 **metade direita** = A/B no mesmo quadro, 16 mostra o brilho); `stage_stats`. Padrão `3 0,55 0,3 0,1 0,6 0,05 1
+  0,25 1,15 0,25 4 1 1 1`. Afinação: bloom 5 / limiar 0,42 estourava o letreiro em branco e acendia o guarda-sol;
+  sem o peso pela saturação os personagens viravam névoa; sem a adaptação o telão e o tapete do estúdio estouravam.
+
+### Pulso no tempo da música
+- Fase da batida = `(tick - atraso × ticks por quadro) mod 256 / 256`, tick em `0x8005FBB4` (256 por batida),
+  ticks por quadro em média móvel; sem música (tick parado 10 quadros) sem pulso. Envelope `exp(-7 fase)`, 1 do
+  compasso mais forte (0,6 nos outros). Vai no quadro e vira ganho do bloom (+60 %) e da exposição (+5 %); a luz do
+  remake do HEAT usa o mesmo envelope (principal +35 %, contraluz +52 %, `heat_floor` 3º número, flag 512 desliga).
+- **Atraso do som**: medido com o áudio do SPU (`audio_wav` por índice de amostra; o anel guarda ~95 s e
+  `start < 0` devolve o começo do anel, não o fim) contra o tick do mesmo quadro. Pelo pico de energia (caixa e
+  chimbal) a média sincronizada dava +7 quadros; pela fase da fundamental do ataque dos transientes (4 amostras por
+  quadro) dá +1 a +2 quadros na música do estúdio (começo e meio) e +3 a +8 na outra; no começo da música o
+  primeiro som forte sai +17 quadros depois do tick 0 (o primeiro tempo pode não ser o 1). Escolhido **4 quadros**
+  (erro máximo ~3 quadros, ~50 ms). Um primeiro código somava o atraso em vez de subtrair (o pulso vinha antes do
+  tick); `tools/remake/stage_pulse_check.py` mostrou e mede: pico do envelope 7 quadros depois da virada do tick
+  com atraso 7, como projetado, e correlação com os transientes do som com pico em -4 quadros naquela música, o que
+  levou ao atraso 4.
+
+### Sombra macia do HEAT no chão (`rmk_gl_draw_floor`)
+- O plugin pula `FUN_8002A46C` para a raiz de sombra do HEAT (nó do mesmo vetor de nós) e, nesse mesmo momento,
+  liga um segundo pedido (flag `RMK_FLAG_FLOOR`) no slot 4167, o da sombra original, com a pose do quadro (a sombra é
+  chamada depois do corpo em 904 de 904 quadros). O outro dançarino fica com a sombra do jogo.
+- Chão: plano y = 0 do mundo pela câmera `0x8005E4D0` (normal = 2ª coluna da rotação, ponto = translação),
+  virado para o quadril; conferido: pé a −5..−11 unidades do plano, quadril a ~545. Direção: a luz da sombra do jogo
+  (ponteiro em `0x80060CB8`; a 1ª versão leu o ponteiro como vetor e a sombra saía espelhada).
+- Núcleo: mapa de sombra 1024² próprio, ortográfico nessa direção em volta do personagem; quadrilátero no chão
+  cobrindo a projeção dos vértices; fragment shader PCSS (16 amostras de busca de bloqueador na textura crua e 16 de
+  PCF na mesma textura com outro objeto de amostragem, `glBindSampler`, GL 3.3/GLES 3.0), penumbra proporcional à
+  distância bloqueador-chão (nítida no pé, macia na cabeça), borda do mapa suave, `cor × (1 − a)` sem alfa.
+  Padrão `heat_floor "0,85 0,4"` (opacidade, maciez); 0,6/1,0 deixava braços e cabeça sumirem no borrão.
+  Flag 256 do `heat_mode` volta à sombra do jogo. Geometria e ordem do quadro são feitas uma vez e servem à sombra
+  no chão, ao corpo e ao espelho da tela larga (`frame_setup`).
+
+### Desempenho (fase 3)
+Build-debug, RTX 3070 Ti, 9x + 16:9, `game_perf.py` (variante = `heat_mode;stage_post`), 60 s por janela, 2 janelas
+por partida, ordem trocada entre sessões. Base = estado do 78a887f (remake do HEAT, palco original): `"1 4 0.6 0.25
+258;0"`. Tudo = `"1 4 0.6 0.25 2;1 0"`.
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| A / 1ª | base | 59,9 (mín. 59,9) | 44 % (máx. 47) | 43 % (máx. 49) | 0 |
+| A / 2ª | tudo | 59,9 (mín. 59,9) | 39 % (máx. 45) | 36 % (máx. 54) | 0 |
+| B / 1ª | tudo | 59,9 (mín. 59,9) | 39 % (máx. 41) | 36 % (máx. 42) | 0 |
+| B / 2ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 32 % (máx. 38) | 0 |
+| C / 1ª | modo 6 (4 HEATs) + tudo | 59,9 (mín. 59,9) | 43 % (máx. 46) | 44 % (máx. 49) | 0 |
+| C / 2ª | tudo | 59,9 (mín. 59,8) | 39 % (máx. 45) | 36 % (máx. 54) | 0 |
+
+Nenhum segundo abaixo de 59,5 em nenhuma janela. Contra a base da mesma sessão: jogo −5 e −1 ponto, render −7 e
++4 pontos (pedido: até +3 e +10). Pós-efeito: 66–72 µs de CPU por chamada na thread de render (2 por quadro do jogo
+na tela larga: canônica e espelho, 60 por segundo); desenho de host do HEAT com a sombra no chão 0,37 s de CPU por
+minuto de render (4212 chamadas × 88 µs) contra 0,31 s na base (1799 × 175 µs). Custo de GPU
+não medido à parte (os números de render incluem as esperas do driver). As 2ªs janelas das sessões A e C, antes da
+correção que liga a sombra nova só quando o jogo chama a dele, mostravam 1700 sombras novas contra 1414 do jogo (no
+fim da música o jogo para de desenhar a sombra); corrigido e conferido (904 = 904).
+
+### Capturas (`tools/recomp/logs/remake/palco/`, fora do git)
+`mascara.png` (máscara 3D do framework quase vazia), `t2.png` e `t3.png` (Sushi Planet, metade direita com o efeito,
+parâmetros da afinação), `u_grade.png` / `v_grade.png` (estúdio, metade direita, antes e depois da adaptação),
+`ab1_0_2_janela.png` (o que entra no bloom; HUD por cima intacto), `f567_ab.png` e `g_ab.png` (sombra do jogo x
+sombra nova, ~0,2 s entre as duas), `fin1..3_ab.png` (palco original x fase 3, estúdio), `palcoA..C.log` (medições).
+
+### Limites e o que não deu (fase 3)
+- **Geometria e luz do palco pelo caminho novo: não feita.** O palco é ~1100 primitivas por quadro, metade planos
+  grandes de fundo/chão já com textura HD e a outra metade adereços 3D pequenos de cor lisa; o ganho de luz por pixel
+  neles é pequeno perto do bloom e da sombra, e exigiria um exportador do formato do overlay do palco (não mapeado)
+  por palco. Fica para depois da fase 4.
+- **Dumps HD dos outros palcos: não feitos** nesta sessão (o oponente é sorteado; só apareceram COMET e KITTY-N).
+- Ganho visual grande no palco de noite (neons com halo forte, vibração); no estúdio claro é discreto (vibração,
+  vinheta, leve brilho no telão, sombra macia).
+- O atraso do som tem incerteza de ±3 quadros entre músicas (ver acima); a verificação objetiva é
+  `stage_pulse_check.py`.
+- Halo leve também nas partes vermelhas saturadas dos personagens (luvas, chamas da calça).
+- Savestate salvo antes de mudar a build não carregou depois (`last_ok 0`): não serve para fixar o oponente entre
+  builds.
+- Polygonia: o pós-efeito e a sombra estão no núcleo portátil; o adaptador do Android precisa achar o ponto da OT
+  (slot 96 / antes da OT do HUD) e o FBO de alta resolução do DuckStation, e não tem a emenda da tela larga.
 
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos

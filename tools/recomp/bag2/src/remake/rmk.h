@@ -113,7 +113,11 @@ typedef struct {
     float bbox[4];                   /* RmkFrameInfo.bbox: retângulo do desenho na tela */
     float ldir[3][3], lcol[3][3];    /* luzes do palco (GTE) no espaço da câmera: direção para a luz e cor */
     float bk[3];                     /* cor ambiente do palco (BK do GTE) */
-    uint32_t n_remap;                /* expressão do rosto (por último: o plugin regrava o bloco se o jogo trocar */
+    /* sombra no chão (fase 3, RMK_FLAG_FLOOR): plano do chão no espaço da câmera (normal para cima e um ponto) e
+     * direção em que a sombra do jogo projeta (a da luz do jogo, câmera), opacidade e maciez da penumbra */
+    float floor_n[3], floor_p[3], floor_l[3];
+    float floor_alpha, floor_soft;
+    uint32_t n_remap;              /* expressão do rosto (por último: o plugin regrava o bloco se o jogo trocar */
     RmkRemap remap[RMK_MAX_REMAP];   /* a casa depois de ligar o marcador, antes de a GPU chegar nele) */
 } RmkFrame;                          /* seguido de float pos[3 * n_verts] (compacto, rmk_compact) */
 #define RMK_FLAG_FLAT 1u             /* sem Phong (só a malha original), para conferir a geometria */
@@ -121,6 +125,7 @@ typedef struct {
 #define RMK_FLAG_NO_NMAP 4u          /* sem mapas de normal (comparação) */
 #define RMK_FLAG_FIXED_LIGHT 8u      /* luz fixa na câmera da fase 1 em vez das luzes do palco (comparação) */
 #define RMK_FLAG_NO_SHADOW 16u       /* sem sombra própria (comparação) */
+#define RMK_FLAG_FLOOR 32u           /* este pedido é a sombra no chão (rmk_gl_draw_floor), não o personagem */
 
 /* ---- GL ---------------------------------------------------------------------------------------- */
 typedef void* (*RmkGetProc)(const char* name);
@@ -133,12 +138,50 @@ typedef struct {
     float bbox[4];                   /* retângulo do desenho na tela do PS1 */
 } RmkTarget;
 
+/* ---- pós-efeito do palco (rmk_post.c, fase 3) ----------------------------------------------------- */
+/* Bloom multiescala e graduação de cor aplicados no meio do quadro, depois da cena e antes do HUD (o adaptador
+ * liga o pedido na ordem de desenho do jogo), então HUD, menus e FMV nunca passam por aqui. Pulso no tempo da
+ * música: `beat` é a fase dentro da batida já com o atraso do som (0 = batida). */
+#define RMK_POST_MAGIC 0x31545350u   /* "PST1" */
+typedef struct {
+    uint32_t magic, serial, flags;
+    float beat, bar;                 /* fase 0..1 na batida e no compasso de 4 (< 0: sem música) */
+    float bloom, thr, knee, satw;    /* força do bloom, limiar e joelho (máximo do RGB), peso dos tons sem cor */
+    float pulse, pulse_expo;         /* pulso no bloom e na exposição (amplitude na batida) */
+    float expo, contrast, sat, vignette;
+    float tint_lo[3], tint_hi[3];    /* cor das sombras e dos realces (1 = neutro) */
+    float adapt;                     /* atenuação do bloom onde há muito brilho em volta (palco claro) */
+} RmkPostFrame;
+#define RMK_POST_OFF 1u              /* não processa (o marcador só prepara recursos) */
+#define RMK_POST_NO_BLOOM 2u
+#define RMK_POST_NO_GRADE 4u
+#define RMK_POST_SPLIT 8u            /* só a metade direita (comparação A/B no mesmo quadro) */
+#define RMK_POST_SHOW_BRIGHT 16u     /* depuração: mostra o que entra no bloom */
+/* Retângulo em pixels do FBO (origem embaixo, como o GL). */
+typedef struct { int x, y, w, h; } RmkRect;
+typedef struct RmkPost RmkPost;
+RmkPost* rmk_post_create(RmkGetProc get_proc, int gles);
+/* Compila os programas (contexto GL corrente). 1 = pronto. */
+int rmk_post_prepare(RmkPost* p);
+/* Processa `r` do FBO `fbo` no lugar (o alfa, bit 15 do PS1, fica intacto). Deixa ligados `fbo` e o viewport
+ * `vp`; quem chama restaura o resto (programa, VAO, texturas 8..11, blend, recorte, máscara de cor). */
+void rmk_post_apply(RmkPost* p, const RmkPostFrame* fr, uint32_t fbo, RmkRect r, const int vp[4]);
+/* Cópia de cor entre FBOs (filtro linear se os tamanhos diferem); deixa `bind` ligado. */
+void rmk_post_blit(RmkPost* p, uint32_t src, RmkRect rs, uint32_t dst, RmkRect rd, uint32_t bind);
+/* Envelope do pulso (0..1) na fase da batida: ataque na batida e queda exponencial; mais forte no 1 do compasso. */
+float rmk_post_envelope(float beat, float bar);
+const char* rmk_post_error(const RmkPost* p);
+
 RmkGL* rmk_gl_create(RmkGetProc get_proc, int gles);
 /* Cria os recursos aos poucos (uma camada de textura por chamada). Contexto GL corrente. 1 = pronto. */
 int rmk_gl_prepare(RmkGL* g, const RmkAsset* a);
 /* Desenha um quadro (pos: vetor completo, n_verts do asset). O estado GL que o desenho muda fica documentado
  * em rmk_gl.c; quem chama restaura. */
 void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t);
+/* Sombra macia do personagem no plano do chão (fr->floor_*): mapa de sombra próprio na direção da sombra do jogo e
+ * penumbra que abre com a distância ao chão (PCSS); escurece o que já está desenhado (o palco), sem tocar o alfa.
+ * Quem chama liga o pedido na ordem do jogo no lugar da sombra original. Mesmo estado GL que rmk_gl_draw. */
+void rmk_gl_draw_floor(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t);
 const char* rmk_gl_error(const RmkGL* g);   /* último erro de compilação/recurso ("" se nenhum) */
 
 #endif

@@ -19,12 +19,24 @@ já é construído pensando nele (fase 5).
 | 0 | Piloto offline + prova de conceito no jogo (HEAT por pacotes GT3) | **feito** (commits 6f0816a..d7cc0d4) |
 | 1 | Atalho de render: malha direto no renderizador GL, shader moderno, núcleo portátil | **feito** (2026-10-27) |
 | 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, sombra, luz do palco, IA 3D) | **feito** (2026-10-27, commits 5e51099..); IA 3D testada offline e descartada |
-| 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | pendente |
+| 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **parcial** (2026-10-27): pós-efeito, pulso e sombra no chão feitos; geometria do palco e dumps HD não |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | pendente |
 | 5 | Port para o Polygonia (Android) | pendente |
 | 6 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fase 2, 2026-10-27)
+## Onde estamos (fase 3, 2026-10-27)
+- Palco: bloom multiescala com adaptação e graduação de cor aplicados no meio do quadro (pedido de desenho de host no
+  slot 96 da OT, depois da cena e antes da OT do HUD), pulso no tempo da música (tick do jogo em `0x8005FBB4`,
+  atraso do som de 4 quadros) no bloom, na exposição e na luz do HEAT, e sombra macia do HEAT no chão (PCSS) no
+  lugar da sombra do jogo. Tudo no núcleo portátil (`src/remake/rmk_post.c`, `rmk_gl.c`), adaptador
+  `src/bag2_stage.c` + `bag2_heat.c`, pacote novo `bag2.remake.stage`. Framework sem patch novo.
+- Medido: 59,9 fps em todos os segundos de todas as janelas, 0 underruns; jogo −5/−1 ponto e render −7/+4 pontos
+  contra a base da mesma sessão; modo 6 (4 HEATs) com o palco a 59,9 (jogo 43 %, render 44 %). Detalhes, capturas e
+  limites em `notes/remake-visual.md` ("Fase 3 no jogo"); formato do palco em `notes/formats.md`.
+- Falta da fase 3: geometria e luz do palco pelo caminho novo (formato do overlay do palco não mapeado; ganho menor
+  que o das outras peças), dumps HD dos palcos que faltam, e afinar o atraso do som por música (±3 quadros).
+
+## Onde estávamos (fim da fase 2, 2026-10-27)
 - HEAT com mãos de dedos por gesto (aberta, punho, apontando; o jogo troca a mão religando o irmão do antebraço e
   agora o remake acompanha, antes caía no HEAT original nesses quadros), orelhas de anime, nariz, mapas de normal
   gerados das texturas, luz do palco (a do GTE, por pixel) e sombra própria por shadow map no núcleo. Asset v4
@@ -128,7 +140,13 @@ Plano original da fase 2 (mantido para referência):
 - Toda peça nova aparece primeiro nos renders offline (`tools/remake/heat_remake.py`) lado a lado com o
   original para o usuário aprovar, e só depois vai para o jogo.
 
-## Fase 3 — Palco
+## Fase 3 — Palco (parcial, 2026-10-27)
+**Resultado:** ver "Onde estamos". Peças feitas: (0) investigação (`notes/formats.md`, "Palco em partida"); (1)
+pós-efeito; o `.pfx` do framework foi descartado porque a máscara 3D dele quase não marca o 3D deste jogo (PGXP não
+prova as primitivas) e pegaria o HUD; (2) pulso; (3) sombra no chão. Não feitas: (4) geometria/luz do palco e
+(5) dumps HD dos outros palcos.
+
+Plano original:
 - Luz e efeitos na tela: bloom forte nos neons, graduação de cor, luzes pulsando com a música. O framework
   já tem bloom e presets de pós-efeito `.pfx` (`C:/tools/psxrecomp/docs/POST_EFFECTS.md`), na GPU.
 - Com o atalho: geometria e luz do palco pelo caminho novo (iluminação dinâmica, sombra dos personagens no
@@ -171,6 +189,11 @@ Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo n
   valor no fluxo da thread de render, callback com o FBO 9x e o espelho da tela larga.
 - O jogo desenha cada dançarino a 30 Hz (a árvore de ossos sai 30 vezes por segundo por personagem; a tela
   roda a 60). A música de uma partida dura ~150 s: `game_perf.py` com no máximo 2 variantes de 60 s por sessão.
+- OT: a entrada 0 (slot 95) o jogo sobrescreve para pendurar a OT do HUD; pedido de host para "depois da cena,
+  antes do HUD" vai no slot 96. Ponteiros em variáveis globais: conferir no código se é ponteiro (a luz da sombra
+  em `0x80060CB8` é).
+- Música: tick em `0x8005FBB4` (256 por batida); áudio do SPU por `audio_wav` com `start` = índice da amostra (o anel
+  guarda ~95 s; `start < 0` devolve o começo do anel). O oponente (e o Stage 1) é sorteado a cada partida.
 - Ordem dentro do personagem: o modelo conta com a ordem de pintor da OT; no GL, z-buffer de dois passos
   (profundidade, depois cor na ordem do jogo com tolerância de 1 % de z), como o PGXP do framework.
 - Editar arquivos do framework com o Edit: `sed -i` do Git Bash troca CRLF por LF no arquivo inteiro.

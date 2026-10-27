@@ -18,7 +18,12 @@
  * Expressão do rosto: o código do personagem copia variantes (olhos, boca) para as "casas" da página do rosto
  * na VRAM com MoveImage; hooks em MoveImage/LoadImage mantêm a tabela de casas remapeadas que vai no quadro
  * (tools/remake/faces.py, notes/remake-visual.md).
- * Comandos TCP (build-debug): heat_mode, heat_light, heat_stats, heat_dump, heat_force, heat_face. */
+ * Sombra no chão (fase 3): o jogo projeta o esqueleto de sombra (nós 24..37) no plano y = 0 do mundo na direção da
+ * luz em 0x80060CB8 e desenha por subtração no slot 4167 da OT (FUN_8002A46C). Para o HEAT o plugin pula essa função
+ * e liga no mesmo slot um segundo pedido de desenho de host com a pose: o núcleo desenha uma sombra macia (mapa de
+ * sombra na mesma direção, penumbra PCSS) no plano do chão, que vem da matriz da câmera do palco (0x8005E4D0).
+ * A luz do remake pulsa com a música (bag2_stage_pulse, src/bag2_stage.c).
+ * Comandos TCP (build-debug): heat_mode, heat_light, heat_stats, heat_dump, heat_force, heat_face, heat_floor. */
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
@@ -37,6 +42,10 @@ static double now_us(void) { struct timespec t; timespec_get(&t, TIME_UTC); retu
 #endif
 
 #define DRAW_TREE_FN 0x80029D4Cu
+#define SHADOW_FN 0x8002A46Cu         /* FUN_8002A46C(raiz da sombra, ..., MATRIX do personagem): sombra no chão */
+#define CAMERA_MATRIX 0x8005E4D0u     /* MATRIX mundo -> câmera do palco (DAT_8005E4D0) */
+#define SHADOW_LIGHT 0x80060CB8u      /* ponteiro para a direção da luz da sombra no mundo (3 shorts, y > 0) */
+#define SHADOW_SLOT 4167              /* slot da OT da sombra do jogo (DAT_8006EE88 + 0x3F9C) */
 #define LOAD_IMAGE_FN 0x80048234u    /* libgpu LoadImage(RECT*, u_long*) */
 #define MOVE_IMAGE_FN 0x800482F4u    /* libgpu MoveImage(RECT* origem, x, y): executa na hora (GPU ociosa) */
 #define OT_PTR 0x8006EE88u           /* DAT_8006EE88: OT do quadro (ClearOTagR(ot - 4, 0x1001)) */
@@ -76,11 +85,19 @@ static float s_alpha = 0.6f;         /* Phong Tessellation */
 /* bit 0 = pacotes sem cor base sob textura (depuração); bit 1 = pacotes agrupados por banco dentro do slot da
  * OT (corta as trocas de textura, ~79 % -> ~49 % da thread de render por HEAT); bit 2 = caminho por pacotes
  * (fase 0) em vez do desenho de host; bit 3 = desenho de host sem Phong (malha original); bit 4 = sem textura;
- * bit 5 = sem mapas de normal; bit 6 = luz fixa da fase 1 em vez das luzes do palco; bit 7 = sem sombra própria. */
+ * bit 5 = sem mapas de normal; bit 6 = luz fixa da fase 1 em vez das luzes do palco; bit 7 = sem sombra própria;
+ * bit 8 = sem a sombra nova no chão (fica a do jogo); bit 9 = luz sem o pulso da música. */
 static int s_flags = 2;
 static float s_light[7] = {1.0f, 1.2f, 1.0f, 1.0f, 0.8f, 0.5f, 0.01f};   /* exposição, principal, preenchimento,
                                                          contraluz, ambiente, rugosidade, tolerância de profundidade */
 static float s_zr[2];                /* faixa de Z do último remake (comando heat_mode) */
+static float s_floor[3] = {0.85f, 0.4f, 0.35f};   /* sombra no chão: opacidade, maciez; pulso da luz do remake */
+static uint32_t s_heat_root;         /* raiz da árvore do HEAT (a sombra dele são nós do mesmo vetor) */
+static RmkFrame s_floor_fr;          /* último quadro do HEAT (modo 1/carga), para a sombra no chão sair só quando */
+static const float* s_floor_pos;     /* o jogo desenharia a dele (FUN_8002A46C), com a pose mais recente */
+static uint32_t s_floor_fc = 0xFFFFFFFFu;   /* contador de quadros do jogo no último HEAT desenhado */
+static struct { float n[3], p[3], l[3]; int ok; float hip, foot; } s_ground;   /* chão e direção da sombra do jogo,
+                                                                    na câmera; altura do quadril e do pé (teste) */
 static volatile int s_dump_request;
 static char s_dump_path[260] = "heat_dump.txt";
 static float s_bbox[4];              /* último retângulo do remake na tela (pixels do PS1), para capturas */
@@ -215,6 +232,32 @@ static void read_stage_light(const struct CPUState* cpu, uint32_t node0) {
     lcm[6] = (int16_t)c19; lcm[7] = (int16_t)(c19 >> 16); lcm[8] = (int16_t)cpu->gte_ctrl[20];
     for (int k = 0; k < 3; k++) bk[k] = (int32_t)cpu->gte_ctrl[13 + k];
     rmk_stage_light(L, M, lcm, bk, s_stage.ldir, s_stage.lcol, s_stage.bk);
+}
+
+float bag2_stage_pulse(void);
+
+/* Plano do chão (y = 0 do mundo) e direção da sombra do jogo no espaço da câmera: a sombra original é o esqueleto
+ * cisalhado para y = 0 ao longo da luz em SHADOW_LIGHT, pela câmera em CAMERA_MATRIX (FUN_8002A46C). A normal fica
+ * virada para o personagem (quadril, nó 0). */
+static void read_ground(uint32_t node0) {
+    int16_t m[9], l[3];
+    for (int k = 0; k < 9; k++) m[k] = rd16(CAMERA_MATRIX + 2 * k);
+    const uint32_t lp = rd32(SHADOW_LIGHT);
+    if (lp < 0x80000000u || lp >= 0x801FFFF8u) { s_ground.ok = 0; return; }
+    for (int k = 0; k < 3; k++) l[k] = rd16(lp + 2 * k);
+    float n[3], p[3], d[3], h[3];
+    for (int i = 0; i < 3; i++) {
+        n[i] = (float)m[3 * i + 1] / 4096.0f;
+        p[i] = (float)(int32_t)rd32(CAMERA_MATRIX + 0x14 + 4 * i);
+        d[i] = ((float)m[3 * i] * l[0] + (float)m[3 * i + 1] * l[1] + (float)m[3 * i + 2] * l[2]) / 4096.0f;
+        h[i] = (float)(int32_t)rd32(node0 + 0x80 + 4 * i);
+    }
+    const float nn = n[0] * n[0] + n[1] * n[1] + n[2] * n[2], dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    s_ground.ok = nn > 0.25f && dd > 0.0f && l[1] > 0;   /* o jogo só desenha a sombra com y > 0 */
+    if (!s_ground.ok) return;
+    s_ground.hip = (h[0] - p[0]) * n[0] + (h[1] - p[1]) * n[1] + (h[2] - p[2]) * n[2];
+    if (s_ground.hip < 0.0f) { for (int i = 0; i < 3; i++) n[i] = -n[i]; s_ground.hip = -s_ground.hip; }
+    memcpy(s_ground.n, n, sizeof n); memcpy(s_ground.p, p, sizeof p); memcpy(s_ground.l, d, sizeof d);
 }
 
 static RmkProj gte_proj(const struct CPUState* cpu) {
@@ -391,10 +434,25 @@ static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, 
     fr->alpha = s_alpha;
     fr->expo = s_light[0]; fr->key = s_light[1]; fr->fill = s_light[2]; fr->rim = s_light[3];
     fr->amb = s_light[4]; fr->rough = s_light[5]; fr->zbias = s_light[6];
+    if (!(s_flags & 512)) {          /* luz do palco no tempo da música: a principal e o contraluz sobem na batida */
+        const float pulse = bag2_stage_pulse() * s_floor[2];
+        fr->key *= 1.0f + pulse; fr->rim *= 1.0f + 1.5f * pulse;
+    }
+    memcpy(fr->floor_n, s_ground.n, sizeof fr->floor_n);
+    memcpy(fr->floor_p, s_ground.p, sizeof fr->floor_p);
+    memcpy(fr->floor_l, s_ground.l, sizeof fr->floor_l);
+    fr->floor_alpha = s_floor[0]; fr->floor_soft = s_floor[1];
     memcpy(fr->bbox, fi->bbox, sizeof fr->bbox);
     fr->n_remap = s_n_remap;
     memcpy(fr->remap, s_remap, sizeof fr->remap);
     s_zr[0] = fi->zmin; s_zr[1] = fi->zmax;
+}
+
+static int use_host_path(void);
+/* Sombra nova no chão: desenho de host pronto, modo 1 ou de carga (nos de comparação o HEAT original continua com
+ * a sombra dele) e chão lido. */
+static int floor_on(void) {
+    return !(s_flags & 256) && use_host_path() && s_rt_ready && (s_mode == 1 || s_mode >= 4) && s_mode != 7 && s_ground.ok;
 }
 
 /* Um HEAT pelo desenho de host (shift = deslocamento na tela, para comparação e carga). */
@@ -412,6 +470,11 @@ static void host_heat(const RmkProj* pr, const float* pos, uint32_t mask, float 
     s_flags = saved;
     const double t1 = now_us();
     if (emit_marker((uint32_t)slot, 0, &fr, pos)) psx_mod_counter_add("bag2_heat.markers", 1);
+    if (!copy) {                     /* a sombra no chão sai quando o jogo chama a função de sombra do HEAT */
+        s_floor_fr = fr;
+        s_floor_pos = pos;
+        s_floor_fc = psx_mod_read_half(0x8006EE78u);
+    }
     memcpy(s_bbox, fi.bbox, sizeof s_bbox);
     psx_mod_counter_add("bag2_heat.us_geometry", (uint32_t)(t1 - t0));
     psx_mod_counter_add("bag2_heat.us_emit", (uint32_t)(now_us() - t1));
@@ -450,7 +513,8 @@ static void heat_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     memcpy(rt.viewport, t->viewport, sizeof rt.viewport);
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     memcpy(rt.bbox, fr->bbox, sizeof rt.bbox);
-    rmk_gl_draw(s_gl, &A, fr, full, &rt);
+    if (fr->flags & RMK_FLAG_FLOOR) rmk_gl_draw_floor(s_gl, &A, fr, full, &rt);
+    else rmk_gl_draw(s_gl, &A, fr, full, &rt);
     s_rt_draws++;
     s_rt_us += now_us() - t0;
 }
@@ -923,6 +987,8 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
     if (!mask) return 0;
     count_groups(mask);
     read_stage_light(cpu, nodes[0]);
+    s_heat_root = cpu->gpr[4];
+    read_ground(nodes[0]);
     s_last_mask = mask;
     if ((!host || s_mode == 7) && (!s_arena || !ensure_banks())) return 0;
     const float w = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
@@ -957,6 +1023,16 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
             o[2] = z;
         }
         s_head_xy[3] = pr.h;
+        if (s_ground.ok) {           /* altura do pé (teste do plano do chão, heat_floor) */
+            float f = 1e30f;
+            for (uint32_t i = 0; i < A.n_body; i++) {
+                const float* q = &pos[3 * i];
+                const float hgt = (q[0] - s_ground.p[0]) * s_ground.n[0] + (q[1] - s_ground.p[1]) * s_ground.n[1] +
+                                  (q[2] - s_ground.p[2]) * s_ground.n[2];
+                if (hgt < f) f = hgt;
+            }
+            s_ground.foot = f;
+        }
         host_heat(&pr, pos, mask, s_shift, 0);
         float bb[4];
         memcpy(bb, s_bbox, sizeof bb);
@@ -968,6 +1044,32 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
     }
     s_shift = 0;
     return s_mode == 1 || s_mode >= 4;   /* 1 e 4+ pulam o original; 2 e 3 desenham os dois (comparar) */
+}
+
+/* Sombra do jogo (FUN_8002A46C): pulada para o HEAT quando a sombra nova está ligada; a raiz da sombra é um nó
+ * do mesmo vetor de nós do HEAT (0xB0 bytes cada). O outro dançarino segue com a do jogo. */
+static int heat_shadow_filter(struct CPUState* cpu, uint32_t address) {
+    (void)address;
+    const uint32_t r = cpu->gpr[4];
+    if (!s_heat_root || !floor_on() || !s_floor_pos || r < s_heat_root || r >= s_heat_root + 64u * 0xB0u) return 0;
+    psx_mod_counter_add("bag2_heat.shadow_skipped", 1);
+    /* ordem no quadro: a sombra depois do corpo (pose deste quadro) ou antes (pose do quadro anterior) */
+    psx_mod_counter_add(psx_mod_read_half(0x8006EE78u) == s_floor_fc ? "bag2_heat.floor_same_frame" : "bag2_heat.floor_prev_frame", 1);
+    RmkFrame fr = s_floor_fr;
+    fr.flags |= RMK_FLAG_FLOOR;
+    if (emit_marker(SHADOW_SLOT, 0, &fr, s_floor_pos)) psx_mod_counter_add("bag2_heat.floor_marks", 1);
+    return 1;
+}
+
+static int heat_floor_cmd(const char* args, char* reply, int cap) {
+    float v[3] = {-1, -1, -1};
+    if (args) sscanf(args, "%f %f %f", &v[0], &v[1], &v[2]);
+    for (int i = 0; i < 3; i++) if (v[i] >= 0) s_floor[i] = v[i];
+    snprintf(reply, cap, "opacidade=%.2f maciez=%.2f pulso_luz=%.2f on=%d chao_ok=%d n=%.3f,%.3f,%.3f p=%.0f,%.0f,%.0f "
+             "l=%.3f,%.3f,%.3f quadril=%.0f pe=%.0f pulso=%.2f", s_floor[0], s_floor[1], s_floor[2], floor_on(), s_ground.ok,
+             s_ground.n[0], s_ground.n[1], s_ground.n[2], s_ground.p[0], s_ground.p[1], s_ground.p[2], s_ground.l[0],
+             s_ground.l[1], s_ground.l[2], s_ground.hip, s_ground.foot, bag2_stage_pulse());
+    return 0;
 }
 
 static int heat_dump_cmd(const char* args, char* reply, int cap) {
@@ -1053,6 +1155,7 @@ static int heat_stats_cmd(const char* args, char* reply, int cap) {
 PSX_MOD_CONSTRUCTOR(bag2_heat_register) {
     (void)psx_mod_register_activation_plugin("bag2.heat_remake", heat_activate);
     (void)psx_mod_register_function_filter_plugin("bag2.heat_remake", DRAW_TREE_FN, heat_filter);
+    (void)psx_mod_register_function_filter_plugin("bag2.heat_remake", SHADOW_FN, heat_shadow_filter);
     (void)psx_mod_register_function_entry_plugin("bag2.heat_remake", MOVE_IMAGE_FN, heat_move_image);
     (void)psx_mod_register_function_entry_plugin("bag2.heat_remake", LOAD_IMAGE_FN, heat_load_image);
     (void)psx_mod_register_savestate_plugin("bag2.heat_remake", heat_savestate_loaded);
@@ -1063,4 +1166,5 @@ PSX_MOD_CONSTRUCTOR(bag2_heat_register) {
     (void)psx_mod_register_command("heat_force", heat_force_cmd);
     (void)psx_mod_register_command("heat_stats", heat_stats_cmd);
     (void)psx_mod_register_command("heat_face", heat_face_cmd);
+    (void)psx_mod_register_command("heat_floor", heat_floor_cmd);
 }

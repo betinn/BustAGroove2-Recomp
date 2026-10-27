@@ -36,7 +36,10 @@ discovery = "whole-image"
 # Hooks do remake do HEAT (src/bag2_heat.c): entrada de FUN_80029D4C, que desenha a árvore de ossos de
 # um personagem, e LoadImage/MoveImage da libgpu (0x80048234/0x800482F4), por onde o código do personagem
 # troca a expressão do rosto na VRAM. Inertes sem o plugin bag2.heat_remake ativo (notes/remake-visual.md).
-mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4"]
+# Remake do palco (src/bag2_stage.c): entrada de FUN_8002BEB4 (atualização de cada personagem, todo quadro de
+# partida), onde o plugin bag2.stage_remake liga o marcador do pós-efeito; FUN_8002A46C (sombra no chão), que o
+# remake do HEAT pula para desenhar a sombra macia dele.
+mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"

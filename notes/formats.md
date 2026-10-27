@@ -116,3 +116,33 @@ Dois blobs por container, ambos listas `{u32 len; u8 data[len]}` terminadas por 
   (`FUN_800140EC`, len arredondado a 4). Primeiro chunk de 015/001: 60 registros `{s16 a; s16 b; s16 0;
   s16 c; s16 t; s16 0}` com `t` crescente (~23 por registro) e `a` decrescente — parece trilha de câmera
   ou de eventos sincronizados com o tempo. Semântica em aberto.
+
+## Palco em partida (fase 3 do remake, 2026-10-27; `tools/remake/stage_probe.py`, `stage_beat.py`, `stage_sync.py`)
+Medido na build-debug com `gpu_frame_dump` (cada pacote GP0 tem o endereço de origem `src` e o rank na OT) e
+amostras da RAM a cada quadro. A função que emite é sempre a DMA da OT (`DrawOTag`), então a autoria vem do
+endereço do pacote.
+- **Overlay do palco**: containers 231..245 (entrada 0) em `0x801DB1B8` (tabela "Overlays DBI_" acima). O Stage 1
+  muda com o oponente sorteado: vistos o "Sushi Planet" (noite, neons, contra COMET) e o estúdio de TV com telão
+  (claro, contra KITTY-N). Os outros palcos não foram mapeados nesta fase.
+- **Primitivas por quadro** (Sushi Planet, 1750 pacotes, 1700 de desenho): fundo e chão em `0x800D0000..` (134 FT4,
+  tpage 10/13, ranks 0..7, os primeiros a sair); céu, letreiros e brilhos em `0x80080000..` (52 FT4, 32 FT4
+  aditivos `B+F` tpage 44, 25 sprites, Rect); adereços 3D em `0x800B4000..0x800C3FFF` (~640 G3/G4/GT3/GT4/FT4,
+  ranks 1445..3581); outro dançarino `0x801A4000..` (~630, ranks 3100..3204); sombras dos dois dançarinos (F3/F4
+  semitransparentes `B-F`, ~90 cada, rank 24). Modos: 186 `B-F` (sombras), 33 `B+F` (brilhos), 53 `0.5B+0.5F`.
+- **OT**: `ClearOTagR(DAT_8006EE88 - 4, 0x1001)`; o slot `s` do plugin fica em `DAT_8006EE88 - 0x180 + 4 s`
+  (95..4191) e sai na ordem rank = 4191 - s. A entrada 0 (slot 95) o jogo sobrescreve para pendurar a OT do HUD
+  (4 entradas, ranks 4097..4100: textos, barras, "Ready", "MISS"), então o último slot útil da cena é o 96.
+- **Sombra no chão** (`FUN_8002A46C(raiz, ..., MATRIX do personagem)`): cisalha o esqueleto de sombra (nós
+  tipo 4, `FUN_8002A374`) para o plano y = 0 do mundo ao longo de `L` = 3 shorts apontados por `DAT_80060CB8`
+  (ponteiro! ex. `0x800B4B58` -> (-2922, 2106, 1952); só desenha com `L.y > 0`), com a câmera do palco em
+  `DAT_8005E4D0` (MATRIX mundo -> câmera), e liga tudo no slot 4167 (`DAT_8006EE88 + 0x3F9C`) com tpage `B-F`.
+  Chamada depois do corpo no mesmo quadro (904 de 904).
+- **Partida x menus**: o ponteiro em `0x8008A2C8` é 0 na abertura, título e seleção e aponta para o estado da
+  partida (`0x800B5884`) depois que ela carrega.
+- **Tempo da música**: a música é XA, mas o jogo conta ticks em `0x8005FBB4` (32 bits, 256 por batida, ~9,4 por
+  quadro a 132 BPM); batida inteira em `0x8005FBD8` (16.16); quadros desde a virada em `0x8005FC7C` (16.16) e uma
+  cópia ~4 quadros depois em `0x8005FB5C`; struct de `0x8005FB40` com ponteiros para dados em `0x801E41D4`. Na
+  troca de música o tick volta a 0. O ataque do som no SPU vem de +1 a +8 quadros depois da virada do tick (método
+  e números em `notes/remake-visual.md`, "Fase 3 no jogo").
+- **Atualização de personagem**: `FUN_8002BEB4` (por personagem, todo quadro de partida que o jogo monta; o jogo
+  monta a OT a 30 Hz) chama `FUN_80029D4C` para o HEAT e funções do overlay para outros personagens.

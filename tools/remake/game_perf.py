@@ -6,8 +6,10 @@ relata, a partir das linhas por segundo do log (PSX_FRAME_REPORT_MS=1000): fps m
 abaixo de 59,5, emu_busy médio e máximo; e dos contadores do plugin: pacotes por quadro e tempo da CPU.
 `audio_stats` antes/depois de cada janela mostra se o áudio passou fome (underruns), que é o que se
 ouviria como engasgo da música.
+Variante: args do heat_mode e, depois de ";", args do stage_post (remake do palco, fase 3).
 Uso: python tools/remake/game_perf.py [rótulo] [variantes separadas por |] [segundos] [game.toml]
      ex.: python tools/remake/game_perf.py base "0|1" 40 game.toml
+          python tools/remake/game_perf.py palcoA "1 4 0.6 0.25 258;0|1 4 0.6 0.25 2;1 0" 60
 """
 from __future__ import annotations
 
@@ -36,16 +38,21 @@ def main():
     try:
         s.to_match()
         for v in variants:
-            s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': v})
+            hv, _, sv = v.partition(';')
+            s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': hv})
+            if sv:
+                s.cmd({'cmd': 'mod_cmd', 'name': 'stage_post', 'args': sv})
             time.sleep(2)
             n0 = len(log_lines(s))
             c0 = {c['name']: c['count'] for c in s.cmd({'cmd': 'mod_counters'})['counters']}
             a0 = s.cmd({'cmd': 'audio_stats'})
             s.cmd({'cmd': 'mod_cmd', 'name': 'heat_stats', 'args': ''})   # zera a janela da thread de render
+            s.cmd({'cmd': 'mod_cmd', 'name': 'stage_stats', 'args': ''})
             time.sleep(secs)
             c1 = {c['name']: c['count'] for c in s.cmd({'cmd': 'mod_counters'})['counters']}
             a1 = s.cmd({'cmd': 'audio_stats'})
             rt = s.cmd({'cmd': 'mod_cmd', 'name': 'heat_stats', 'args': ''}).get('reply', '')
+            st = s.cmd({'cmd': 'mod_cmd', 'name': 'stage_stats', 'args': ''}).get('reply', '')
             lines = log_lines(s)[n0:]
             fps = [float(re.search(r' fps=([\d.]+)', l).group(1)) for l in lines]
             busy = [float(re.search(r'emu_busy=([\d.]+)', l).group(1)) for l in lines]
@@ -65,6 +72,8 @@ def main():
             print(f'   áudio: underruns {audio.get("underruns")} pump_skips {audio.get("pump_skips")} '
                   f'pump_calls {audio.get("pump_calls")}', flush=True)
             print(f'   desenho de host: marcadores/quadro {d.get("bag2_heat.markers", 0) / fr:.1f} | {rt}', flush=True)
+            print(f'   palco: marcadores {d.get("bag2_stage.markers", 0)} sombra no chão {d.get("bag2_heat.floor_marks", 0)} '
+                  f'sombra do jogo pulada {d.get("bag2_heat.shadow_skipped", 0)} | {st}', flush=True)
     finally:
         s.stop()
 

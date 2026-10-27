@@ -1,0 +1,23 @@
+format_version = 5
+id = "bag2.remake.stage"
+version = "1.0.0"
+name = "Remake do palco (experimental)"
+author = "BustAGroove2-Recomp"
+description = "Bloom nos neons e luzes do palco, graduação de cor e pulso no tempo da música, aplicados depois da cena e antes do HUD. HUD, menus e FMV ficam originais."
+license = "MIT"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-01159"
+
+[[feature]]
+id = "stage-remake"
+name = "Remake do palco"
+description = "Experimental. Desligue para o palco original."
+group = "Visual"
+default_enabled = true
+
+[[plugin]]
+feature = "stage-remake"
+id = "bag2.stage_remake"

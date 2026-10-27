@@ -153,7 +153,12 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, UseProgram, (GLuint_ p)) \
     X(void, VertexAttribDivisor, (GLuint_ i, GLuint_ d)) \
     X(void, VertexAttribIPointer, (GLuint_ i, GLint_ n, GLenum_ t, GLsizei_ s, const void* p)) \
-    X(void, VertexAttribPointer, (GLuint_ i, GLint_ n, GLenum_ t, GLboolean_ nm, GLsizei_ s, const void* p))
+    X(void, VertexAttribPointer, (GLuint_ i, GLint_ n, GLenum_ t, GLboolean_ nm, GLsizei_ s, const void* p)) \
+    X(void, BindSampler, (GLuint_ u, GLuint_ s)) \
+    X(void, BlendFunc, (GLenum_ s, GLenum_ d)) \
+    X(void, DrawArrays, (GLenum_ m, GLint_ f, GLsizei_ n)) \
+    X(void, GenSamplers, (GLsizei_ n, GLuint_* s)) \
+    X(void, SamplerParameteri, (GLuint_ s, GLenum_ p, GLint_ v))
 
 #define GEO_RING 8                   /* texturas de geometria em rodízio (vários desenhos por quadro) */
 #define SHADOW_SIZE 1024             /* mapa de sombra próprio (só o personagem) */
@@ -177,9 +182,12 @@ struct RmkGL {
     GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING], shadow_tex, shadow_fbo;
     float lbasis[3][3], lcenter[4];  /* espaço da luz da sombra do último quadro: u, v, direção; centro, 1/raio */
     int key;                         /* luz principal (a da sombra) do último quadro */
-    int geo_w, geo_h, ring, have_serial;
+    int geo_w, geo_h, ring, have_serial, have_shadow, have_floor, floor_ok;
     uint32_t n_draw;                 /* faces ativas no último quadro (grupos do gesto) */
-    uint32_t last_serial;
+    uint32_t last_serial, shadow_serial, floor_serial;   /* quadro da geometria, da sombra própria e do chão */
+    GLuint_ floor_prog, floor_vao, floor_tex, floor_fbo, floor_smp[2];
+    GLint_ f_ndc, f_proj, f_quad, f_depth, f_shadow, f_lu, f_lv, f_ld, f_lc, f_fl;
+    float fbasis[3][3], fcenter[4], fquad[4][3];   /* sombra no chão: espaço ortográfico e quadrilátero (câmera) */
     float* staging;
     Inst* inst;                      /* por face, na ordem do asset */
     Inst* inst_order;                /* reordenado por quadro (ordem de pintor do jogo) */
@@ -544,6 +552,8 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     return g->GetError() == 0;
 }
 
+static int build_floor(RmkGL* g);
+
 int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
     if (!g || g->failed) return 0;
     if (g->ready) return 1;
@@ -551,7 +561,7 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
     g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
     g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
     if (g->step == 0) {
-        if (!build_program(g) || !build_buffers(g, a)) {
+        if (!build_program(g) || !build_buffers(g, a) || !build_floor(g)) {
             if (!g->err[0]) snprintf(g->err, sizeof g->err, "recursos GL: erro 0x%X", g->GetError());
             g->failed = 1;
             return 0;
@@ -660,6 +670,280 @@ static void light_space(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const f
     memcpy(g->lbasis[0], u, sizeof u); memcpy(g->lbasis[1], v, sizeof v); memcpy(g->lbasis[2], d, sizeof d);
 }
 
+/* Geometria, ordem de pintor e espaço da luz do quadro: uma vez por quadro (o espelho da tela larga e a sombra no
+ * chão do mesmo quadro reaproveitam). */
+static void frame_setup(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos) {
+    if (g->have_serial && fr->serial == g->last_serial) return;
+    g->ring = (g->ring + 1) % GEO_RING;
+    rmk_pack_geometry(a, pos, fr->groups | 1u, g->staging);
+    g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
+    g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
+    g->ActiveTexture(R_TEXTURE0 + 8);
+    g->BindTexture(R_TEXTURE_2D, g->geo[g->ring]);
+    g->TexSubImage2D(R_TEXTURE_2D, 0, 0, 0, g->geo_w, g->geo_h, R_RGBA, R_FLOAT, g->staging);
+    g->n_draw = order_faces(g, a, pos, fr->groups | 1u);
+    light_space(g, a, fr, pos);
+    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
+    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);   /* órfão */
+    g->BufferSubData(R_ARRAY_BUFFER, 0, (GLsizeiptr_)(sizeof(Inst) * g->n_draw), g->inst_order);
+    g->last_serial = fr->serial;
+    g->have_serial = 1;
+}
+
+/* ---- sombra no chão (fase 3) ----------------------------------------------------------------------------- */
+/* O jogo projeta uma cópia achatada do esqueleto no plano y = 0 do mundo, na direção da luz dele (FUN_8002A46C), e
+ * a desenha por subtração no slot 4167 da OT. Aqui: mapa de sombra ortográfico próprio nessa mesma direção, em volta
+ * do personagem, e um quadrilátero no plano do chão cobrindo a projeção dele; o fragment shader faz PCSS (busca de
+ * bloqueadores, penumbra proporcional à distância entre o bloqueador e o chão: nítida no pé, macia na cabeça) e
+ * escurece o palco já desenhado por blend (cor × (1 - a)), sem escrever o alfa. */
+static const char* FLOOR_VS =
+    "precision highp float;\n"
+    "uniform vec4 u_ndc, u_proj;\n"
+    "uniform vec3 u_quad[4];\n"
+    "out vec3 v_pos;\n"
+    "void main() {\n"
+    "  vec3 p = u_quad[gl_VertexID];\n"
+    "  v_pos = p;\n"
+    "  float z = max(p.z, 1.0);\n"
+    "  vec2 s = u_proj.xy + u_proj.z * p.xy / z + vec2(u_proj.w, 0.0);\n"
+    "  gl_Position = vec4((s * u_ndc.xz + u_ndc.yw) * z, 0.0, z);\n"
+    "}\n";
+
+static const char* FLOOR_FS =
+    "precision highp float;\n"
+    "uniform highp sampler2D u_fdepth;\n"
+    "uniform highp sampler2DShadow u_fshadow;\n"
+    "uniform vec3 u_lu, u_lv, u_ld;\n"
+    "uniform vec4 u_lc;\n"
+    "uniform vec4 u_fl;   /* opacidade, penumbra por unidade de profundidade, penumbra mínima, raio da busca */\n"
+    "in vec3 v_pos;\n"
+    "layout(location = 0) out vec4 frag;\n"
+    "const vec2 P[16] = vec2[16](vec2(-0.942, -0.399), vec2(0.946, -0.769), vec2(-0.094, -0.929), vec2(0.345, 0.294),\n"
+    "  vec2(-0.916, 0.458), vec2(-0.815, -0.879), vec2(-0.383, 0.277), vec2(0.975, 0.756), vec2(0.443, -0.975),\n"
+    "  vec2(0.537, -0.474), vec2(-0.265, -0.419), vec2(0.792, 0.191), vec2(-0.242, 0.997), vec2(-0.814, 0.914),\n"
+    "  vec2(0.200, 0.786), vec2(0.144, -0.141));\n"
+    "void main() {\n"
+    "  vec3 r = v_pos - u_lc.xyz;\n"
+    "  vec3 q = vec3(dot(r, u_lu), dot(r, u_lv), dot(r, u_ld)) * u_lc.w * 0.5 + 0.5;\n"
+    "  float zr = min(q.z, 1.0) - 0.004;\n"
+    "  float sum = 0.0, n = 0.0;\n"
+    "  for (int i = 0; i < 16; i++) {\n"
+    "    float z = texture(u_fdepth, q.xy + P[i] * u_fl.w).r;\n"
+    "    if (z < zr) { sum += z; n += 1.0; }\n"
+    "  }\n"
+    "  if (n < 0.5) discard;\n"
+    "  float pen = clamp((zr - sum / n) * u_fl.y, u_fl.z, u_fl.w);\n"
+    "  float lit = 0.0;\n"
+    "  for (int i = 0; i < 16; i++) lit += texture(u_fshadow, vec3(q.xy + P[i] * pen, zr));\n"
+    "  float sh = 1.0 - lit / 16.0;\n"
+    "  /* borda do mapa: some suave, sem corte reto */\n"
+    "  vec2 e = min(q.xy, 1.0 - q.xy);\n"
+    "  sh *= smoothstep(0.0, 0.04, min(e.x, e.y));\n"
+    "  frag = vec4(0.0, 0.0, 0.0, sh * u_fl.x);\n"
+    "}\n";
+
+static int build_floor(RmkGL* g) {
+    GLuint_ vs = compile(g, R_VERTEX_SHADER, FLOOR_VS), fs = vs ? compile(g, R_FRAGMENT_SHADER, FLOOR_FS) : 0;
+    if (!vs || !fs) return 0;
+    g->floor_prog = g->CreateProgram();
+    g->AttachShader(g->floor_prog, vs);
+    g->AttachShader(g->floor_prog, fs);
+    g->LinkProgram(g->floor_prog);
+    g->DeleteShader(vs);
+    g->DeleteShader(fs);
+    GLint_ ok = 0;
+    g->GetProgramiv(g->floor_prog, R_LINK_STATUS, &ok);
+    if (!ok) { snprintf(g->err, sizeof g->err, "link da sombra no chão"); return 0; }
+    g->f_ndc = g->GetUniformLocation(g->floor_prog, "u_ndc");
+    g->f_proj = g->GetUniformLocation(g->floor_prog, "u_proj");
+    g->f_quad = g->GetUniformLocation(g->floor_prog, "u_quad[0]");
+    g->f_depth = g->GetUniformLocation(g->floor_prog, "u_fdepth");
+    g->f_shadow = g->GetUniformLocation(g->floor_prog, "u_fshadow");
+    g->f_lu = g->GetUniformLocation(g->floor_prog, "u_lu");
+    g->f_lv = g->GetUniformLocation(g->floor_prog, "u_lv");
+    g->f_ld = g->GetUniformLocation(g->floor_prog, "u_ld");
+    g->f_lc = g->GetUniformLocation(g->floor_prog, "u_lc");
+    g->f_fl = g->GetUniformLocation(g->floor_prog, "u_fl");
+    g->GenVertexArrays(1, &g->floor_vao);
+    /* mapa de sombra do chão: profundidade lida crua (busca de bloqueadores) e com comparação (PCF), pela mesma
+     * textura em duas unidades com objetos de amostragem diferentes */
+    g->GenTextures(1, &g->floor_tex);
+    g->ActiveTexture(R_TEXTURE0 + 12);
+    g->BindTexture(R_TEXTURE_2D, g->floor_tex);
+    g->TexImage2D(R_TEXTURE_2D, 0, R_DEPTH_COMPONENT24, SHADOW_SIZE, SHADOW_SIZE, 0, R_DEPTH_COMPONENT, R_UNSIGNED_INT, NULL);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MIN_FILTER, R_NEAREST);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MAG_FILTER, R_NEAREST);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    g->BindTexture(R_TEXTURE_2D, 0);
+    g->GenSamplers(2, g->floor_smp);
+    g->SamplerParameteri(g->floor_smp[0], R_TEXTURE_MIN_FILTER, R_NEAREST);
+    g->SamplerParameteri(g->floor_smp[0], R_TEXTURE_MAG_FILTER, R_NEAREST);
+    g->SamplerParameteri(g->floor_smp[0], R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+    g->SamplerParameteri(g->floor_smp[0], R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_MIN_FILTER, R_LINEAR);
+    g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_MAG_FILTER, R_LINEAR);
+    g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+    g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_COMPARE_MODE, R_COMPARE_REF_TO_TEXTURE);
+    g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_COMPARE_FUNC, R_LEQUAL);
+    g->GenFramebuffers(1, &g->floor_fbo);
+    g->BindFramebuffer(R_FRAMEBUFFER, g->floor_fbo);
+    g->FramebufferTexture2D(R_FRAMEBUFFER, R_DEPTH_ATTACHMENT, R_TEXTURE_2D, g->floor_tex, 0);
+    const GLenum_ none = 0;
+    g->DrawBuffers(1, &none);
+    g->ReadBuffer(0);
+    const int ok2 = g->CheckFramebufferStatus(R_FRAMEBUFFER) == R_FRAMEBUFFER_COMPLETE;
+    g->BindFramebuffer(R_FRAMEBUFFER, 0);
+    if (!ok2) { snprintf(g->err, sizeof g->err, "sombra no chão: FBO incompleto"); return 0; }
+    return 1;
+}
+
+static float dot3(const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+static void norm3(float* a) {
+    const float l = sqrtf(dot3(a, a));
+    if (l > 1e-12f) { a[0] /= l; a[1] /= l; a[2] /= l; }
+}
+static void cross3(const float* a, const float* b, float* o) {
+    o[0] = a[1] * b[2] - a[2] * b[1]; o[1] = a[2] * b[0] - a[0] * b[2]; o[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+/* Espaço ortográfico da sombra do chão (direção da projeção do jogo, para baixo) em volta dos vértices ativos e o
+ * quadrilátero no chão que cobre a projeção deles (com folga para a penumbra). 0 se a luz rasa o chão. */
+static int floor_setup(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos) {
+    float n[3] = {fr->floor_n[0], fr->floor_n[1], fr->floor_n[2]}, d[3] = {fr->floor_l[0], fr->floor_l[1], fr->floor_l[2]};
+    norm3(n); norm3(d);
+    if (dot3(d, n) > 0.0f) { d[0] = -d[0]; d[1] = -d[1]; d[2] = -d[2]; }   /* para o chão */
+    const float dn = dot3(d, n);
+    if (dn > -0.15f) return 0;
+    float up[3] = {0.0f, 1.0f, 0.0f};
+    if (fabsf(d[1]) > 0.95f) { up[0] = 1.0f; up[1] = 0.0f; }
+    float u[3], v[3], e1[3], e2[3];
+    cross3(d, up, u); norm3(u);
+    cross3(u, d, v);
+    /* base do plano do chão para a caixa da projeção */
+    float t0[3] = {1.0f, 0.0f, 0.0f};
+    if (fabsf(n[0]) > 0.9f) { t0[0] = 0.0f; t0[2] = 1.0f; }
+    cross3(n, t0, e1); norm3(e1);
+    cross3(n, e1, e2);
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    float plo[2] = {1e30f, 1e30f}, phi[2] = {-1e30f, -1e30f};
+    for (uint32_t gi = 0; gi <= a->n_groups; gi++) {
+        if (gi && !(((fr->groups | 1u) >> gi) & 1u)) continue;
+        const uint32_t i0 = gi ? a->groups[gi].v0 : 0, i1 = gi ? i0 + a->groups[gi].nv : a->n_body;
+        for (uint32_t i = i0; i < i1; i++) {
+            const float* p = &pos[3 * i];
+            for (int k = 0; k < 3; k++) { if (p[k] < lo[k]) lo[k] = p[k]; if (p[k] > hi[k]) hi[k] = p[k]; }
+            /* projeção no chão ao longo de d */
+            const float r[3] = {p[0] - fr->floor_p[0], p[1] - fr->floor_p[1], p[2] - fr->floor_p[2]};
+            const float s = dot3(r, n) / dn;
+            const float q[3] = {r[0] - d[0] * s, r[1] - d[1] * s, r[2] - d[2] * s};
+            const float c1 = dot3(q, e1), c2 = dot3(q, e2);
+            if (c1 < plo[0]) plo[0] = c1;
+            if (c1 > phi[0]) phi[0] = c1;
+            if (c2 < plo[1]) plo[1] = c2;
+            if (c2 > phi[1]) phi[1] = c2;
+        }
+    }
+    float rad = 0.0f;
+    for (int k = 0; k < 3; k++) { g->fcenter[k] = 0.5f * (lo[k] + hi[k]); rad += (hi[k] - lo[k]) * (hi[k] - lo[k]); }
+    rad = 0.5f * sqrtf(rad) * 1.08f + 1.0f;
+    g->fcenter[3] = 1.0f / rad;
+    memcpy(g->fbasis[0], u, sizeof u); memcpy(g->fbasis[1], v, sizeof v); memcpy(g->fbasis[2], d, sizeof d);
+    const float m = 0.15f * rad;
+    const float c[4][2] = {{plo[0] - m, plo[1] - m}, {phi[0] + m, plo[1] - m}, {plo[0] - m, phi[1] + m}, {phi[0] + m, phi[1] + m}};
+    for (int k = 0; k < 4; k++)
+        for (int j = 0; j < 3; j++) g->fquad[k][j] = fr->floor_p[j] + e1[j] * c[k][0] + e2[j] * c[k][1];
+    return 1;
+}
+
+void rmk_gl_draw_floor(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t) {
+    if (!g || !g->ready || !g->floor_prog || fr->n_verts != rmk_active_verts(a, fr->groups | 1u)) return;
+    frame_setup(g, a, fr, pos);
+    const int new_floor = !g->have_floor || g->floor_serial != fr->serial;
+    if (new_floor) {
+        g->floor_ok = floor_setup(g, a, fr, pos);
+        g->floor_serial = fr->serial;
+        g->have_floor = 1;
+    }
+    if (!g->floor_ok) return;
+    const float n = fr->znear * (1.0f - fr->zbias), f = fr->zfar;
+    const float dA = (f + n) / (f - n), dB = -2.0f * f * n / (f - n), alpha = (fr->flags & RMK_FLAG_FLAT) ? 0.0f : fr->alpha;
+    g->Disable(R_BLEND);
+    g->Disable(R_STENCIL_TEST);
+    g->Disable(R_CULL_FACE);
+    if (new_floor) {
+        /* (0) profundidade do personagem na direção da sombra, no FBO próprio */
+        g->UseProgram(g->prog);
+        g->ActiveTexture(R_TEXTURE0 + 8);
+        g->BindTexture(R_TEXTURE_2D, g->geo[g->ring]);
+        g->ActiveTexture(R_TEXTURE0 + 9);
+        g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
+        g->Uniform1i(g->u_geo, 8);
+        g->Uniform1i(g->u_tex, 9);
+        g->Uniform1i(g->u_geo_w, g->geo_w);
+        g->Uniform4f(g->u_misc, 1.0f, 0.5f, (fr->flags & RMK_FLAG_NO_TEX) ? 0.0f : 1.0f, 0.0f);
+        g->Uniform1i(g->u_nrm, 0);
+        g->Uniform3f(g->u_lu, g->fbasis[0][0], g->fbasis[0][1], g->fbasis[0][2]);
+        g->Uniform3f(g->u_lv, g->fbasis[1][0], g->fbasis[1][1], g->fbasis[1][2]);
+        g->Uniform3f(g->u_ld, g->fbasis[2][0], g->fbasis[2][1], g->fbasis[2][2]);
+        g->Uniform4f(g->u_lc, g->fcenter[0], g->fcenter[1], g->fcenter[2], g->fcenter[3]);
+        g->BindVertexArray(g->vao);
+        g->BindFramebuffer(R_FRAMEBUFFER, g->floor_fbo);
+        g->Viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+        g->Disable(R_SCISSOR_TEST);
+        g->ColorMask(0, 0, 0, 0);
+        g->DepthMask(1);
+        g->Clear(R_DEPTH_BUFFER_BIT);
+        g->Enable(R_DEPTH_TEST);
+        g->DepthFunc(R_LESS);
+        g->Enable(R_POLYGON_OFFSET_FILL);
+        g->PolygonOffset(1.5f, 3.0f);
+        g->Uniform1i(g->u_spass, 1);
+        g->Uniform1i(g->u_prepass, 1);
+        g->Uniform4f(g->u_depth, dA, dB, alpha, 0.0f);
+        g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
+        g->Disable(R_POLYGON_OFFSET_FILL);
+        g->Uniform1i(g->u_spass, 0);
+        g->BindFramebuffer(R_FRAMEBUFFER, t->fbo);
+        g->Viewport(t->viewport[0], t->viewport[1], t->viewport[2], t->viewport[3]);
+    }
+    /* (1) o quadrilátero no chão escurece o palco: cor × (1 - a), alfa intacto, sem profundidade */
+    g->Disable(R_DEPTH_TEST);
+    g->DepthMask(0);
+    g->Enable(R_SCISSOR_TEST);
+    g->Scissor(t->scissor[0], t->scissor[1], t->scissor[2], t->scissor[3]);
+    g->ColorMask(1, 1, 1, 0);
+    g->Enable(R_BLEND);
+    g->BlendFunc(0 /* GL_ZERO */, 0x0303 /* GL_ONE_MINUS_SRC_ALPHA */);
+    g->UseProgram(g->floor_prog);
+    g->ActiveTexture(R_TEXTURE0 + 12);
+    g->BindTexture(R_TEXTURE_2D, g->floor_tex);
+    g->BindSampler(12, g->floor_smp[0]);
+    g->ActiveTexture(R_TEXTURE0 + 13);
+    g->BindTexture(R_TEXTURE_2D, g->floor_tex);
+    g->BindSampler(13, g->floor_smp[1]);
+    g->Uniform1i(g->f_depth, 12);
+    g->Uniform1i(g->f_shadow, 13);
+    g->Uniform4f(g->f_ndc, t->ndc[0], t->ndc[1], t->ndc[2], t->ndc[3]);
+    g->Uniform4f(g->f_proj, fr->ofx, fr->ofy, fr->h, fr->shift_x);
+    g->Uniform3fv(g->f_quad, 4, &g->fquad[0][0]);
+    g->Uniform3f(g->f_lu, g->fbasis[0][0], g->fbasis[0][1], g->fbasis[0][2]);
+    g->Uniform3f(g->f_lv, g->fbasis[1][0], g->fbasis[1][1], g->fbasis[1][2]);
+    g->Uniform3f(g->f_ld, g->fbasis[2][0], g->fbasis[2][1], g->fbasis[2][2]);
+    g->Uniform4f(g->f_lc, g->fcenter[0], g->fcenter[1], g->fcenter[2], g->fcenter[3]);
+    /* penumbra em unidades do mapa: profundidade 0..1 = 2 raios; mínimo ~1,5 texel, máximo = raio da busca */
+    g->Uniform4f(g->f_fl, fr->floor_alpha, 0.08f * fr->floor_soft, 1.5f / SHADOW_SIZE, 0.01f + 0.025f * fr->floor_soft);
+    g->BindVertexArray(g->floor_vao);
+    g->DrawArrays(0x0005 /* GL_TRIANGLE_STRIP */, 0, 4);
+    g->BindVertexArray(0);
+    g->BindSampler(12, 0);
+    g->BindSampler(13, 0);
+    g->Disable(R_BLEND);
+    g->ColorMask(1, 1, 1, 1);
+    g->DepthMask(1);
+}
+
 void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t) {
     if (!g || !g->ready || fr->n_verts != rmk_active_verts(a, fr->groups | 1u)) return;
     /* retângulo do desenho em pixels do alvo, dentro do recorte */
@@ -674,23 +958,8 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     if (x1 > t->scissor[0] + t->scissor[2]) x1 = t->scissor[0] + t->scissor[2];
     if (y1 > t->scissor[1] + t->scissor[3]) y1 = t->scissor[1] + t->scissor[3];
     if (x1 <= x0 || y1 <= y0) return;
-    const int new_frame = !g->have_serial || fr->serial != g->last_serial;
-    if (new_frame) {   /* o espelho da tela larga reaproveita geometria, ordem e sombra */
-        g->ring = (g->ring + 1) % GEO_RING;
-        rmk_pack_geometry(a, pos, fr->groups | 1u, g->staging);
-        g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
-        g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
-        g->ActiveTexture(R_TEXTURE0 + 8);
-        g->BindTexture(R_TEXTURE_2D, g->geo[g->ring]);
-        g->TexSubImage2D(R_TEXTURE_2D, 0, 0, 0, g->geo_w, g->geo_h, R_RGBA, R_FLOAT, g->staging);
-        g->n_draw = order_faces(g, a, pos, fr->groups | 1u);
-        light_space(g, a, fr, pos);
-        g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-        g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);   /* órfão */
-        g->BufferSubData(R_ARRAY_BUFFER, 0, (GLsizeiptr_)(sizeof(Inst) * g->n_draw), g->inst_order);
-        g->last_serial = fr->serial;
-        g->have_serial = 1;
-    }
+    frame_setup(g, a, fr, pos);   /* o espelho da tela larga reaproveita geometria, ordem e sombra */
+    const int new_frame = !g->have_shadow || fr->serial != g->shadow_serial;
     g->Enable(0x0C11 /* GL_SCISSOR_TEST */);
     g->Scissor(x0, y0, x1 - x0, y1 - y0);
     g->DepthMask(1);
@@ -804,6 +1073,8 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
         g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
         g->Disable(R_POLYGON_OFFSET_FILL);
         g->Enable(R_CULL_FACE);
+        g->shadow_serial = fr->serial;
+        g->have_shadow = 1;
         g->BindFramebuffer(R_FRAMEBUFFER, t->fbo);
         g->Viewport(t->viewport[0], t->viewport[1], t->viewport[2], t->viewport[3]);
         g->Enable(R_SCISSOR_TEST);

@@ -40,7 +40,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-27, fase 2 do remake)
+## Estado (2026-10-27, fase 3 do remake, parcial)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
@@ -77,7 +77,18 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `tools/remake/game_perf.py` (no máximo 2 variantes de 60 s por sessão). Testes na build-debug:
   `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3, 7, ou 4 com flags da cópia para A/B),
   `game_hands.py` (gestos forçados), `game_face.py` (expressão, original x remake no mesmo quadro), comandos
-  `heat_mode`, `heat_light`, `heat_force`, `heat_stats`, `heat_face`.
+  `heat_mode`, `heat_light`, `heat_force`, `heat_stats`, `heat_face`, `heat_floor`.
+- **Remake do palco** (fase 3, parcial; `notes/remake-visual.md` "Fase 3 no jogo", formato em `notes/formats.md`
+  "Palco em partida"): plugin `src/bag2_stage.c` (pacote `bag2.remake.stage`, gancho na entrada de `FUN_8002BEB4`)
+  liga um pedido de desenho de host no slot 96 da OT (depois da cena, antes da OT do HUD pendurada no slot 95) e o
+  núcleo `src/remake/rmk_post.c` faz bloom multiescala com adaptação + graduação de cor; na tela larga emenda o
+  centro canônico no espelho. Pulso no tempo da música: tick em `0x8005FBB4` (256 por batida), atraso do som 4
+  quadros (±3 entre músicas). Sombra macia do HEAT no chão (`rmk_gl_draw_floor`, PCSS) no lugar da do jogo
+  (`FUN_8002A46C` pulada para o HEAT; chão pela câmera `0x8005E4D0`, luz pelo ponteiro em `0x80060CB8`). Medido
+  (60 s por janela): 59,9 fps em todos os segundos, 0 underruns, jogo −5/−1 e render −7/+4 pontos contra a base;
+  modo 6 + palco 59,9. Comandos `stage_post` (flag 8 = metade direita, A/B no mesmo quadro), `stage_stats`,
+  `heat_floor`; scripts `tools/remake/stage_ab.py`, `stage_pulse_check.py`, `game_tcp.py` (jogo aberto na partida
+  para afinar ao vivo), `game_perf.py` (variante `heat_mode;stage_post`). O oponente (e o Stage 1) é sorteado.
 - As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
   antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e
   `_deps/*-build`, `_deps/*-subbuild` e configurar de novo.
@@ -87,7 +98,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 ## Próximo passo
 - **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita (a IA
   imagem→3D ficou só offline, pior que o remake atual; a expressão do rosto do original agora chega ao remake).
-  Próxima fase: 3 (palco).
+  Fase 3 parcial (pós-efeito, pulso, sombra no chão); falta geometria/luz do palco pelo caminho novo e dumps HD.
+  Próxima: fase 4 (segundo jogador e os outros personagens) ou terminar a 3.
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
