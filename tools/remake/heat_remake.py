@@ -92,7 +92,9 @@ class Character:
                                                         cache_dir=os.path.join(OUT, name.lower(), 'maos'))
             if ears:
                 import ears as E
-                self.rig = E.attach_ears(self.rig)
+                self.rig = E.attach_nose(E.attach_ears(self.rig))
+            import detail
+            detail.mark_flat(self.rig)
         else:
             self.rig = build_rig(self.nodes, SKIP.get(name, set()))
             flipped = orient_faces(self.rig, self.nodes)

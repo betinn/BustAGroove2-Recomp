@@ -44,9 +44,10 @@ out vec4 f_color;
 const float bayer[16] = float[](-4.,0.,-3.,1., 2.,-2.,3.,-1., -3.,1.,-4.,0., 3.,-1.,2.,-2.);
 void main() {
   vec3 c = v_base;
-  if (v_mode > 0.5) {
+  float md = mod(v_mode, 4.0);   // bit 4 do modo = sem mapa de normal (só o remake usa)
+  if (md > 0.5) {
     vec4 t = texelFetch(u_tex, ivec3(ivec2(floor(v_uv)) & 255, int(v_layer)), 0);
-    if (t.a < 0.5) { if (v_mode > 1.5) discard; }
+    if (t.a < 0.5) { if (md > 1.5) discard; }
     else c = t.rgb * v_over;
   }
   ivec2 p = ivec2(gl_FragCoord.xy) & 3;
@@ -69,6 +70,8 @@ void main() {
 MODERN_FS = """
 #version 330
 uniform sampler2DArray u_tex;
+uniform sampler2DArray u_nmap;
+uniform float u_nmap_on;
 uniform sampler2DShadow u_shadow;
 uniform vec3 u_eye;
 uniform vec3 u_key_dir; uniform vec3 u_key_col;
@@ -81,6 +84,14 @@ flat in float v_layer; flat in float v_mode;
 out vec4 f_color;
 
 vec3 srgb2lin(vec3 c) { return pow(c, vec3(2.2)); }
+// base tangente pelas derivadas da tela (Schüler): sem tangente por vértice, vale com UV espelhado
+vec3 perturb(vec3 n, vec3 p, vec2 uv, vec3 t) {
+  vec3 dp1 = dFdx(p), dp2 = dFdy(p); vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+  vec3 dp2p = cross(dp2, n), dp1p = cross(n, dp1);
+  vec3 T = dp2p * du1.x + dp1p * du2.x, B = dp2p * du1.y + dp1p * du2.y;
+  float im = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
+  return normalize(T * im * t.x + B * im * t.y + n * t.z);
+}
 float D_ggx(float nh, float a) { float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (3.14159 * d * d); }
 float shadow() {
   vec3 p = v_lpos.xyz / v_lpos.w * 0.5 + 0.5;
@@ -113,15 +124,20 @@ vec3 toon(vec3 n, vec3 v, vec3 alb, float sh) {
 void main() {
   vec3 base = v_base;
   float isTex = 0.0;
-  if (v_mode > 0.5) {
+  float md = mod(v_mode, 4.0);   // bit 4 do modo = sem mapa de normal
+  if (md > 0.5) {
     vec4 t = texture(u_tex, vec3(v_uv / 256.0, v_layer));
-    if (t.a < 0.5) { if (v_mode > 1.5) discard; }
+    if (t.a < 0.5) { if (md > 1.5) discard; }
     else { base = t.rgb * v_over; isTex = 1.0; }
   }
   vec3 alb = srgb2lin(clamp(base, 0.0, 1.0));
   vec3 n = normalize(v_nrm);
   vec3 v = normalize(u_eye - v_pos);
   if (dot(n, v) < 0.0) n = -n;
+  if (isTex > 0.5 && u_nmap_on > 0.5 && v_mode < 3.5) {
+    vec3 t = texture(u_nmap, vec3(v_uv / 256.0, v_layer)).xyz * 2.0 - 1.0;
+    n = perturb(n, v_pos, v_uv / 256.0, t);
+  }
   float sh = shadow();
   if (u_toon > 0.5) { f_color = vec4(pow(toon(n, v, alb, sh), vec3(1.0 / 2.2)), 1.0); return; }
   vec3 c = vec3(0.0);
@@ -247,7 +263,7 @@ def pack(pos, nrm, base, over, uv, layer, mode, ao=None):
 
 
 class Renderer:
-    def __init__(self, ps1_layers: list[np.ndarray], hd_layers: list[np.ndarray] | None = None):
+    def __init__(self, ps1_layers: list[np.ndarray], hd_layers: list[np.ndarray] | None = None, nmaps=None):
         self.ctx = moderngl.create_standalone_context()
         self.ctx.enable(moderngl.DEPTH_TEST)
         c = self.ctx
@@ -259,6 +275,12 @@ class Renderer:
         self.p_bg = c.program(vertex_shader=BG_VS, fragment_shader=BG_FS)
         self.tex_ps1 = self._array(ps1_layers, linear=False)
         self.tex_hd = self._array(hd_layers or ps1_layers, linear=True)
+        # mapas de normal das camadas HD (tools/remake/detail.py, a mesma conta do jogo)
+        if nmaps is None and hd_layers is not None:
+            import detail
+            nmaps = [detail.normal_map(l) for l in hd_layers]
+        self.tex_nmap = self._array(nmaps, linear=True) if nmaps is not None else None
+        self.nmap_on = 1.0
         quad = np.array([-1, -1, 1, -1, -1, 1, 1, 1], 'f4')
         self.quad = c.buffer(quad.tobytes())
         self.vao_bg = c.vertex_array(self.p_bg, [(self.quad, '2f', 'in_xy')])
@@ -439,6 +461,9 @@ class Renderer:
         p['u_rough'].value = rough; p['u_toon'].value = 1.0 if toon else 0.0
         p['u_shadow_texel'].value = st
         self.tex_hd.use(0); p['u_tex'].value = 0; p['u_shadow'].value = 1
+        if self.tex_nmap is not None:
+            self.tex_nmap.use(2); p['u_nmap'].value = 2
+        p['u_nmap_on'].value = self.nmap_on if self.tex_nmap is not None else 0.0
         vao.render()
         if outline_width > 0:
             vao_o = c.vertex_array(self.p_out, [(vbo, *self._fmt(self.p_out))])

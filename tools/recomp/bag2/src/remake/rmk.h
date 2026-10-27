@@ -22,7 +22,7 @@
 typedef struct { int16_t x, y, z; uint8_t owner, ao; } RmkVert;   /* espaço do nó dono; ao 255 = aberto */
 typedef struct {
     uint16_t v[3], zp[2];            /* vértices (ordem do NCLIP do jogo); zp: os dois do slot da OT */
-    uint8_t mode; int8_t layer;      /* modo 0 cor, 1 cor + textura por cima, 2 só textura */
+    uint8_t mode; int8_t layer;      /* modo 0 cor, 1 cor + textura por cima, 2 só textura; + 4 sem mapa de normal */
     uint8_t uv[3][2];                /* texels 0..255 da página original */
     uint8_t base[3][3];              /* cor do material 0..255 */
     uint8_t over[3][3];              /* modulação da textura 0..255 (128 = neutro) */
@@ -45,11 +45,15 @@ typedef struct {
     RmkVert* verts;
     RmkTri* tris;
     uint8_t* layers;                 /* n_layers x tex_size² RGBA8 (alfa 0 = transparente) */
+    uint8_t* nmaps;                  /* mapas de normal das camadas (rmk_asset_build_normals), ou NULL */
 } RmkAsset;
 
 /* 1 = ok. Em erro, o asset fica zerado. */
 int rmk_asset_load(RmkAsset* a, const char* path);
 void rmk_asset_free(RmkAsset* a);
+/* Mapas de normal gerados das camadas (traço preto vira sulco). strength: inclinação por unidade de altura
+ * por texel. 1 = ok. */
+int rmk_asset_build_normals(RmkAsset* a, float strength);
 
 /* ---- pose -------------------------------------------------------------------------------------- */
 typedef struct { float m[9], t[3]; } RmkBone;            /* m = rotação 4.12 / 4096, t = translação */
@@ -91,6 +95,7 @@ typedef struct {
 } RmkFrame;                          /* seguido de float pos[3 * n_verts] (compacto, rmk_compact) */
 #define RMK_FLAG_FLAT 1u             /* sem Phong (só a malha original), para conferir a geometria */
 #define RMK_FLAG_NO_TEX 2u           /* sem textura (só luz), depuração */
+#define RMK_FLAG_NO_NMAP 4u          /* sem mapas de normal (comparação) */
 
 /* ---- GL ---------------------------------------------------------------------------------------- */
 typedef void* (*RmkGetProc)(const char* name);

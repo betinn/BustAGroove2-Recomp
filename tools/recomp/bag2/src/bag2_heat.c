@@ -68,7 +68,8 @@ static int s_level = 4;              /* pacotes: máximo de divisões por aresta
 static float s_alpha = 0.6f;         /* Phong Tessellation */
 /* bit 0 = pacotes sem cor base sob textura (depuração); bit 1 = pacotes agrupados por banco dentro do slot da
  * OT (corta as trocas de textura, ~79 % -> ~49 % da thread de render por HEAT); bit 2 = caminho por pacotes
- * (fase 0) em vez do desenho de host; bit 3 = desenho de host sem Phong (malha original); bit 4 = sem textura. */
+ * (fase 0) em vez do desenho de host; bit 3 = desenho de host sem Phong (malha original); bit 4 = sem textura;
+ * bit 5 = sem mapas de normal. */
 static int s_flags = 2;
 static float s_light[7] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 0.01f};   /* exposição, principal, preenchimento,
                                                          contraluz, ambiente, rugosidade, tolerância de profundidade */
@@ -116,6 +117,8 @@ static void heat_activate(void) {
         s_loaded = rmk_asset_load(&A, "mods/remake/heat.bin");
         psx_mod_counter_add(s_loaded ? "bag2_heat.asset_ok" : "bag2_heat.asset_missing", 1);
         if (s_loaded) {
+            const double t0 = now_us();   /* mapas de normal das camadas (fase 2): uma vez, antes do jogo rodar */
+            if (rmk_asset_build_normals(&A, 16.0f)) psx_mod_counter_add("bag2_heat.us_nmaps", (uint32_t)(now_us() - t0));
             for (uint32_t l = 0; l < A.n_layers && l < 64; l++) {
                 const size_t n = (size_t)A.tex_size * A.tex_size;
                 if (!(s_amask[l] = (uint8_t*)malloc(n))) continue;
@@ -239,7 +242,8 @@ static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, 
     fr->groups = mask;
     fr->n_verts = rmk_active_verts(&A, mask);
     fr->serial = ++s_serial;
-    fr->flags = ((s_flags & 8) ? RMK_FLAG_FLAT : 0u) | ((s_flags & 16) ? RMK_FLAG_NO_TEX : 0u);
+    fr->flags = ((s_flags & 8) ? RMK_FLAG_FLAT : 0u) | ((s_flags & 16) ? RMK_FLAG_NO_TEX : 0u) |
+                ((s_flags & 32) ? RMK_FLAG_NO_NMAP : 0u);
     fr->ofx = pr->ofx; fr->ofy = pr->ofy; fr->h = pr->h; fr->shift_x = shift;
     float zn = fi->zmin * 0.9f - 16.0f, zf = fi->zmax * 1.1f + 16.0f;
     if (zn < 16.0f) zn = 16.0f;
@@ -429,7 +433,7 @@ static void compute_cover(void) {
     s_cover = (uint8_t*)calloc((size_t)A.n_tris * KIDS_ALL, 1);
     for (uint32_t f = 0; f < A.n_tris; f++) {
         const HTri* t = &A.tris[f];
-        if (t->mode == 0 || t->layer < 0 || !s_amask[t->layer]) continue;
+        if ((t->mode & 3) == 0 || t->layer < 0 || !s_amask[t->layer]) continue;
         for (int L = 1; L <= LMAX; L++) {
             CoverCtx cx = {t, s_amask[t->layer], L, s_cover + (size_t)f * KIDS_ALL + kid_off(L)};
             for_each_kid(L, cover_kid, &cx);
@@ -594,7 +598,7 @@ static void draw_heat_packets(const struct CPUState* cpu, const uint32_t* nodes,
         }
         s_dev[f] = dev;
         s_luv[f] = 1;
-        if (t->mode != 0 && t->layer >= 0) {
+        if ((t->mode & 3) != 0 && t->layer >= 0) {
             /* o UV do GT3 tem 8 bits: cada pedaço tem de caber numa janela de 256 texels HD alinhada a 64,
              * ou seja, extensão <= 192; senão o UV satura e a textura sai em cacos */
             float umin = 1e9f, umax = -1e9f, vmin = 1e9f, vmax = -1e9f;
@@ -672,11 +676,11 @@ static void draw_heat_packets(const struct CPUState* cpu, const uint32_t* nodes,
         const GridPt* g[3] = {&gg[ch->a], &gg[ch->b], &gg[ch->c]};
         int oi = ((int)s_P[t->zp[0]].z + (int)s_P[t->zp[1]].z) >> 3;   /* como FUN_80036230 */
         oi = oi < OT_MIN ? OT_MIN : oi > OT_MAX ? OT_MAX : oi;
-        const uint8_t cov = (t->mode != 0 && t->layer >= 0) ? s_cover[(size_t)ch->tri * KIDS_ALL + kid_off(ch->L) + ch->kid] : 0;
+        const uint8_t cov = ((t->mode & 3) != 0 && t->layer >= 0) ? s_cover[(size_t)ch->tri * KIDS_ALL + kid_off(ch->L) + ch->kid] : 0;
         if (cov & 1) {                                        /* textura (sobre a cor base no modo 1) */
             prepare(&s_pk[np], oi, ch->tri, g, 1, (uint16_t)(1 + t->layer * BANKS_PER_LAYER)); s_order[np] = np; np++; n_tex++;
         }
-        if (t->mode == 0 || (t->mode == 1 && !(cov & 2) && !(s_flags & 1))) {   /* cor do material: GT3 com texel branco */
+        if ((t->mode & 3) == 0 || ((t->mode & 3) == 1 && !(cov & 2) && !(s_flags & 1))) {   /* cor do material: GT3 com texel branco */
             prepare(&s_pk[np], oi, ch->tri, g, 0, 0); s_order[np] = np; np++; n_base++;
         }
     }

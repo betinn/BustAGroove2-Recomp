@@ -17,7 +17,7 @@ Formato (little-endian), versão 4 (lido por src/remake/rmk_asset.c):
     por face (na ordem em que o jogo liga as primitivas na OT: nó, lista na ordem de FUN_80029588, prim):
                 u16 v[3] (orientação original do arquivo, a que o NCLIP do jogo usa, girada para começar no
                 menor índice), u16 z[2] (vértices cujo Z dá o slot da OT, (z0 + z1) >> 3, como o jogo),
-                u8 modo (0 cor, 1 cor + overlay, 2 só textura), s8 camada, u8 uv[3][2] (texels 0..255),
+                u8 modo (0 cor, 1 cor + overlay, 2 só textura; + 4 = sem mapa de normal), s8 camada, u8 uv[3][2] (texels 0..255),
                 u8 base[3][3], u8 over[3][3] (128 = neutro), u8 grupo (0 corpo)
     por camada: tex_size x tex_size RGBA8 (alfa 0 = transparente)
 A rotação canônica dos cantos faz faces com os mesmos vértices (decalques coplanares) terem a mesma
@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(HERE, '..'))
 from bag2model import CHARS, load_character  # noqa: E402
 from rig import build_rig, pose_positions  # noqa: E402
 from heat_remake import DISC, OUT, hd_layers, ps1_layers  # noqa: E402
+import detail  # noqa: E402
 import ears as E  # noqa: E402
 import hands as H  # noqa: E402
 
@@ -82,7 +83,8 @@ def main():
     layers = ps1_layers(base_rig, tims)
     hd = hd_layers(layers, os.path.join(OUT, name.lower(), 'textures'))
     rig, groups = H.attach_hands(base_rig, nodes, hd, cache_dir=os.path.join(OUT, name.lower(), 'maos'))
-    rig = E.attach_ears(rig)
+    rig = E.attach_nose(E.attach_ears(rig))
+    detail.mark_flat(rig)
     perm = np.lexsort(rig.order.T[::-1])
     for k in FACE_FIELDS:
         setattr(rig, k, getattr(rig, k)[perm])

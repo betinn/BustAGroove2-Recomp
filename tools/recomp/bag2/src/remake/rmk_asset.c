@@ -8,6 +8,7 @@
  *   por camada:  tex_size x tex_size RGBA8 (Real-ESRGAN 4x, alfa 0 = transparente) */
 #include "rmk.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,100 @@ void rmk_asset_free(RmkAsset* a) {
     free(a->verts);
     free(a->tris);
     free(a->layers);
+    free(a->nmaps);
     memset(a, 0, sizeof *a);
+}
+
+/* Mapas de normal (espaço tangente, RGBA8: xyz * 0,5 + 0,5, alfa = máscara) gerados das camadas HD; a mesma
+ * conta de tools/remake/detail.py (renders offline). A arte é anime com traço preto. Altura por texel:
+ *   estampa colorida (saturação alta: chamas, logotipo) em relevo, caixa de raio 3 duas vezes;
+ *   traço preto (contornos, costuras) como sulco, raio 2;
+ *   sombreado pintado (dobras do pano) como ondulação, luminância com raio 8;
+ * normal = normalize(-k dh/du, -k dh/dv, 1) por diferenças centrais; texel transparente: normal plana.
+ * Roda uma vez na ativação (CPU). */
+#define NM_PRINT 1.0f
+#define NM_INK 0.8f
+#define NM_FOLD 1.2f
+
+/* caixa separável de raio r com borda repetida, aplicada em x e depois em y */
+static void box(float* h, float* tmp, int S, int r) {
+    const double inv = 1.0 / (2 * r + 1);
+    for (int y = 0; y < S; y++) {
+        const float* row = h + (size_t)y * S;
+        double acc = 0.0;
+        for (int k = -r; k <= r; k++) acc += row[k < 0 ? 0 : k >= S ? S - 1 : k];
+        for (int x = 0; x < S; x++) {
+            tmp[(size_t)y * S + x] = (float)(acc * inv);
+            const int add = x + r + 1, sub = x - r;
+            acc += row[add >= S ? S - 1 : add] - row[sub < 0 ? 0 : sub];
+        }
+    }
+    for (int x = 0; x < S; x++) {
+        double acc = 0.0;
+        for (int k = -r; k <= r; k++) acc += tmp[(size_t)(k < 0 ? 0 : k >= S ? S - 1 : k) * S + x];
+        for (int y = 0; y < S; y++) {
+            h[(size_t)y * S + x] = (float)(acc * inv);
+            const int add = y + r + 1, sub = y - r;
+            acc += tmp[(size_t)(add >= S ? S - 1 : add) * S + x] - tmp[(size_t)(sub < 0 ? 0 : sub) * S + x];
+        }
+    }
+}
+
+int rmk_asset_build_normals(RmkAsset* a, float strength) {
+    const int S = (int)a->tex_size;
+    const size_t n = (size_t)S * S;
+    free(a->nmaps);
+    a->nmaps = a->n_layers ? (uint8_t*)malloc(n * 4u * a->n_layers) : NULL;
+    float* h = (float*)malloc(n * sizeof(float));
+    float* c = (float*)malloc(n * sizeof(float));
+    float* tmp = (float*)malloc(n * sizeof(float));
+    if (!a->nmaps || !h || !c || !tmp) { free(h); free(c); free(tmp); free(a->nmaps); a->nmaps = NULL; return 0; }
+    static const float w[3] = {NM_PRINT, -NM_INK, NM_FOLD};
+    static const int r[3] = {3, 2, 8};
+    for (uint32_t l = 0; l < a->n_layers; l++) {
+        const uint8_t* px = a->layers + n * 4u * l;
+        memset(h, 0, n * sizeof(float));
+        for (int ch = 0; ch < 3; ch++) {
+            for (size_t i = 0; i < n; i++) {
+                const uint8_t* q = &px[4 * i];
+                float v = 0.0f;
+                if (q[3]) {
+                    const float Y = (0.299f * q[0] + 0.587f * q[1] + 0.114f * q[2]) / 255.0f;
+                    if (ch == 0) {
+                        const int mx = q[0] > q[1] ? (q[0] > q[2] ? q[0] : q[2]) : (q[1] > q[2] ? q[1] : q[2]);
+                        const int mn = q[0] < q[1] ? (q[0] < q[2] ? q[0] : q[2]) : (q[1] < q[2] ? q[1] : q[2]);
+                        v = ((float)(mx - mn) / 255.0f - 0.25f) / 0.2f;
+                    } else if (ch == 1) {
+                        v = (0.30f - Y) / 0.22f;
+                    } else {
+                        v = Y;
+                    }
+                    v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+                }
+                c[i] = v;
+            }
+            box(c, tmp, S, r[ch]);
+            box(c, tmp, S, r[ch]);
+            for (size_t i = 0; i < n; i++) h[i] += w[ch] * c[i];
+        }
+        for (size_t i = 0; i < n; i++) if (!px[4 * i + 3]) h[i] = 0.0f;
+        uint8_t* o = a->nmaps + n * 4u * l;
+        for (int y = 0; y < S; y++)
+            for (int x = 0; x < S; x++) {
+                const size_t i = (size_t)y * S + x;
+                const float du = h[(size_t)y * S + (x < S - 1 ? x + 1 : x)] - h[(size_t)y * S + (x > 0 ? x - 1 : x)];
+                const float dv = h[(size_t)(y < S - 1 ? y + 1 : y) * S + x] - h[(size_t)(y > 0 ? y - 1 : y) * S + x];
+                float nx = -strength * du, ny = -strength * dv, nz = 1.0f;
+                const float il = 1.0f / sqrtf(nx * nx + ny * ny + nz * nz);
+                nx *= il; ny *= il; nz *= il;
+                o[4 * i] = (uint8_t)(nx * 127.5f + 127.5f);
+                o[4 * i + 1] = (uint8_t)(ny * 127.5f + 127.5f);
+                o[4 * i + 2] = (uint8_t)(nz * 127.5f + 127.5f);
+                o[4 * i + 3] = px[4 * i + 3];
+            }
+    }
+    free(h); free(c); free(tmp);
+    return 1;
 }
 
 int rmk_asset_load(RmkAsset* a, const char* path) {

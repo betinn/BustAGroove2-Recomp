@@ -18,7 +18,7 @@
  * atrás continua escondido.
  *
  * Estado GL que rmk_gl_draw muda (quem chama restaura): programa, VAO, buffer de vértices, unidade ativa e
- * texturas das unidades 8 e 9, recorte (caixa), teste/função/máscara de profundidade, cull/front face,
+ * texturas das unidades 8, 9 e 10, recorte (caixa), teste/função/máscara de profundidade, cull/front face,
  * blend e stencil (desligados), máscara de cor. A profundidade do FBO é limpa só no retângulo do desenho. */
 #include "rmk.h"
 
@@ -151,7 +151,7 @@ struct RmkGL {
     void (RGLAPI* ClearDepthf)(float);
     void (RGLAPI* ClearDepth)(double);
     int gles, step, ready, failed;
-    GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, geo[GEO_RING];
+    GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING];
     int geo_w, geo_h, ring, have_serial;
     uint32_t n_draw;                 /* faces ativas no último quadro (grupos do gesto) */
     uint32_t last_serial;
@@ -159,7 +159,7 @@ struct RmkGL {
     Inst* inst;                      /* por face, na ordem do asset */
     Inst* inst_order;                /* reordenado por quadro (ordem de pintor do jogo) */
     uint16_t* slot;                  /* slot da OT por face, por quadro */
-    GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_depth, u_tex, u_misc, u_prepass;
+    GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_depth, u_tex, u_nmap, u_nmap_on, u_misc, u_prepass;
     GLint_ u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;
     char err[512];
 };
@@ -213,6 +213,8 @@ static const char* FS_BODY =
     "precision highp float;\n"
     "precision mediump sampler2DArray;\n"
     "uniform mediump sampler2DArray u_tex;\n"
+    "uniform mediump sampler2DArray u_nmap;\n"
+    "uniform float u_nmap_on; /* 1: mapas de normal das camadas */\n"
     "uniform vec3 u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;\n"
     "uniform vec4 u_misc;   /* exposição, rugosidade, textura ligada, contraluz */\n"
     "uniform int u_prepass; /* 1: só profundidade (o recorte por alfa vale igual) */\n"
@@ -220,6 +222,14 @@ static const char* FS_BODY =
     "flat in int v_layer; flat in int v_mode;\n"
     "layout(location = 0) out vec4 frag;\n"
     "float D_ggx(float nh, float a) { float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (3.14159 * d * d); }\n"
+    "/* base tangente pelas derivadas da tela (Schüler): sem tangente por vértice, vale com UV espelhado */\n"
+    "vec3 perturb(vec3 n, vec3 p, vec2 uv, vec3 t) {\n"
+    "  vec3 dp1 = dFdx(p), dp2 = dFdy(p); vec2 du1 = dFdx(uv), du2 = dFdy(uv);\n"
+    "  vec3 dp2p = cross(dp2, n), dp1p = cross(n, dp1);\n"
+    "  vec3 T = dp2p * du1.x + dp1p * du2.x, B = dp2p * du1.y + dp1p * du2.y;\n"
+    "  float im = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));\n"
+    "  return normalize(T * im * t.x + B * im * t.y + n * t.z);\n"
+    "}\n"
     "vec3 light(vec3 n, vec3 v, vec3 l, vec3 col, vec3 alb, float wrap) {\n"
     "  float nl = dot(n, l);\n"
     "  float d = max((nl + wrap) / (1.0 + wrap), 0.0);\n"
@@ -232,15 +242,21 @@ static const char* FS_BODY =
     "}\n"
     "void main() {\n"
     "  vec3 base = clamp(v_base, 0.0, 1.0);\n"
-    "  if (v_mode > 0 && v_layer >= 0 && u_misc.z > 0.5) {\n"
+    "  int md = v_mode & 3;\n"
+    "  float tex_a = 0.0;\n"
+    "  if (md > 0 && v_layer >= 0 && u_misc.z > 0.5) {\n"
     "    vec4 t = texture(u_tex, vec3(v_uv, float(v_layer)));\n"
-    "    if (v_mode == 2) { if (t.a < 0.5) discard; base = t.rgb * v_over; }\n"
-    "    else base = mix(base, t.rgb * v_over, t.a);\n"
+    "    if (md == 2) { if (t.a < 0.5) discard; base = t.rgb * v_over; tex_a = 1.0; }\n"
+    "    else { base = mix(base, t.rgb * v_over, t.a); tex_a = t.a; }\n"
     "  }\n"
     "  if (u_prepass != 0) { frag = vec4(0.0); return; }\n"
     "  vec3 alb = pow(clamp(base, 0.0, 1.0), vec3(2.2));\n"
     "  vec3 n = normalize(v_nrm), v = normalize(-v_pos);\n"
     "  if (dot(n, v) < 0.0) n = -n;\n"
+    "  if (tex_a > 0.5 && u_nmap_on > 0.5 && (v_mode & 4) == 0) {\n"
+    "    vec3 t = texture(u_nmap, vec3(v_uv, float(v_layer))).xyz * 2.0 - 1.0;\n"
+    "    n = perturb(n, v_pos, v_uv, t);\n"
+    "  }\n"
     "  vec3 c = light(n, v, u_key_dir, u_key_col, alb, 0.25);\n"
     "  c += light(n, v, u_fill_dir, u_fill_col, alb, 0.5);\n"
     "  float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, u_rim_dir), 0.0);\n"
@@ -306,7 +322,7 @@ static int build_program(RmkGL* g) {
         return 0;
     }
 #define U(name) g->name = g->GetUniformLocation(g->prog, #name)
-    U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_misc); U(u_prepass);
+    U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_misc); U(u_prepass);
     U(u_key_dir); U(u_key_col); U(u_fill_dir); U(u_fill_col); U(u_rim_dir); U(u_rim_col); U(u_sky); U(u_ground);
 #undef U
     return 1;
@@ -405,6 +421,16 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    /* mapas de normal (mesmo tamanho; se o asset não os tem, a textura fica 1x1 e o shader não lê) */
+    g->GenTextures(1, &g->nmap);
+    g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
+    const GLsizei_ ns = a->nmaps ? (GLsizei_)a->tex_size : 1;
+    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, ns, ns, (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA,
+                  R_UNSIGNED_BYTE, NULL);
+    g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
+    g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
+    g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+    g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
     g->BindTexture(R_TEXTURE_2D_ARRAY, 0);
     return g->GetError() == 0;
 }
@@ -424,20 +450,27 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
         g->step = 1;
         return 0;
     }
+    /* passos: 1..n_layers camadas de cor, depois n_layers mapas de normal (se houver), depois mipmaps */
     g->ActiveTexture(R_TEXTURE0 + 9);
-    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
-    const uint32_t layer = (uint32_t)g->step - 1u;
-    if (layer < a->n_layers) {
-        const size_t bytes = (size_t)a->tex_size * a->tex_size * 4u;
+    const uint32_t k = (uint32_t)g->step - 1u, nm = a->nmaps ? a->n_layers : 0u;
+    const size_t bytes = (size_t)a->tex_size * a->tex_size * 4u;
+    if (k < a->n_layers + nm) {
+        const int is_n = k >= a->n_layers;
+        const uint32_t layer = is_n ? k - a->n_layers : k;
+        g->BindTexture(R_TEXTURE_2D_ARRAY, is_n ? g->nmap : g->tex);
         g->TexSubImage3D(R_TEXTURE_2D_ARRAY, 0, 0, 0, (GLint_)layer, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size, 1,
-                         R_RGBA, R_UNSIGNED_BYTE, a->layers + bytes * layer);
+                         R_RGBA, R_UNSIGNED_BYTE, (is_n ? a->nmaps : a->layers) + bytes * layer);
         g->step++;
     } else {
-        g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
-        g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR_MIPMAP_LINEAR);
         float an = 0.0f;
         g->GetFloatv(R_MAX_TEXTURE_MAX_ANISOTROPY, &an);
-        if (g->GetError() == 0 && an > 1.0f) g->TexParameterf(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAX_ANISOTROPY, an < 8.0f ? an : 8.0f);
+        const int aniso = g->GetError() == 0 && an > 1.0f;
+        for (int t = 0; t < (nm ? 2 : 1); t++) {
+            g->BindTexture(R_TEXTURE_2D_ARRAY, t ? g->nmap : g->tex);
+            g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
+            g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR_MIPMAP_LINEAR);
+            if (aniso) g->TexParameterf(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAX_ANISOTROPY, an < 8.0f ? an : 8.0f);
+        }
         while (g->GetError() != 0) {}
         g->ready = 1;
     }
@@ -517,8 +550,12 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->BindTexture(R_TEXTURE_2D, g->geo[g->ring]);
     g->ActiveTexture(R_TEXTURE0 + 9);
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
+    g->ActiveTexture(R_TEXTURE0 + 10);
+    g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
     g->Uniform1i(g->u_geo, 8);
     g->Uniform1i(g->u_tex, 9);
+    g->Uniform1i(g->u_nmap, 10);
+    g->Uniform1f(g->u_nmap_on, (a->nmaps && !(fr->flags & RMK_FLAG_NO_NMAP)) ? 1.0f : 0.0f);
     g->Uniform1i(g->u_geo_w, g->geo_w);
     g->Uniform4f(g->u_ndc, t->ndc[0], t->ndc[1], t->ndc[2], t->ndc[3]);
     g->Uniform4f(g->u_proj, fr->ofx, fr->ofy, fr->h, fr->shift_x);

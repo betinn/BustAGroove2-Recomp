@@ -153,3 +153,82 @@ def attach_ears(rig, length_scale=1.08, width_scale=0.95, height=480.0, lift=220
     if hand is not None:
         r.hand = np.concatenate(hand)
     return r
+
+
+# ---------------------------------------------------------------- nariz
+NOSE = dict(bridge=(0.0, 1620.0, 3380.0), tip=(0.0, 1120.0, 3640.0), r_bridge=60.0, r_tip=110.0)
+
+
+def attach_nose(rig, cell=22.0, target=160, **kw):
+    """Nariz pequeno no osso da cabeça: cone arredondado da ponte (enterrada no rosto) até a ponta, um pouco
+    à frente da ponta da malha original. A pele vem do rosto embaixo: cada face nova pega o UV, a camada e as
+    cores da face do rosto mais à frente sob ela (projeção em z), como a luva das mãos. Sem mapa de normal,
+    como o resto do rosto. Corpo (grupo 0), enrolamento do jogo."""
+    import hands as Hd
+    p = dict(NOSE, **kw)
+    a, b = np.asarray(p['bridge']), np.asarray(p['tip'])
+    f = lambda q: Hd.sd_round_cone(q, a, b, p['r_bridge'], p['r_tip'])
+    lo = np.minimum(a, b) - 300
+    hi = np.maximum(a, b) + 300
+    V, T = Hd.surface_nets(f, lo, hi, cell)
+    V = Hd.project(f, V)
+    T = Hd.fix_orientation(f, V, T)
+    V = Hd.smooth(V, T, f, 2)
+    V, T = Hd.decimate(V, T, target)
+    V = Hd.project(f, V, 3)
+    T = Hd.fix_orientation(f, V, T)
+    # faces do rosto de frente (normal da pose de descanso com z para fora) projetadas em (x, y)
+    loc = rig.local
+    hf = np.nonzero((rig.fnode == HEAD) & ((rig.mode & 3) == 1) & (rig.owner[rig.tris] == HEAD).all(1))[0]
+    P3 = loc[rig.tris[hf]]
+    tri2 = P3[:, :, :2]
+    zc = P3[:, :, 2].mean(1)
+
+    def lookup(xy):
+        A, B, C = tri2[:, 0], tri2[:, 1], tri2[:, 2]
+        v0, v1 = B - A, C - A
+        d00 = (v0 * v0).sum(1); d01 = (v0 * v1).sum(1); d11 = (v1 * v1).sum(1)
+        den = np.where(np.abs(d00 * d11 - d01 * d01) < 1e-9, 1e-9, d00 * d11 - d01 * d01)
+        w = xy[:, None, :] - A[None]
+        d20 = (w * v0[None]).sum(2); d21 = (w * v1[None]).sum(2)
+        l1 = (d11 * d20 - d01 * d21) / den; l2 = (d00 * d21 - d01 * d20) / den
+        L = np.stack([1 - l1 - l2, l1, l2], 2)
+        inside = (L > -1e-3).all(2)
+        Lc = np.clip(L, 0, 1); Lc /= Lc.sum(2, keepdims=True)
+        q = np.einsum('nkj,kjd->nkd', Lc, tri2)
+        dist = np.linalg.norm(q - xy[:, None], axis=2)
+        k = np.where(inside, -1e6 - zc[None], dist).argmin(1)
+        return k, Lc[np.arange(len(xy)), k]
+
+    cen = V[T].mean(1)
+    kf, _ = lookup(cen[:, :2])
+    r = copy.copy(rig)
+    F = len(T)
+    nv = len(loc)
+    face = hf[kf]
+    # UV/cores por canto: baricêntricas presas do canto na face escolhida (a mesma para os 3 cantos)
+    uv = np.zeros((F, 3, 2), np.float32); base = np.zeros((F, 3, 3), np.float32); over = np.zeros((F, 3, 3), np.float32)
+    for c in range(3):
+        xy = V[T[:, c], :2]
+        A, B, C = tri2[kf, 0], tri2[kf, 1], tri2[kf, 2]
+        v0, v1 = B - A, C - A
+        d00 = (v0 * v0).sum(1); d01 = (v0 * v1).sum(1); d11 = (v1 * v1).sum(1)
+        den = d00 * d11 - d01 * d01
+        w = xy - A
+        d20 = (w * v0).sum(1); d21 = (w * v1).sum(1)
+        l1 = (d11 * d20 - d01 * d21) / den; l2 = (d00 * d21 - d01 * d20) / den
+        L = np.clip(np.stack([1 - l1 - l2, l1, l2], 1), 0, 1); L /= L.sum(1, keepdims=True)
+        uv[:, c] = np.einsum('fj,fjd->fd', L, rig.uv[face])
+        base[:, c] = np.einsum('fj,fjd->fd', L, rig.base[face])
+        over[:, c] = np.einsum('fj,fjd->fd', L, rig.over[face])
+    TT = T[:, ::-1] + nv                       # enrolamento do jogo
+    uv, base, over = uv[:, ::-1], base[:, ::-1], over[:, ::-1]
+    r.local = np.concatenate([loc, V]); r.owner = np.concatenate([rig.owner, np.full(len(V), HEAD)])
+    add = dict(tris=TT, fnode=np.full(F, HEAD), nidx=np.full((F, 3), -1), base=base, over=over, uv=uv,
+               layer=rig.layer[face], mode=rig.mode[face], order=np.stack([np.full(F, HEAD), np.full(F, 41), np.arange(F)], 1),
+               zpair=TT[:, :2])
+    for k, v in add.items():
+        setattr(r, k, np.concatenate([getattr(rig, k), v]))
+    if getattr(rig, 'hand', None) is not None:
+        r.hand = np.concatenate([rig.hand, np.zeros(F, int)])
+    return r
