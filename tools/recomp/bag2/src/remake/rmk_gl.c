@@ -149,6 +149,7 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, Uniform3f, (GLint_ l, float x, float y, float z)) \
     X(void, Uniform3fv, (GLint_ l, GLsizei_ n, const float* v)) \
     X(void, Uniform4f, (GLint_ l, float x, float y, float z, float w)) \
+    X(void, Uniform4fv, (GLint_ l, GLsizei_ n, const float* v)) \
     X(void, UseProgram, (GLuint_ p)) \
     X(void, VertexAttribDivisor, (GLuint_ i, GLuint_ d)) \
     X(void, VertexAttribIPointer, (GLuint_ i, GLint_ n, GLenum_ t, GLsizei_ s, const void* p)) \
@@ -187,6 +188,7 @@ struct RmkGL {
     GLint_ u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;
     GLint_ u_stage, u_ldir, u_lcol, u_bk;
     GLint_ u_lu, u_lv, u_ld, u_lc, u_spass, u_shadow, u_shadow_on, u_key;
+    GLint_ u_nrm, u_rm_rect, u_rm_off;
     char err[512];
 };
 
@@ -257,9 +259,22 @@ static const char* FS_BODY =
     "uniform int u_stage;   /* 1: luzes do palco (GTE); 0: luz fixa na câmera da fase 1 */\n"
     "uniform vec3 u_ldir[3], u_lcol[3], u_bk;\n"
     "uniform int u_prepass; /* 1: só profundidade (o recorte por alfa vale igual) */\n"
+    "/* expressão do rosto: casa da página (x0, y0, x1, y1 em texels) e deslocamento até a variante que o jogo\n"
+    "   copiou para ela (du, dv, página, meio texel HD para não sangrar a borda) */\n"
+    "uniform int u_nrm;\n"
+    "uniform vec4 u_rm_rect[8], u_rm_off[8];\n"
     "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao; in vec3 v_lpos;\n"
     "flat in int v_layer; flat in int v_mode;\n"
     "layout(location = 0) out vec4 frag;\n"
+    "vec2 remap(vec2 t, int pg) {   /* t em texels da página; modo da face >> 3 = página */\n"
+    "  for (int i = 0; i < 8; i++) {\n"
+    "    if (i >= u_nrm) break;\n"
+    "    vec4 r = u_rm_rect[i], o = u_rm_off[i];\n"
+    "    if (int(o.z) == pg && all(greaterThanEqual(t, r.xy)) && all(lessThan(t, r.zw)))\n"
+    "      return clamp(t, r.xy + o.w, r.zw - o.w) + o.xy;\n"
+    "  }\n"
+    "  return t;\n"
+    "}\n"
     "float shadow_at() {   /* 5 amostras com comparação bilinear: borda macia de ~3 texels */\n"
     "  if (u_shadow_on < 0.5) return 1.0;\n"
     "  vec3 q = v_lpos; q.z -= 0.0025;\n"
@@ -291,8 +306,10 @@ static const char* FS_BODY =
     "  vec3 base = clamp(v_base, 0.0, 1.0);\n"
     "  int md = v_mode & 3;\n"
     "  float tex_a = 0.0;\n"
+    "  vec2 gx = dFdx(v_uv), gy = dFdy(v_uv);   /* do UV sem remapear: o salto na borda da casa não muda o mip */\n"
+    "  vec2 uv = u_nrm > 0 ? remap(v_uv * 256.0, v_mode >> 3) / 256.0 : v_uv;\n"
     "  if (md > 0 && v_layer >= 0 && u_misc.z > 0.5) {\n"
-    "    vec4 t = texture(u_tex, vec3(v_uv, float(v_layer)));\n"
+    "    vec4 t = textureGrad(u_tex, vec3(uv, float(v_layer)), gx, gy);\n"
     "    if (md == 2) { if (t.a < 0.5) discard; base = t.rgb * v_over; tex_a = 1.0; }\n"
     "    else { base = mix(base, t.rgb * v_over, t.a); tex_a = t.a; }\n"
     "  }\n"
@@ -301,7 +318,7 @@ static const char* FS_BODY =
     "  vec3 n = normalize(v_nrm), v = normalize(-v_pos);\n"
     "  if (dot(n, v) < 0.0) n = -n;\n"
     "  if (tex_a > 0.5 && u_nmap_on > 0.5 && (v_mode & 4) == 0) {\n"
-    "    vec3 t = texture(u_nmap, vec3(v_uv, float(v_layer))).xyz * 2.0 - 1.0;\n"
+    "    vec3 t = textureGrad(u_nmap, vec3(uv, float(v_layer)), gx, gy).xyz * 2.0 - 1.0;\n"
     "    n = perturb(n, v_pos, v_uv, t);\n"
     "  }\n"
     "  vec3 c;\n"
@@ -388,9 +405,11 @@ static int build_program(RmkGL* g) {
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_misc); U(u_prepass);
     U(u_key_dir); U(u_key_col); U(u_fill_dir); U(u_fill_col); U(u_rim_dir); U(u_rim_col); U(u_sky); U(u_ground);
     U(u_stage); U(u_bk);
-    U(u_lu); U(u_lv); U(u_ld); U(u_lc); U(u_spass); U(u_shadow); U(u_shadow_on); U(u_key);
+    U(u_lu); U(u_lv); U(u_ld); U(u_lc); U(u_spass); U(u_shadow); U(u_shadow_on); U(u_key); U(u_nrm);
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
+    g->u_rm_rect = g->GetUniformLocation(g->prog, "u_rm_rect[0]");
+    g->u_rm_off = g->GetUniformLocation(g->prog, "u_rm_off[0]");
 #undef U
     return 1;
 }
@@ -430,7 +449,9 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
             o->base[k][3] = o->over[k][3] = 255;
         }
         o->layer = (float)t->layer;
-        o->mode = (float)t->mode;
+        /* modo | página << 3: a página da camada (expressão do rosto); 31 = nenhuma, nunca casa com um remapeamento */
+        const unsigned page = t->layer >= 0 && a->layer_page[t->layer] != RMK_NO_PAGE ? a->layer_page[t->layer] : 31u;
+        o->mode = (float)((t->mode & 7u) | page << 3);
     }
     g->GenVertexArrays(1, &g->vao);
     g->BindVertexArray(g->vao);
@@ -705,6 +726,22 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform1i(g->u_shadow, 11);
     g->Uniform1f(g->u_shadow_on, shadow ? 1.0f : 0.0f);
     g->Uniform4f(g->u_proj, fr->ofx, fr->ofy, fr->h, fr->shift_x);
+    /* expressão do rosto: casas remapeadas (texels da página); a borda recua meio texel HD */
+    {
+        float rect[4 * RMK_MAX_REMAP], off[4 * RMK_MAX_REMAP];
+        const uint32_t nr = fr->n_remap < RMK_MAX_REMAP ? fr->n_remap : RMK_MAX_REMAP;
+        const float inset = 128.0f / (float)a->tex_size;
+        for (uint32_t i = 0; i < nr; i++) {
+            const RmkRemap* r = &fr->remap[i];
+            rect[4 * i] = r->x0; rect[4 * i + 1] = r->y0; rect[4 * i + 2] = r->x1; rect[4 * i + 3] = r->y1;
+            off[4 * i] = r->du; off[4 * i + 1] = r->dv; off[4 * i + 2] = r->page; off[4 * i + 3] = inset;
+        }
+        g->Uniform1i(g->u_nrm, (GLint_)nr);
+        if (nr) {
+            g->Uniform4fv(g->u_rm_rect, (GLsizei_)nr, rect);
+            g->Uniform4fv(g->u_rm_off, (GLsizei_)nr, off);
+        }
+    }
     /* o passo de cor puxa a profundidade até zbias: a faixa começa um pouco antes para caber */
     const float n = fr->znear * (1.0f - fr->zbias), f = fr->zfar;
     const float dA = (f + n) / (f - n), dB = -2.0f * f * n / (f - n), alpha = (fr->flags & RMK_FLAG_FLAT) ? 0.0f : fr->alpha;

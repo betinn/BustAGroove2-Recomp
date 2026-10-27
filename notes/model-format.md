@@ -50,7 +50,7 @@ Unidades: personagem tem ~30000 de altura. Eixo Y aponta para baixo no PS1.
 | Offset | Campo |
 |---|---|
 | 0x00 | type = 1 |
-| 0x04..0x90 | ponteiros preenchidos em runtime (zero no arquivo) |
+| 0x04..0x90 | ponteiros preenchidos em runtime por `FUN_80021E24` (zero no arquivo): +0x04 vértices (= +0x120), +0x08..+0x10 grupos de normais e refs/uses (na ordem dos dados), +0x14 + 4k = lista k (k = 0..31; conferido no nó 13 do HEAT) |
 | 0x94 | u32 nVerts |
 | 0x98 | u32 índice-base das normais (soma das normais dos nós anteriores; identifica o mesh também na RAM) |
 | 0x9C, 0xA0 | u32 nGruposA (NCDS/NCDT), nGruposB (luz especular `ll`/`cdp`) |
@@ -143,8 +143,20 @@ Rotações substituem a rotação de descanso do nó; translação soma à posi�
 Estado em runtime: `+0x0C` ponteiros iniciais[93], `+0x180` ponteiros atuais, `+0x2FC` valores iniciais[31][4],
 `+0x3EC` valores atuais[31][4] (slot 0 = translação, slot k+1 = osso boneMap[k]).
 
+## Em tempo de execução (medido em 2026-10-27, HEAT jogador 1)
+- Nó da árvore na RAM (0xB0 bytes): além de +0x4C (matriz de luz), +0x6C (MATRIX câmera×osso), +0x80 (T),
+  +0x8C (MeshHeader), +0x94/+0x98 (filho/irmão), +0xA0 (tipo): +0xA4 = tamanho e +0xA8/+0xAC = os dois buffers de
+  pacotes GPU do nó (buffer duplo). Os pacotes são montados uma vez com UV/CLUT/tpage; por quadro só xy e cores mudam.
+- TIMs de corpo do HEAT na VRAM: TIM 0 em 704,256 (tpage 0x1B), TIM 1 em 768,256 (tpage 0x1C); CLUTs nas linhas 0..3
+  perto de x 960.
+- **Expressão do rosto**: a página do TIM 1 é um atlas com casas (olho A, olho B, boca) e variantes; o código do
+  personagem copia a variante para a casa com `MoveImage` (libgpu `0x800482F4`; `LoadImage` = `0x80048234`,
+  `ClearImage` = `0x8004819C`, `StoreImage` = `0x80048294`, `SetDrawMove` = `0x8004AF9C`). Coordenadas das casas em
+  `tools/remake/faces.py`, técnica em `notes/remake-visual.md`.
+
 ## Em aberto
 - Tabela de eventos (footer) da animação; interpolação exata entre keyframes (o jogo parece usar só o keyframe).
-- Reposicionamento real das texturas na VRAM (feito pelo overlay do personagem em `0x801Cxxxx`).
+- Reposicionamento real das texturas na VRAM (feito pelo overlay do personagem em `0x801Cxxxx`); para o HEAT P1 as
+  posições estão medidas acima.
 - Matrizes de luz/cor do GTE usadas pelo jogo (afeta o brilho dos materiais).
 - Blobs `015..050` (passos) e `DBI_` secundários.

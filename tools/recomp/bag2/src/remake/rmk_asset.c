@@ -1,8 +1,12 @@
-/* Carga do asset do remake, formato v4 (tools/remake/export_heat.py; little-endian):
- *   char[4] "HTR4"; u32 versão (4), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups
+/* Carga do asset do remake, formato v5 (tools/remake/export_heat.py; little-endian; o v4 também é lido):
+ *   char[4] "HTR5"; u32 versão (5), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages
+ *               (o v4 é "HTR4", versão 4, sem n_pages)
  *   por nó:      u16 nverts (0 = sem mesh), u16 pad, u32 base_index (MeshHeader+0x98)
  *   por grupo (1..n_groups): u8 posição na árvore, u8 pad, u16 nverts e u32 base_index do mesh do jogo
  *                desse gesto, u32 primeiro vértice, u32 nº de vértices (exclusivos do grupo, contíguos)
+ *   por página (v5): s16 x, y na VRAM (x em halfwords, -1 = desconhecida), u16 largura, altura (texels),
+ *                u8 bits por texel, u8 pad[3]
+ *   por camada (v5): u8 página (0xFF = nenhuma)
  *   por vértice: RmkVert (8 bytes); os n_body primeiros são do corpo
  *   por face:    RmkTri (37 bytes), na ordem em que o jogo liga as primitivas na OT
  *   por camada:  tex_size x tex_size RGBA8 (Real-ESRGAN 4x, alfa 0 = transparente) */
@@ -118,14 +122,16 @@ int rmk_asset_load(RmkAsset* a, const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) return 0;
     char magic[4];
-    uint32_t hdr[8];
-    int ok = fread(magic, 1, 4, f) == 4 && !memcmp(magic, "HTR4", 4) && fread(hdr, 4, 8, f) == 8 && hdr[0] == 4;
+    uint32_t hdr[9] = {0};
+    int ok = fread(magic, 1, 4, f) == 4 && (!memcmp(magic, "HTR4", 4) || !memcmp(magic, "HTR5", 4));
+    const int v5 = ok && magic[3] == '5';
+    ok = ok && fread(hdr, 4, v5 ? 9 : 8, f) == (size_t)(v5 ? 9 : 8) && hdr[0] == (v5 ? 5u : 4u);
     if (ok) {
         a->n_nodes = hdr[1]; a->n_verts = hdr[2]; a->n_tris = hdr[3]; a->n_layers = hdr[4]; a->tex_size = hdr[5];
-        a->n_body = hdr[6]; a->n_groups = hdr[7];
-        ok = a->n_nodes <= RMK_MAX_NODES && a->n_verts && a->n_verts < 65536 && a->n_tris && a->n_layers <= 64 &&
+        a->n_body = hdr[6]; a->n_groups = hdr[7]; a->n_pages = hdr[8];
+        ok = a->n_nodes <= RMK_MAX_NODES && a->n_verts && a->n_verts < 65536 && a->n_tris && a->n_layers <= RMK_MAX_LAYERS &&
              (a->tex_size == 256 || a->tex_size == 512 || a->tex_size == 1024 || a->tex_size == 2048) &&
-             a->n_body <= a->n_verts && a->n_groups < RMK_MAX_GROUPS;
+             a->n_body <= a->n_verts && a->n_groups < RMK_MAX_GROUPS && a->n_pages <= RMK_MAX_PAGES;
     }
     for (uint32_t i = 0; ok && i < a->n_nodes; i++) {
         uint16_t nv, pad;
@@ -143,6 +149,18 @@ int rmk_asset_load(RmkAsset* a, const char* path) {
         gr->tree_pos = pos; gr->sig_nverts = nv; gr->sig_base = w[0]; gr->v0 = w[1]; gr->nv = w[2];
         ok = ok && gr->v0 >= a->n_body && gr->v0 + gr->nv <= a->n_verts && pos < RMK_MAX_NODES;
     }
+    for (uint32_t p = 0; ok && p < a->n_pages; p++) {
+        int16_t xy[2];
+        uint16_t wh[2];
+        uint8_t bpp_pad[4];
+        ok = fread(xy, 2, 2, f) == 2 && fread(wh, 2, 2, f) == 2 && fread(bpp_pad, 1, 4, f) == 4;
+        RmkPage* g = &a->pages[p];
+        g->vx = xy[0]; g->vy = xy[1]; g->w = wh[0]; g->h = wh[1]; g->bpp = bpp_pad[0];
+        ok = ok && (g->bpp == 4 || g->bpp == 8 || g->bpp == 16) && g->w && g->h;
+    }
+    memset(a->layer_page, RMK_NO_PAGE, sizeof a->layer_page);
+    if (ok && v5) ok = fread(a->layer_page, 1, a->n_layers, f) == a->n_layers;
+    for (uint32_t l = 0; ok && l < a->n_layers; l++) ok = a->layer_page[l] == RMK_NO_PAGE || a->layer_page[l] < a->n_pages;
     while (ok && a->mesh_nodes < (int)a->n_nodes && a->node_nverts[a->mesh_nodes]) a->mesh_nodes++;
     const size_t layer_bytes = (size_t)a->tex_size * a->tex_size * 4u;
     if (ok) {

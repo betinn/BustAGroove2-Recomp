@@ -33,9 +33,10 @@ bios_config = "C:/tools/psxrecomp/bios/OpenBIOS.toml"   # perfil de BIOS (modelo
 out_dir   = "generated"
 strict    = true
 discovery = "whole-image"
-# Hook do remake do HEAT (src/bag2_heat.c): entrada de FUN_80029D4C, que desenha a árvore de ossos de
-# um personagem. Inerte sem o plugin bag2.heat_remake ativo (notes/remake-visual.md §no jogo).
-mod_function_entry_funcs = ["0x80029D4C"]
+# Hooks do remake do HEAT (src/bag2_heat.c): entrada de FUN_80029D4C, que desenha a árvore de ossos de
+# um personagem, e LoadImage/MoveImage da libgpu (0x80048234/0x800482F4), por onde o código do personagem
+# troca a expressão do rosto na VRAM. Inertes sem o plugin bag2.heat_remake ativo (notes/remake-visual.md).
+mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"

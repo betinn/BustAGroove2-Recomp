@@ -6,12 +6,15 @@ cada gesto (tools/remake/hands.py) como grupos de faces e as orelhas novas (tool
 Uso: python tools/remake/export_heat.py [saída]   (padrão: build-debug/mods/remake/heat.bin e build/...)
 O arquivo é derivado do disco do usuário: fica fora do git (pastas build*/ são ignoradas).
 
-Formato (little-endian), versão 4 (lido por src/remake/rmk_asset.c):
-    char[4] "HTR4"; u32 versão (4), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups
+Formato (little-endian), versão 5 (lido por src/remake/rmk_asset.c):
+    char[4] "HTR5"; u32 versão (5), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages
     por nó:     u16 nverts (0 = sem mesh), u16 pad, u32 base_index (MeshHeader+0x98)
     por grupo (1..n_groups, gestos das mãos): u8 posição na árvore (16/19), u8 pad, u16 nverts e u32
                 base_index do mesh do jogo desse gesto (nós 16/20/21, 19/22/23), u32 primeiro vértice,
                 u32 nº de vértices exclusivos do grupo
+    por página (um por TIM de corpo): s16 x, y na VRAM (x em halfwords; -1 = desconhecida; medidos no jogo,
+                tools/remake/faces.py), u16 largura, altura (texels), u8 bits por texel, u8 pad[3]
+    por camada: u8 página (o TIM da camada; a expressão do rosto remapeia casas dentro da página)
     por vértice: s16 x, y, z (espaço do nó dono), u8 nó dono, u8 oclusão (255 = aberto); primeiro os n_body
                 do corpo (usados por faces do corpo ou por mais de um gesto), depois os de cada grupo
     por face (na ordem em que o jogo liga as primitivas na OT: nó, lista na ordem de FUN_80029588, prim):
@@ -40,6 +43,7 @@ from rig import build_rig, pose_positions  # noqa: E402
 from heat_remake import DISC, OUT, hd_layers, ps1_layers  # noqa: E402
 import detail  # noqa: E402
 import ears as E  # noqa: E402
+import faces  # noqa: E402
 import hands as H  # noqa: E402
 
 BAG2 = os.path.join(HERE, '..', 'recomp', 'bag2')
@@ -114,14 +118,19 @@ def main():
     canonical_corners(rig)
     size = hd[0].shape[0]
     assert all(img.shape == (size, size, 4) for img in hd)
-    buf = bytearray(b'HTR4')
-    buf += struct.pack('<8I', 4, len(nodes), len(rig.owner), len(rig.tris), len(hd), size, n_body, n_groups)
+    buf = bytearray(b'HTR5')
+    buf += struct.pack('<9I', 5, len(nodes), len(rig.owner), len(rig.tris), len(hd), size, n_body, n_groups, len(tims))
     for nd in nodes:
         buf += struct.pack('<HHI', len(nd.mesh.verts) if nd.mesh else 0, 0, nd.mesh.base_index if nd.mesh else 0)
     for g in range(1, n_groups + 1):
         pos, node, nv, base = groups[g]
         v0, n = ranges[g]
         buf += struct.pack('<BBHIII', pos, 0, nv, base, v0, n)
+    for k, tim in enumerate(tims):
+        vx, vy = faces.PAGE_VRAM.get(k, (-1, -1))
+        buf += struct.pack('<hhHHB3x', vx, vy, tim.w, tim.h, tim.bpp)
+    assert len(base_rig.layers) == len(hd)
+    buf += bytes(tex for tex, _ in base_rig.layers)
     loc = np.round(rig.local).astype(np.int64)
     assert np.abs(loc).max() < 32768
     for (x, y, z), o, a in zip(loc, rig.owner, ao):

@@ -37,10 +37,17 @@ ESRGAN = 'C:/tools/realesrgan/bin/realesrgan-ncnn-vulkan.exe'
 SKIP = {'HEAT': {20, 21, 22, 23}}
 
 
-def ps1_layers(rig, tims):
+def ps1_layers(rig, tims, expr=None):
+    """Uma camada 256x256 por (TIM, linha de CLUT). expr: expressão do rosto (faces.EXPRESSIONS), aplicada na
+    página do rosto como o jogo faz na VRAM."""
+    import dataclasses
+    import faces
     out = []
     for tex, clut in rig.layers:
-        img = tims[tex].rgba(clut)
+        tim = tims[tex]
+        if expr and tex == faces.FACE_TEX:
+            tim = dataclasses.replace(tim, idx=faces.apply_ps1(tim.idx, expr))
+        img = tim.rgba(clut)
         pad = np.zeros((256, 256, 4), np.uint8)
         pad[:img.shape[0], :img.shape[1]] = img
         out.append(pad)
@@ -185,9 +192,10 @@ def side_by_side(imgs):
 
 
 def render_set(ch, rd, pose, yaw, size, pts, styles=('ps1', 'hd', 'modern'), floor_y=0.0, pitch=8.0,
-               ps1_scale=3, margin=0.9, stage=None):
+               ps1_scale=3, margin=0.9, stage=None, remap=()):
     """Um painel por estilo, mesma câmera, enquadrando os pontos `pts`. stage = luzes do palco (render.STAGE_LIGHT,
-    no espaço da câmera do GTE): o ORIGINAL usa a soma do GTE por vértice e o MODERNIZADO a mesma por pixel."""
+    no espaço da câmera do GTE): o ORIGINAL usa a soma do GTE por vértice e o MODERNIZADO a mesma por pixel.
+    remap = expressão do rosto no MODERNIZADO (Renderer.render_modern); o ORIGINAL usa as camadas do Renderer."""
     data_o, _ = ch.original(pose)
     center, dist = Renderer.fit(pts, yaw, pitch, size, margin)
     radius = np.linalg.norm(pts.max(0) - pts.min(0)) / 2
@@ -202,7 +210,7 @@ def render_set(ch, rd, pose, yaw, size, pts, styles=('ps1', 'hd', 'modern'), flo
         out['ps1'] = rd.render_ps1(data_o, vps, small, **sk).resize(size, Image.NEAREST)
     if 'hd' in styles:
         out['hd'] = rd.render_ps1(data_o, vp, size, **sk)
-    kw = dict(floor_y=floor_y, **sk)
+    kw = dict(floor_y=floor_y, remap=remap, **sk)
     if 'modern' in styles or 'toon' in styles:
         data_m = ch.modern(pose, rd)
         if 'modern' in styles:
@@ -228,7 +236,7 @@ def main():
     ap.add_argument('--levels', type=int, default=2)
     ap.add_argument('--crease', type=float, default=80.0, help='ângulo diedro (graus) acima do qual a aresta fica viva')
     ap.add_argument('--method', choices=['phong', 'loop'], default='phong', help='suavização da malha')
-    ap.add_argument('--only', choices=['compare', 'metodos', 'turntable', 'anim', 'maos', 'all'], default='all')
+    ap.add_argument('--only', choices=['compare', 'metodos', 'turntable', 'anim', 'maos', 'rosto', 'all'], default='all')
     ap.add_argument('--list-anims', action='store_true')
     ap.add_argument('--styles', default='ps1,hd,modern,toon')
     args = ap.parse_args()
@@ -264,6 +272,27 @@ def main():
                           margin=0.85)
         fn = os.path.join(out, f'compare_rosto_a{args.anim}_f{int(args.frame)}.png')
         side_by_side([label(imgs[s], TITLES[s]) for s in styles]).save(fn)
+        print(fn)
+    if args.only in ('rosto', 'all'):
+        # expressões do rosto (tools/remake/faces.py): ORIGINAL com a casa copiada na página (o que o jogo faz na
+        # VRAM) x REMAKE com o UV deslocado dentro da casa (o que o núcleo faz)
+        import faces
+        head = p_pose[ch.rig.owner == 13]
+        mask = sum(1 << i for i, (t, _) in enumerate(ch.rig.layers) if t == faces.FACE_TEX)
+        panels = []
+        for name, expr in faces.EXPRESSIONS.items():
+            rd.set_ps1_layers(ps1_layers(ch.rig, ch.tims, expr))
+            rms = [(mask, *r[1:]) for r in faces.remaps(expr)]
+            imgs = render_set(ch, rd, pose, 10, (420, 420), head, styles=('hd', 'modern'), pitch=0, margin=0.8,
+                              floor_y=floor_y, remap=rms)
+            panels.append(side_by_side([label(imgs['hd'], f'ORIGINAL: {name}'), label(imgs['modern'], 'REMAKE')]))
+        rd.set_ps1_layers(layers)
+        w, h = panels[0].width, panels[0].height
+        img = Image.new('RGB', (w * 2 + 12, (h + 6) * ((len(panels) + 1) // 2)))
+        for i, pn in enumerate(panels):
+            img.paste(pn, ((i % 2) * (w + 12), (i // 2) * (h + 6)))
+        fn = os.path.join(out, 'expressoes.png')
+        img.save(fn)
         print(fn)
     if args.only in ('maos', 'all') and ch.hands:
         # mãos com dedos (fase 2): cada gesto, as duas mãos, 4 ângulos, ORIGINAL x MODERNIZADO

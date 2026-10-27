@@ -9,8 +9,8 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
 3. **No jogo, fase 1** (padrão): a malha vai direto ao renderizador GL por um callback de host, com shader
    próprio (Phong na GPU, luz por pixel), a 60 fps em todos os segundos e mais barato que o HEAT original.
    Os outros personagens e os palcos ficam originais.
-4. **No jogo, fase 2**: mãos com dedos por gesto, orelhas, nariz, mapas de normal, luz do palco e sombra própria
-   (seção "Fase 2 no jogo"), ainda a 60 fps em todos os segundos.
+4. **No jogo, fase 2**: mãos com dedos por gesto, orelhas, nariz, mapas de normal, luz do palco, sombra própria e a
+   expressão do rosto do original (seção "Fase 2 no jogo"), ainda a 60 fps em todos os segundos.
 
 ## Como reproduzir
 ```
@@ -138,7 +138,9 @@ espelhos na tela larga, marcadores sem nada visível).
 ## Fase 2 no jogo: detalhe no HEAT (2026-10-27)
 Seis peças, cada uma primeiro nos renders offline (`heat_remake.py`, `--only maos` e as variantes abaixo), depois
 no jogo lado a lado e medida. Asset novo **v4** ("HTR4", `export_heat.py`): grupos de faces por gesto das mãos,
-vértices exclusivos de cada grupo contíguos depois dos do corpo, bit 4 no modo da face (sem mapa de normal).
+vértices exclusivos de cada grupo contíguos depois dos do corpo, bit 4 no modo da face (sem mapa de normal). Depois
+**v5** ("HTR5"): página de textura de cada camada e a origem dela na VRAM (ver "Expressão do rosto"); o núcleo lê os
+dois.
 O quadro leva a máscara de grupos e só os vértices ativos (corpo + as duas mãos do gesto: ~1,4 mil posições,
 ~16 KB; o limite do desenho de host é 64 KB).
 
@@ -250,6 +252,62 @@ para o jogo nem foi medido. Para valer a pena faltaria: modelo de várias vistas
 download), textura assada num atlas novo (UV de 16 bits no asset; hoje o UV é u8 por página de 256) e pesos de
 pele suaves nas juntas (o núcleo só tem um osso por vértice).
 
+### Expressão do rosto (`tools/remake/faces.py`, asset v5)
+O original troca de expressão (dentes cerrados, piscada, olhos semicerrados e fechados) e até aqui o remake ficava
+sempre com o rosto do disco. Como o jogo faz, medido na build-debug:
+- **Não é RAM**: 60 s amostrando a cada ~25 ms o MeshHeader do nó 13 e as listas de primitivas (1 versão só) e os
+  dois buffers de pacotes do nó (nó +0xA8/+0xAC, tamanho em +0xA4, montados uma vez e com só xy/cor mudando a cada
+  quadro): UV, CLUT e tpage nunca mudam.
+- **É VRAM**: a página do rosto (TIM 1, na VRAM em 768,256, tpage 0x1C) é um atlas. Além das **casas** que as faces
+  da cabeça amostram, tem as variantes ao lado: olho A (casa 0,32, 48×24 texels) e olho B (casa 0,92, 48×28) com
+  aberto/semicerrado/fechado em x 48/96/144; boca (casa 8,148, 40×20) fechada em 48,52 e com dentes em 88,52. O
+  código do personagem chama **MoveImage** (libgpu, `0x800482F4`; `LoadImage` é `0x80048234`, nomes pelas strings de
+  depuração da libgpu em `0x80011600..`) e copia a variante para a casa. A cópia sai na hora (fila da libgpu com a
+  GPU ociosa, pacote avulso 0x04FFFFFF, fora da OT); no anel GP0 ela aparece depois dos polígonos do rosto de um
+  quadro e antes do próximo. A CLUT e a página 704,256 não mudam. A piscada é aberto → semicerrado → fechado →
+  semicerrado → aberto, e cada olho pode trocar sozinho (piscada de um olho).
+- Ferramentas da investigação: `read_ram` dos ponteiros do MeshHeader (`+0x04` vértices, `+0x08..+0x10` normais,
+  refs e uses, `+0x14 + 4k` lista k, de `FUN_80021E24`), `vram_peek` da página, `gpu_frame_dump` (opcode 0x80 com o
+  campo `bld` = pilha de retorno), disassembly (capstone) do exe e do dump de RAM.
+
+O remake **não lê a VRAM** (ler a VRAM no GL força a descida do FBO, caro). Três peças:
+1. **Hooks** em MoveImage e LoadImage (`[recompiler] mod_function_entry_funcs` do `game.toml`; regenerar com
+   `psxrecomp-game --config game.toml`, só o shard 18 muda). O plugin mantém a tabela de casas remapeadas: cópia
+   com origem e destino na mesma página vira (página, casa em texels, deslocamento até a origem); origem dentro de
+   outra casa remapeada compõe o deslocamento; cópia de fora da página, `LoadImage` por cima ou savestate carregado
+   tiram a casa da tabela (volta ao conteúdo do disco). Contadores `bag2_heat.face_moves`, `face_move_after`,
+   `face_move_before`, `face_move_unknown`.
+2. **Quadro**: o `RmkFrame` ("RMK3") leva a tabela (até 8 casas) no fim. Medido: **todas** as trocas acontecem
+   depois de o HEAT ligar o marcador do quadro e antes de a GPU chegar nele (`face_move_after` 133 de 133), então o
+   plugin regrava o bloco da tabela nos marcadores do HEAT já ligados na metade atual da arena (marcador já
+   desenhado: a escrita não faz nada, o payload foi copiado por valor).
+3. **Núcleo**: asset v5 ("HTR5") com a página (TIM) de cada camada e a origem dela na VRAM (`faces.PAGE_VRAM`,
+   medida para o HEAT jogador 1); o modo da instância leva a página (`modo | página << 3`). No fragment shader, UV
+   dentro de uma casa da mesma página soma o deslocamento e lê a variante na camada HD (o Real-ESRGAN ampliou o
+   atlas inteiro); `textureGrad` com as derivadas do UV sem remapear (o salto na borda da casa não muda o mip) e
+   recuo de meio texel HD na borda da origem (sem sangrar a variante vizinha). Também no mapa de normal. Remapear
+   por face não serviria: das 61 primitivas da cabeça que tocam uma casa, 38 atravessam a borda dela.
+
+Offline primeiro: `heat_remake.py --only rosto` grava `expressoes.png` (ORIGINAL com a casa copiada nos índices da
+página, como o jogo faz na VRAM, × REMAKE com o UV remapeado): disco, olhos abertos/semicerrados/fechados, boca
+fechada e dentes, todos iguais. No jogo: `tools/remake/game_face.py` (modo 3) lê `heat_face` (tabela, posição da
+cabeça na tela) a cada ~15 ms e captura o rosto do ORIGINAL e do REMAKE no mesmo quadro assim que aparece um
+estado novo (`rosto2_*.png`, 16 capturas): a mesma expressão nos dois em todas, inclusive nas transições (quando
+a tabela já trocou para o quadro seguinte, os dois ainda mostram o estado anterior, juntos).
+
+Desempenho (build-debug, `game_perf.py`, 60 s por janela, 2 sessões com a ordem trocada):
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| A / 1ª | remake com expressão | 59,9 (mín. 59,9) | 39 % (máx. 41) | 36 % (máx. 41) | 0 |
+| A / 2ª | HEAT original | 59,9 (mín. 59,9) | 46 % (máx. 48) | 49 % (máx. 60) | 0 |
+| B / 1ª | HEAT original | 59,9 (mín. 59,9) | 47 % (máx. 49) | 54 % (máx. 62) | 0 |
+| B / 2ª | remake com expressão | 59,9 (mín. 59,9) | 39 % (máx. 41) | 32 % (máx. 41) | 0 |
+
+Plugin 56–57 µs por HEAT na thread do jogo (igual à fase 2); thread de render 147–148 µs de CPU por desenho
+(fase 2: 109–168). Limites: a origem da página na VRAM é a do HEAT jogador 1 (constante medida); o caminho por
+pacotes da fase 0 não acompanha a expressão.
+
 ### Comparação A/B no mesmo quadro
 `heat_mode` ganhou um 7º número: nos modos 4..6 as cópias usam `flags ^ isto`. `game_sidebyside.py` com modo 4
 recorta o remake e a cópia (ex.: `"4 0.6 0.25 2 3300 128"` = com e sem sombra). `HEAT_LIGHT="..."` no ambiente
@@ -286,16 +344,14 @@ agora tem ~1,4 mil vértices ativos e lê as luzes). Thread de render: 109–168
 
 ### Capturas
 Offline (`tools/recomp/logs/remake/heat/`): `maos_{aberta,punho,aponta}.png`, `orelhas_close.png`,
-`normal_{corpo,rosto,perna}.png`, `luz_palco.png`. Jogo (`tools/recomp/logs/remake/jogo/`): `maos_{0,1}_{gesto}.png`
-(close das mãos, original x remake), `orelhas_*.png`, `nmap_*.png`, `luz_*.png` (modo 3), `ab_sombra*_*.png`
-(modo 4, com e sem sombra), `fimA..C.log` (medição final).
+`normal_{corpo,rosto,perna}.png`, `luz_palco.png`, `expressoes.png`. Jogo (`tools/recomp/logs/remake/jogo/`):
+`maos_{0,1}_{gesto}.png` (close das mãos, original x remake), `orelhas_*.png`, `nmap_*.png`, `luz_*.png` (modo 3),
+`ab_sombra*_*.png` (modo 4, com e sem sombra), `fimA..C.log` (medição final), `rosto2_*.png` e `rosto2_grade.png`
+(expressão do rosto, original x remake no mesmo quadro), `rostoA.log`/`rostoB.log` (medição com a expressão).
 
 ### Limites e o que não deu (fase 2)
-- **Expressão do rosto**: o original troca de expressão (dentes cerrados, marca verde no olho) e o remake fica
-  sempre com o rosto do disco. Vem da fase 1 (não é regressão), ficou bem visível nas capturas. Não é troca de
-  imagem na VRAM (o filho 1 do container de texturas, `DBI_`, é código MIPS por personagem); o mais provável é UV ou
-  CLUT das primitivas do rosto mudadas na RAM por esse código. Próximo passo: ler o UV/CLUT das faces da cabeça da
-  RAM a cada quadro (endereços pelo MeshHeader) e mandar no quadro.
+- (Resolvido depois, mesma data: **expressão do rosto**. A hipótese desta lista, UV/CLUT mudados na RAM, estava
+  errada: é cópia de VRAM com MoveImage dentro da página do rosto; ver "Expressão do rosto".)
 - Orelhas: de frente abrem um pouco mais que as originais (mesmo com a ponta a 220).
 - Sombra própria discreta sob a luz frontal do palco; só a luz principal faz sombra.
 - As luzes saem do nó 0; se um palco mudar LCM/BK com os efeitos, o remake acompanha, mas só medi o Stage 1.

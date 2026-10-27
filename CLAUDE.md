@@ -65,15 +65,19 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   núcleo portátil `src/remake/` (C99, GL 3.3/GLES 3.0: Phong Tessellation por instancing, luz por pixel com as
   luzes do palco lidas do GTE, mapas de normal gerados na ativação, sombra própria por shadow map, texturas HD com
   mipmaps; o mesmo código vai para o Polygonia). Mãos com dedos por gesto (`tools/remake/hands.py`; o jogo troca a
-  mão religando o irmão do antebraço, nó 15/18 +0x98), orelhas e nariz (`tools/remake/ears.py`). Pacote
-  `mods/preloaded/packages/bag2.remake.heat`, asset v4 `mods/remake/heat.bin` (50 MB) gerado por
+  mão religando o irmão do antebraço, nó 15/18 +0x98), orelhas e nariz (`tools/remake/ears.py`). Expressão do
+  rosto: o jogo copia olhos/boca de um atlas da página do rosto com `MoveImage` na VRAM; hooks em
+  MoveImage/LoadImage (também em `mod_function_entry_funcs`; mudar a lista = regenerar com `psxrecomp-game`)
+  mandam as casas no quadro e o shader remapeia o UV (`tools/remake/faces.py`). Pacote
+  `mods/preloaded/packages/bag2.remake.heat`, asset v5 `mods/remake/heat.bin` (50 MB) gerado por
   `tools/remake/export_heat.py` (fora do git). Exige o patch local `psxrecomp-host-draw.patch`. Caminho por
   pacotes da fase 0 = fallback (`heat_mode` flags bit 2). Geometria nova: enrolamento do jogo (normal para dentro).
   Medido (60 s por janela, fase 2): HEAT original jogo 46–53 %, render 16–50 %; remake 59,9 fps em todos os
   segundos, jogo 40–43 %, render 21–44 %; 4 HEATs (modo 6) 59,9, jogo 40 %, render 35 %; 0 underruns. Medir:
   `tools/remake/game_perf.py` (no máximo 2 variantes de 60 s por sessão). Testes na build-debug:
   `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3, 7, ou 4 com flags da cópia para A/B),
-  `game_hands.py` (gestos forçados), comandos `heat_mode`, `heat_light`, `heat_force`, `heat_stats`.
+  `game_hands.py` (gestos forçados), `game_face.py` (expressão, original x remake no mesmo quadro), comandos
+  `heat_mode`, `heat_light`, `heat_force`, `heat_stats`, `heat_face`.
 - As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
   antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e
   `_deps/*-build`, `_deps/*-subbuild` e configurar de novo.
@@ -82,8 +86,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 
 ## Próximo passo
 - **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita (a IA
-  imagem→3D ficou só offline, pior que o remake atual). Pendente achado na fase 2: expressão do rosto do original
-  (UV/CLUT do rosto na RAM) não chega ao remake. Próxima fase: 3 (palco).
+  imagem→3D ficou só offline, pior que o remake atual; a expressão do rosto do original agora chega ao remake).
+  Próxima fase: 3 (palco).
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 

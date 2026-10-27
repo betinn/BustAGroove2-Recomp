@@ -33,7 +33,11 @@ já é construído pensando nele (fase 5).
   (original 16 % e 48 %), modo 6 (4 HEATs) 59,9 com jogo 40 % e render 35 %; 0 underruns.
 - Experimento de IA imagem→3D (Hunyuan3D-2mini, autorizado): offline, a roupa da IA ganha dobras mas perde a
   identidade e a estampa sai picada na dança; não entra no jogo. Detalhes em `notes/remake-visual.md`.
-- Achado novo: o original troca a **expressão do rosto** (dentes, marcas) e o remake não (vem da fase 1).
+- **Expressão do rosto** (feita em 2026-10-27, depois do fechamento da fase 2): o original troca olhos e boca
+  copiando variantes de um atlas da página do rosto na VRAM com MoveImage; hooks em MoveImage/LoadImage mandam a
+  tabela de casas no quadro e o shader do núcleo remapeia o UV dentro da casa (asset v5). Mesma expressão do
+  original no mesmo quadro nas capturas; 59,9 fps em todos os segundos, jogo 39 %, render 32–36 %, 0 underruns.
+  Detalhes em `notes/remake-visual.md` ("Expressão do rosto").
 
 ## Onde estávamos (fim da fase 1)
 - HEAT remake roda no exe pelo **desenho de host**: plugin `tools/recomp/bag2/src/bag2_heat.c` (hook de filtro
@@ -106,8 +110,8 @@ pelo DMA/GP0 emulado. Critérios de pronto:
 - Medido: ver "Onde estamos". Critérios atendidos (jogo abaixo do original; render +5 e −4 pontos; modo 6 a 60).
 - IA imagem→3D: Hunyuan3D-2mini (uma vista) + encaixe no esqueleto + textura por face original mais próxima. Pior
   que o remake atual (identidade perdida, estampa picada, buracos nas juntas); fica só offline (`ai_*.py`).
-- Limites: expressão do rosto não acompanha (próximo passo sugerido); orelhas um pouco abertas de frente; sombra
-  discreta sob luz frontal.
+- Limites: orelhas um pouco abertas de frente; sombra discreta sob luz frontal. (A expressão do rosto, que não
+  acompanhava no fechamento da fase 2, foi feita em seguida: ver "Onde estamos".)
 
 Plano original da fase 2 (mantido para referência):
 - **Mãos com dedos** modeladas por código, presas ao osso da mão; uma versão por gesto (mão padrão nos nós
@@ -158,6 +162,9 @@ Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo n
 - Ordem: culling NCLIP > 0; slot da OT `(z0 + z1) >> 3` (v0, v1 em triângulos; v0, v2 em quads); OT em
   `DAT_8006EE88 - 0x180`, entradas 95..4191, reversa (o último ligado sai primeiro); paridade do quadro em
   `0x8006EE90`. O modelo tem camadas coplanares (decalques): a ordem dentro do slot importa.
+- Expressão do rosto: troca de imagem na VRAM (MoveImage de um atlas na mesma página para as casas do rosto),
+  não de UV/CLUT; o remake segue pelos hooks em MoveImage/LoadImage (fase 4: os outros personagens devem fazer o
+  mesmo; a origem de cada página na VRAM hoje é constante medida do HEAT jogador 1).
 - PSXRecomp: ativação de plugin roda antes do renderizador (ler arquivos ali; recursos GL só depois, aos
   poucos, por marcadores de preparo); `render_thread` + qualquer `GL_RT_SYNC` por primitiva derruba o fps;
   trocar textura fecha o lote do GL. Desenho de host (patch 3): marcador GP0 00h "HDR" na arena, payload por

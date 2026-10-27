@@ -2,8 +2,9 @@
  *
  * C99 puro, sem nada do PSXRecomp nem do SDL: o adaptador do PC (src/bag2_heat.c) usa isto hoje, e o do
  * Polygonia (DuckStation, fase 5) deve usar o mesmo. Três partes:
- *   - asset (rmk_asset.c): malha soldada, atributos por canto e camadas de textura HD, formato v4
- *     ("HTR4", tools/remake/export_heat.py), com grupos de faces por gesto das mãos (fase 2);
+ *   - asset (rmk_asset.c): malha soldada, atributos por canto e camadas de textura HD, formato v5
+ *     ("HTR5", tools/remake/export_heat.py), com grupos de faces por gesto das mãos (fase 2) e as páginas
+ *     de textura na VRAM (expressão do rosto); lê também o v4;
  *   - pose (rmk_pose.c): MATRIX câmera×osso do GTE -> posições de vértice no espaço da câmera, resumo do
  *     quadro (retângulo na tela, faixa de Z, slot da OT), normais por vértice;
  *   - GL (rmk_gl.c): desenho com shader próprio, no subconjunto comum de GL 3.3 core e GLES 3.0 (sem
@@ -16,6 +17,10 @@
 
 #define RMK_MAX_NODES 64
 #define RMK_MAX_GROUPS 16            /* grupo 0 = corpo (sempre); 1.. = gestos das mãos */
+#define RMK_MAX_LAYERS 64
+#define RMK_MAX_PAGES 8              /* TIMs (páginas de textura) do personagem */
+#define RMK_MAX_REMAP 8              /* casas da página remapeadas num quadro (expressão do rosto) */
+#define RMK_NO_PAGE 0xFFu
 #define RMK_TESS_L 4                 /* divisões por aresta da grade de Phong (16 triângulos por face) */
 
 #pragma pack(push, 1)
@@ -35,6 +40,10 @@ typedef struct {
  * contíguos: [v0, v0 + nv), depois dos n_body do corpo. */
 typedef struct { uint32_t tree_pos, sig_nverts, sig_base, v0, nv; } RmkGroup;
 
+/* Página de textura (um TIM do personagem): onde o jogo a põe na VRAM (vx em halfwords, -1 = desconhecida),
+ * tamanho em texels e bits por texel. A expressão do rosto é cópia de VRAM dentro de uma página (MoveImage). */
+typedef struct { int16_t vx, vy; uint16_t w, h; uint8_t bpp; } RmkPage;
+
 typedef struct {
     uint32_t n_nodes, n_verts, n_tris, n_layers, tex_size;
     uint16_t node_nverts[RMK_MAX_NODES];   /* assinatura de cada osso na RAM (MeshHeader +0x94/+0x98) */
@@ -42,6 +51,9 @@ typedef struct {
     int mesh_nodes;                  /* nós com mesh, os primeiros na ordem da árvore */
     uint32_t n_body, n_groups;       /* vértices do corpo (sempre ativos); grupos 1..n_groups */
     RmkGroup groups[RMK_MAX_GROUPS];
+    uint32_t n_pages;                /* asset v5; 0 no v4 (sem expressão do rosto) */
+    RmkPage pages[RMK_MAX_PAGES];
+    uint8_t layer_page[RMK_MAX_LAYERS];   /* página de cada camada (RMK_NO_PAGE = nenhuma) */
     RmkVert* verts;
     RmkTri* tris;
     uint8_t* layers;                 /* n_layers x tex_size² RGBA8 (alfa 0 = transparente) */
@@ -87,7 +99,9 @@ void rmk_frame_info(const RmkAsset* a, const float* pos, uint32_t mask, const Rm
 void rmk_pack_geometry(const RmkAsset* a, const float* pos, uint32_t mask, float* out);
 
 /* ---- quadro: o que vai do jogo para o desenho (POD, copiado por valor entre threads) --------- */
-#define RMK_FRAME_MAGIC 0x324B4D52u  /* "RMK2" */
+/* Expressão do rosto: a casa [x0, x1) x [y0, y1) da página (texels) mostra o que está em (x + du, y + dv). */
+typedef struct { uint16_t page, x0, y0, x1, y1; int16_t du, dv, pad; } RmkRemap;
+#define RMK_FRAME_MAGIC 0x334B4D52u  /* "RMK3" */
 typedef struct {
     uint32_t magic, n_verts, serial, flags;
     uint32_t groups;                 /* máscara de grupos ativos; n_verts = rmk_active_verts(groups) */
@@ -99,6 +113,8 @@ typedef struct {
     float bbox[4];                   /* RmkFrameInfo.bbox: retângulo do desenho na tela */
     float ldir[3][3], lcol[3][3];    /* luzes do palco (GTE) no espaço da câmera: direção para a luz e cor */
     float bk[3];                     /* cor ambiente do palco (BK do GTE) */
+    uint32_t n_remap;                /* expressão do rosto (por último: o plugin regrava o bloco se o jogo trocar */
+    RmkRemap remap[RMK_MAX_REMAP];   /* a casa depois de ligar o marcador, antes de a GPU chegar nele) */
 } RmkFrame;                          /* seguido de float pos[3 * n_verts] (compacto, rmk_compact) */
 #define RMK_FLAG_FLAT 1u             /* sem Phong (só a malha original), para conferir a geometria */
 #define RMK_FLAG_NO_TEX 2u           /* sem textura (só luz), depuração */

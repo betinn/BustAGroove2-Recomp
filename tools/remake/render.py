@@ -86,11 +86,23 @@ uniform vec3 u_rim_dir; uniform vec3 u_rim_col;
 uniform vec3 u_sky; uniform vec3 u_ground;
 uniform float u_rough; uniform float u_toon; uniform float u_shadow_texel;
 uniform int u_stage; uniform vec3 u_sdir[3]; uniform vec3 u_scol[3]; uniform vec3 u_sbk;
+// expressão do rosto (tools/remake/faces.py): casa (x0, y0, x1, y1 em texels), deslocamento até a variante e
+// máscara das camadas da página; como src/remake/rmk_gl.c
+uniform int u_nrm; uniform vec4 u_rm_rect[8]; uniform vec2 u_rm_off[8]; uniform int u_rm_mask[8];
 in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in vec4 v_lpos; in float v_ao;
 flat in float v_layer; flat in float v_mode;
 out vec4 f_color;
 
 vec3 srgb2lin(vec3 c) { return pow(c, vec3(2.2)); }
+vec2 remap(vec2 t) {   // t em texels da página; dentro da casa lê a variante (sem sangrar a borda)
+  for (int i = 0; i < 8; i++) {
+    if (i >= u_nrm) break;
+    if (((u_rm_mask[i] >> int(v_layer + 0.5)) & 1) == 0) continue;
+    vec4 r = u_rm_rect[i];
+    if (all(greaterThanEqual(t, r.xy)) && all(lessThan(t, r.zw))) return clamp(t, r.xy + 0.125, r.zw - 0.125) + u_rm_off[i];
+  }
+  return t;
+}
 // base tangente pelas derivadas da tela (Schüler): sem tangente por vértice, vale com UV espelhado
 vec3 perturb(vec3 n, vec3 p, vec2 uv, vec3 t) {
   vec3 dp1 = dFdx(p), dp2 = dFdy(p); vec2 du1 = dFdx(uv), du2 = dFdy(uv);
@@ -132,8 +144,9 @@ void main() {
   vec3 base = v_base;
   float isTex = 0.0;
   float md = mod(v_mode, 4.0);   // bit 4 do modo = sem mapa de normal
+  vec2 uvn = v_uv / 256.0, gx = dFdx(uvn), gy = dFdy(uvn), uvr = remap(v_uv) / 256.0;
   if (md > 0.5) {
-    vec4 t = texture(u_tex, vec3(v_uv / 256.0, v_layer));
+    vec4 t = textureGrad(u_tex, vec3(uvr, v_layer), gx, gy);
     if (t.a < 0.5) { if (md > 1.5) discard; }
     else { base = t.rgb * v_over; isTex = 1.0; }
   }
@@ -142,8 +155,8 @@ void main() {
   vec3 v = normalize(u_eye - v_pos);
   if (dot(n, v) < 0.0) n = -n;
   if (isTex > 0.5 && u_nmap_on > 0.5 && v_mode < 3.5) {
-    vec3 t = texture(u_nmap, vec3(v_uv / 256.0, v_layer)).xyz * 2.0 - 1.0;
-    n = perturb(n, v_pos, v_uv / 256.0, t);
+    vec3 t = textureGrad(u_nmap, vec3(uvr, v_layer), gx, gy).xyz * 2.0 - 1.0;
+    n = perturb(n, v_pos, uvn, t);
   }
   float sh = shadow();
   if (u_toon > 0.5) { f_color = vec4(pow(toon(n, v, alb, sh), vec3(1.0 / 2.2)), 1.0); return; }
@@ -455,8 +468,14 @@ class Renderer:
         vao.release(); vbo.release(); fbo.release()
         return img
 
+    def set_ps1_layers(self, layers):
+        """Troca as camadas do ORIGINAL (ex.: página do rosto com a casa copiada, tools/remake/faces.py)."""
+        self.tex_ps1.release()
+        self.tex_ps1 = self._array(layers, linear=False)
+
     def render_modern(self, data, vp, eye, size, center, radius, toon=False, ss=2, samples=8,
-                      outline_width=0.0, rough=0.5, floor_y=0.0, stage=None, view=None):
+                      outline_width=0.0, rough=0.5, floor_y=0.0, stage=None, view=None, remap=()):
+        """remap: [(máscara de camadas, x0, y0, x1, y1, du, dv)] em texels da página (expressão do rosto)."""
         c = self.ctx
         key = np.array([-0.45, -0.8, -0.55]); key /= np.linalg.norm(key)
         if stage is not None:   # a sombra vem da luz principal do palco (key aponta da luz para a cena)
@@ -513,6 +532,11 @@ class Renderer:
             rdw = stage_world(dict(ldir=[rd / np.linalg.norm(rd)]), view)[0]
             p['u_rim_dir'].value = tuple(-rdw); p['u_rim_col'].value = tuple(k0 * kc * 0.95)
         p['u_shadow_texel'].value = st
+        rm = list(remap)[:8] + [(0, 0, 0, 0, 0, 0, 0)] * (8 - min(len(remap), 8))
+        p['u_nrm'].value = min(len(remap), 8)
+        p['u_rm_mask'].write(np.array([r[0] for r in rm], 'i4').tobytes())
+        p['u_rm_rect'].write(np.array([r[1:5] for r in rm], 'f4').tobytes())
+        p['u_rm_off'].write(np.array([r[5:7] for r in rm], 'f4').tobytes())
         self.tex_hd.use(0); p['u_tex'].value = 0; p['u_shadow'].value = 1
         if self.tex_nmap is not None:
             self.tex_nmap.use(2); p['u_nmap'].value = 2
