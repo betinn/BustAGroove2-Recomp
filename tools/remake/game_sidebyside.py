@@ -5,6 +5,8 @@ remake por pacotes (fase 0) e remake pelo desenho de host (fase 1).
 
 Uso: python tools/remake/game_sidebyside.py [rótulo] [args do heat_mode sem o modo] [game.toml] [momentos] [modo] [gesto]
      ex.: python tools/remake/game_sidebyside.py lado "4 0.6 0.25 2" game.toml 6 7
+     modo 4: o remake e uma cópia ao lado com flags = flags ^ <7º número dos args> (A/B no mesmo quadro),
+     ex.: "4 0.6 0.25 2 3300 128" compara com e sem sombra própria.
      gesto = 1: cada captura espera um gesto de mão alternativo (punho, apontar) no HEAT (máscara do
      heat_mode diferente de 0x13, mãos abertas), até 20 s; gesto = "f": força os gestos em rodízio
      (heat_force: aberta, punho, apontar), original e remake com a mesma mão.
@@ -22,7 +24,8 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from game_session import LOGS, Session  # noqa: E402
 
-LABELS = {3: ['ORIGINAL', 'REMAKE'], 7: ['ORIGINAL', 'FASE 0 (PACOTES)', 'FASE 1 (DESENHO DE HOST)']}
+LABELS = {3: ['ORIGINAL', 'REMAKE'], 4: ['REMAKE', 'VARIANTE'],
+          7: ['ORIGINAL', 'FASE 0 (PACOTES)', 'FASE 1 (DESENHO DE HOST)']}
 
 
 def main():
@@ -40,6 +43,8 @@ def main():
     try:
         s.to_match()
         s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': f'{mode} ' + params})
+        if os.environ.get('HEAT_LIGHT'):   # ajuste de luz para o teste (args do heat_light)
+            print(s.cmd({'cmd': 'mod_cmd', 'name': 'heat_light', 'args': os.environ['HEAT_LIGHT']}).get('reply'))
         for k in range(moments):
             if force:
                 s.cmd({'cmd': 'mod_cmd', 'name': 'heat_force', 'args': f'{k % 3} {k % 3}'})
@@ -70,6 +75,8 @@ def main():
         sc = im.width / 512.0
         w = (x1 - x0)
         left = x0 - w * 1.05 * (n - 1) - w * 0.15   # o original fica (n - 1) larguras à esquerda do último
+        if mode == 4:   # o retângulo é o do remake; a cópia fica uma largura à direita
+            left, x1 = x0 - w * 0.15, x1 + w * 1.05
         box = (int(left * sc), int((y0 - (y1 - y0) * 0.06) * sc), int((x1 + w * 0.15) * sc), int((y1 + (y1 - y0) * 0.04) * sc))
         c = im.crop(box)
         c = c.resize((int(c.width * 1100 / c.height), 1100), Image.LANCZOS)

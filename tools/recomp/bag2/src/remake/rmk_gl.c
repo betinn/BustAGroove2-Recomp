@@ -18,7 +18,8 @@
  * atrás continua escondido.
  *
  * Estado GL que rmk_gl_draw muda (quem chama restaura): programa, VAO, buffer de vértices, unidade ativa e
- * texturas das unidades 8, 9 e 10, recorte (caixa), teste/função/máscara de profundidade, cull/front face,
+ * texturas das unidades 8 a 11, framebuffer e viewport (religados aos de quem chama, RmkTarget.fbo/viewport),
+ * deslocamento de polígono, recorte (caixa), teste/função/máscara de profundidade, cull/front face,
  * blend e stencil (desligados), máscara de cor. A profundidade do FBO é limpa só no retângulo do desenho. */
 #include "rmk.h"
 
@@ -78,6 +79,17 @@ typedef ptrdiff_t GLsizeiptr_;
 #define R_CCW 0x0901
 #define R_LEQUAL 0x0203
 #define R_DEPTH_BUFFER_BIT 0x0100
+#define R_FRAMEBUFFER 0x8D40
+#define R_DEPTH_ATTACHMENT 0x8D00
+#define R_DEPTH_COMPONENT 0x1902
+#define R_DEPTH_COMPONENT24 0x81A6
+#define R_UNSIGNED_INT 0x1405
+#define R_TEXTURE_COMPARE_MODE 0x884C
+#define R_TEXTURE_COMPARE_FUNC 0x884D
+#define R_COMPARE_REF_TO_TEXTURE 0x884E
+#define R_FRAMEBUFFER_COMPLETE 0x8CD5
+#define R_POLYGON_OFFSET_FILL 0x8037
+#define R_SCISSOR_TEST 0x0C11
 #define R_UNPACK_ALIGNMENT 0x0CF5
 #define R_UNPACK_ROW_LENGTH 0x0CF2
 
@@ -87,6 +99,14 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, BindBuffer, (GLenum_ t, GLuint_ b)) \
     X(void, BindTexture, (GLenum_ t, GLuint_ x)) \
     X(void, BindVertexArray, (GLuint_ a)) \
+    X(void, BindFramebuffer, (GLenum_ t, GLuint_ f)) \
+    X(GLenum_, CheckFramebufferStatus, (GLenum_ t)) \
+    X(void, DrawBuffers, (GLsizei_ n, const GLenum_* b)) \
+    X(void, FramebufferTexture2D, (GLenum_ t, GLenum_ a, GLenum_ tt, GLuint_ x, GLint_ l)) \
+    X(void, GenFramebuffers, (GLsizei_ n, GLuint_* f)) \
+    X(void, PolygonOffset, (float f, float u)) \
+    X(void, ReadBuffer, (GLenum_ b)) \
+    X(void, Viewport, (GLint_ x, GLint_ y, GLsizei_ w, GLsizei_ h)) \
     X(void, BufferData, (GLenum_ t, GLsizeiptr_ n, const void* d, GLenum_ u)) \
     X(void, BufferSubData, (GLenum_ t, GLsizeiptr_ o, GLsizeiptr_ n, const void* d)) \
     X(void, Clear, (uint32_t m)) \
@@ -135,6 +155,7 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, VertexAttribPointer, (GLuint_ i, GLint_ n, GLenum_ t, GLboolean_ nm, GLsizei_ s, const void* p))
 
 #define GEO_RING 8                   /* texturas de geometria em rodízio (vários desenhos por quadro) */
+#define SHADOW_SIZE 1024             /* mapa de sombra próprio (só o personagem) */
 #define GRID_PTS ((RMK_TESS_L + 1) * (RMK_TESS_L + 2) / 2)
 #define GRID_IDX (RMK_TESS_L * RMK_TESS_L * 3)
 
@@ -152,7 +173,9 @@ struct RmkGL {
     void (RGLAPI* ClearDepthf)(float);
     void (RGLAPI* ClearDepth)(double);
     int gles, step, ready, failed;
-    GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING];
+    GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING], shadow_tex, shadow_fbo;
+    float lbasis[3][3], lcenter[4];  /* espaço da luz da sombra do último quadro: u, v, direção; centro, 1/raio */
+    int key;                         /* luz principal (a da sombra) do último quadro */
     int geo_w, geo_h, ring, have_serial;
     uint32_t n_draw;                 /* faces ativas no último quadro (grupos do gesto) */
     uint32_t last_serial;
@@ -163,6 +186,7 @@ struct RmkGL {
     GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_depth, u_tex, u_nmap, u_nmap_on, u_misc, u_prepass;
     GLint_ u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;
     GLint_ u_stage, u_ldir, u_lcol, u_bk;
+    GLint_ u_lu, u_lv, u_ld, u_lc, u_spass, u_shadow, u_shadow_on, u_key;
     char err[512];
 };
 
@@ -174,6 +198,9 @@ static const char* VS_BODY =
     "uniform vec4 u_ndc;    /* NDC = tela * (x, z) + (y, w) */\n"
     "uniform vec4 u_proj;   /* OFX, OFY, H do GTE, deslocamento x na tela */\n"
     "uniform vec4 u_depth;  /* z de recorte = A z + B; alfa do Phong; zbias (fração de z) */\n"
+    "uniform vec3 u_lu, u_lv, u_ld; /* base do espaço da luz da sombra (câmera) */\n"
+    "uniform vec4 u_lc;     /* centro do personagem, 1/raio */\n"
+    "uniform int u_spass;   /* 1: passo da sombra (posição no espaço da luz, ortográfica) */\n"
     "layout(location = 0) in vec3 a_bary;\n"
     "layout(location = 1) in uvec3 a_vi;\n"
     "layout(location = 2) in vec4 a_uv01;\n"
@@ -185,7 +212,7 @@ static const char* VS_BODY =
     "layout(location = 8) in vec4 a_over1;\n"
     "layout(location = 9) in vec4 a_over2;\n"
     "layout(location = 10) in vec2 a_lm;\n"
-    "out vec3 v_pos; out vec3 v_nrm; out vec3 v_base; out vec3 v_over; out vec2 v_uv; out float v_ao;\n"
+    "out vec3 v_pos; out vec3 v_nrm; out vec3 v_base; out vec3 v_over; out vec2 v_uv; out float v_ao; out vec3 v_lpos;\n"
     "flat out int v_layer; flat out int v_mode;\n"
     "invariant gl_Position;   /* faces com os mesmos vértices (decalques) dão a mesma profundidade */\n"
     "vec4 geo(uint i) { int k = int(i); return texelFetch(u_geo, ivec2(k % u_geo_w, k / u_geo_w), 0); }\n"
@@ -208,7 +235,11 @@ static const char* VS_BODY =
     "  vec2 s = u_proj.xy + u_proj.z * p.xy / z + vec2(u_proj.w, 0.0);\n"
     "  /* ponto escalado para a câmera: mesma posição na tela, mais perto (tolerância do passo de cor) */\n"
     "  float zd = z * (1.0 - u_depth.w);\n"
-    "  gl_Position = vec4((s * u_ndc.xz + u_ndc.yw) * zd, u_depth.x * zd + u_depth.y, zd);\n"
+    "  vec3 r = p - u_lc.xyz;\n"
+    "  vec3 lq = vec3(dot(r, u_lu), dot(r, u_lv), dot(r, u_ld)) * u_lc.w;\n"
+    "  v_lpos = lq * 0.5 + 0.5;\n"
+    "  if (u_spass != 0) gl_Position = vec4(lq, 1.0);\n"
+    "  else gl_Position = vec4((s * u_ndc.xz + u_ndc.yw) * zd, u_depth.x * zd + u_depth.y, zd);\n"
     "}\n";
 
 static const char* FS_BODY =
@@ -217,14 +248,26 @@ static const char* FS_BODY =
     "uniform mediump sampler2DArray u_tex;\n"
     "uniform mediump sampler2DArray u_nmap;\n"
     "uniform float u_nmap_on; /* 1: mapas de normal das camadas */\n"
+    "precision mediump sampler2DShadow;\n"
+    "uniform mediump sampler2DShadow u_shadow;\n"
+    "uniform float u_shadow_on;\n"
+    "uniform int u_key;     /* luz que faz a sombra */\n"
     "uniform vec3 u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;\n"
     "uniform vec4 u_misc;   /* exposição, rugosidade, textura ligada, contraluz */\n"
     "uniform int u_stage;   /* 1: luzes do palco (GTE); 0: luz fixa na câmera da fase 1 */\n"
     "uniform vec3 u_ldir[3], u_lcol[3], u_bk;\n"
     "uniform int u_prepass; /* 1: só profundidade (o recorte por alfa vale igual) */\n"
-    "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao;\n"
+    "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao; in vec3 v_lpos;\n"
     "flat in int v_layer; flat in int v_mode;\n"
     "layout(location = 0) out vec4 frag;\n"
+    "float shadow_at() {   /* 5 amostras com comparação bilinear: borda macia de ~3 texels */\n"
+    "  if (u_shadow_on < 0.5) return 1.0;\n"
+    "  vec3 q = v_lpos; q.z -= 0.0025;\n"
+    "  float t = 1.5 / 1024.0, s = texture(u_shadow, q) * 2.0;\n"
+    "  s += texture(u_shadow, q + vec3(t, t, 0.0)) + texture(u_shadow, q + vec3(-t, t, 0.0));\n"
+    "  s += texture(u_shadow, q + vec3(t, -t, 0.0)) + texture(u_shadow, q + vec3(-t, -t, 0.0));\n"
+    "  return s / 6.0;\n"
+    "}\n"
     "float D_ggx(float nh, float a) { float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (3.14159 * d * d); }\n"
     "/* base tangente pelas derivadas da tela (Schüler): sem tangente por vértice, vale com UV espelhado */\n"
     "vec3 perturb(vec3 n, vec3 p, vec2 uv, vec3 t) {\n"
@@ -262,6 +305,7 @@ static const char* FS_BODY =
     "    n = perturb(n, v_pos, v_uv, t);\n"
     "  }\n"
     "  vec3 c;\n"
+    "  float sh = shadow_at();\n"
     "  if (u_stage != 0) {\n"
     "    /* a soma do GTE (BK + cor * max(n.l, 0) por luz), por pixel e no espaço de gama como no PS1; luz de cor\n"
     "       positiva com um pouco de wrap; a negativa (o jogo usa uma para escurecer o lado de trás) sem */\n"
@@ -269,12 +313,13 @@ static const char* FS_BODY =
     "    for (int i = 0; i < 3; i++) {\n"
     "      float nl = dot(n, u_ldir[i]);\n"
     "      vec3 pos = max(u_lcol[i], 0.0), neg = min(u_lcol[i], 0.0);\n"
-    "      I += pos * max((nl + 0.2) / 1.2, 0.0) + neg * max(nl, 0.0);\n"
-    "      sp += light(n, v, u_ldir[i], pos, vec3(0.0), 0.0);   /* só o especular */\n"
+    "      float s = i == u_key ? sh : 1.0;\n"
+    "      I += pos * max((nl + 0.2) / 1.2, 0.0) * s + neg * max(nl, 0.0);\n"
+    "      sp += light(n, v, u_ldir[i], pos, vec3(0.0), 0.0) * s;   /* só o especular */\n"
     "    }\n"
     "    c = alb * pow(max(I, 0.0), vec3(2.2)) + sp * 1.6;\n"
     "  } else {\n"
-    "    c = light(n, v, u_key_dir, u_key_col, alb, 0.25);\n"
+    "    c = light(n, v, u_key_dir, u_key_col, alb, 0.25) * sh;\n"
     "    c += light(n, v, u_fill_dir, u_fill_col, alb, 0.5);\n"
     "    c += mix(u_ground, u_sky, -n.y * 0.5 + 0.5) * alb * v_ao;   /* y da câmera do GTE aponta para baixo */\n"
     "  }\n"
@@ -343,6 +388,7 @@ static int build_program(RmkGL* g) {
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_misc); U(u_prepass);
     U(u_key_dir); U(u_key_col); U(u_fill_dir); U(u_fill_col); U(u_rim_dir); U(u_rim_col); U(u_sky); U(u_ground);
     U(u_stage); U(u_bk);
+    U(u_lu); U(u_lv); U(u_ld); U(u_lc); U(u_spass); U(u_shadow); U(u_shadow_on); U(u_key);
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
 #undef U
@@ -453,6 +499,27 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
     g->BindTexture(R_TEXTURE_2D_ARRAY, 0);
+    /* mapa de sombra próprio: textura de profundidade com comparação (PCF bilinear do hardware) */
+    g->GenTextures(1, &g->shadow_tex);
+    g->ActiveTexture(R_TEXTURE0 + 11);
+    g->BindTexture(R_TEXTURE_2D, g->shadow_tex);
+    g->TexImage2D(R_TEXTURE_2D, 0, R_DEPTH_COMPONENT24, SHADOW_SIZE, SHADOW_SIZE, 0, R_DEPTH_COMPONENT, R_UNSIGNED_INT, NULL);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MIN_FILTER, R_LINEAR);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MAG_FILTER, R_LINEAR);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_COMPARE_MODE, R_COMPARE_REF_TO_TEXTURE);
+    g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_COMPARE_FUNC, R_LEQUAL);
+    g->BindTexture(R_TEXTURE_2D, 0);
+    g->GenFramebuffers(1, &g->shadow_fbo);
+    g->BindFramebuffer(R_FRAMEBUFFER, g->shadow_fbo);
+    g->FramebufferTexture2D(R_FRAMEBUFFER, R_DEPTH_ATTACHMENT, R_TEXTURE_2D, g->shadow_tex, 0);
+    const GLenum_ none = 0;
+    g->DrawBuffers(1, &none);
+    g->ReadBuffer(0);
+    const int fbo_ok = g->CheckFramebufferStatus(R_FRAMEBUFFER) == R_FRAMEBUFFER_COMPLETE;
+    g->BindFramebuffer(R_FRAMEBUFFER, 0);   /* só no preparo, fora do desenho do jogo: quem chama religa o seu */
+    if (!fbo_ok) { snprintf(g->err, sizeof g->err, "mapa de sombra: FBO incompleto"); return 0; }
     return g->GetError() == 0;
 }
 
@@ -526,6 +593,52 @@ static uint32_t order_faces(RmkGL* g, const RmkAsset* a, const float* pos, uint3
     return n;
 }
 
+/* Luz principal (maior cor positiva) e espaço ortográfico dela em volta do personagem: u, v perpendiculares à
+ * direção da luz para a cena, origem no centro da caixa dos vértices ativos, escala 1/raio (com folga para o
+ * Phong). Na luz fixa da fase 1 a principal é a chave dela. */
+static void light_space(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos) {
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (uint32_t gi = 0; gi <= a->n_groups; gi++) {
+        if (gi && !(((fr->groups | 1u) >> gi) & 1u)) continue;
+        const uint32_t i0 = gi ? a->groups[gi].v0 : 0, i1 = gi ? i0 + a->groups[gi].nv : a->n_body;
+        for (uint32_t i = i0; i < i1; i++)
+            for (int k = 0; k < 3; k++) {
+                if (pos[3 * i + k] < lo[k]) lo[k] = pos[3 * i + k];
+                if (pos[3 * i + k] > hi[k]) hi[k] = pos[3 * i + k];
+            }
+    }
+    float d[3];
+    g->key = 0;
+    if (!(fr->flags & RMK_FLAG_FIXED_LIGHT)) {
+        float best = -1e9f;
+        for (int i = 0; i < 3; i++) {
+            const float s = fr->lcol[i][0] + fr->lcol[i][1] + fr->lcol[i][2];
+            if (s > best) { best = s; g->key = i; }
+        }
+        for (int k = 0; k < 3; k++) d[k] = -fr->ldir[g->key][k];
+    } else {
+        static const float kd[3] = {-0.45f, -0.80f, -0.55f};
+        for (int k = 0; k < 3; k++) d[k] = -kd[k];
+    }
+    float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    for (int k = 0; k < 3; k++) d[k] /= l;
+    /* u = d x (0, 1, 0) (ou x se a luz vier de cima), v = u x d */
+    float up[3] = {0.0f, 1.0f, 0.0f};
+    if (fabsf(d[1]) > 0.95f) { up[0] = 1.0f; up[1] = 0.0f; }
+    float u[3] = {d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]};
+    l = sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    for (int k = 0; k < 3; k++) u[k] /= l;
+    const float v[3] = {u[1] * d[2] - u[2] * d[1], u[2] * d[0] - u[0] * d[2], u[0] * d[1] - u[1] * d[0]};
+    float r = 0.0f;
+    for (int k = 0; k < 3; k++) {
+        g->lcenter[k] = 0.5f * (lo[k] + hi[k]);
+        r += (hi[k] - lo[k]) * (hi[k] - lo[k]);
+    }
+    r = 0.5f * sqrtf(r) * 1.06f + 1.0f;
+    g->lcenter[3] = 1.0f / r;
+    memcpy(g->lbasis[0], u, sizeof u); memcpy(g->lbasis[1], v, sizeof v); memcpy(g->lbasis[2], d, sizeof d);
+}
+
 void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t) {
     if (!g || !g->ready || fr->n_verts != rmk_active_verts(a, fr->groups | 1u)) return;
     /* retângulo do desenho em pixels do alvo, dentro do recorte */
@@ -540,7 +653,8 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     if (x1 > t->scissor[0] + t->scissor[2]) x1 = t->scissor[0] + t->scissor[2];
     if (y1 > t->scissor[1] + t->scissor[3]) y1 = t->scissor[1] + t->scissor[3];
     if (x1 <= x0 || y1 <= y0) return;
-    if (!g->have_serial || fr->serial != g->last_serial) {   /* o espelho da tela larga reaproveita */
+    const int new_frame = !g->have_serial || fr->serial != g->last_serial;
+    if (new_frame) {   /* o espelho da tela larga reaproveita geometria, ordem e sombra */
         g->ring = (g->ring + 1) % GEO_RING;
         rmk_pack_geometry(a, pos, fr->groups | 1u, g->staging);
         g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
@@ -549,6 +663,7 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
         g->BindTexture(R_TEXTURE_2D, g->geo[g->ring]);
         g->TexSubImage2D(R_TEXTURE_2D, 0, 0, 0, g->geo_w, g->geo_h, R_RGBA, R_FLOAT, g->staging);
         g->n_draw = order_faces(g, a, pos, fr->groups | 1u);
+        light_space(g, a, fr, pos);
         g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
         g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);   /* órfão */
         g->BufferSubData(R_ARRAY_BUFFER, 0, (GLsizeiptr_)(sizeof(Inst) * g->n_draw), g->inst_order);
@@ -579,6 +694,16 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform1f(g->u_nmap_on, (a->nmaps && !(fr->flags & RMK_FLAG_NO_NMAP)) ? 1.0f : 0.0f);
     g->Uniform1i(g->u_geo_w, g->geo_w);
     g->Uniform4f(g->u_ndc, t->ndc[0], t->ndc[1], t->ndc[2], t->ndc[3]);
+    const int shadow = !(fr->flags & RMK_FLAG_NO_SHADOW);
+    g->Uniform3f(g->u_lu, g->lbasis[0][0], g->lbasis[0][1], g->lbasis[0][2]);
+    g->Uniform3f(g->u_lv, g->lbasis[1][0], g->lbasis[1][1], g->lbasis[1][2]);
+    g->Uniform3f(g->u_ld, g->lbasis[2][0], g->lbasis[2][1], g->lbasis[2][2]);
+    g->Uniform4f(g->u_lc, g->lcenter[0], g->lcenter[1], g->lcenter[2], g->lcenter[3]);
+    g->Uniform1i(g->u_key, g->key);
+    g->ActiveTexture(R_TEXTURE0 + 11);
+    g->BindTexture(R_TEXTURE_2D, g->shadow_tex);
+    g->Uniform1i(g->u_shadow, 11);
+    g->Uniform1f(g->u_shadow_on, shadow ? 1.0f : 0.0f);
     g->Uniform4f(g->u_proj, fr->ofx, fr->ofy, fr->h, fr->shift_x);
     /* o passo de cor puxa a profundidade até zbias: a faixa começa um pouco antes para caber */
     const float n = fr->znear * (1.0f - fr->zbias), f = fr->zfar;
@@ -624,6 +749,30 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
         g->Uniform3f(g->u_rim_col, fr->lcol[key][0] * kc * 0.95f, fr->lcol[key][1] * kc * 0.95f, fr->lcol[key][2] * kc * 0.95f);
     }
     g->BindVertexArray(g->vao);
+    if (shadow && new_frame) {
+        /* (0) sombra: profundidade no espaço da luz, no FBO próprio; depois o alvo de quem chama de volta */
+        g->BindFramebuffer(R_FRAMEBUFFER, g->shadow_fbo);
+        g->Viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+        g->Disable(R_SCISSOR_TEST);
+        g->ColorMask(0, 0, 0, 0);
+        g->DepthMask(1);
+        g->Clear(R_DEPTH_BUFFER_BIT);
+        g->DepthFunc(R_LESS);
+        g->Disable(R_CULL_FACE);                /* pano fino: as duas faces fazem sombra */
+        g->Enable(R_POLYGON_OFFSET_FILL);
+        g->PolygonOffset(1.5f, 3.0f);
+        g->Uniform1i(g->u_spass, 1);
+        g->Uniform1i(g->u_prepass, 1);
+        g->Uniform4f(g->u_depth, dA, dB, alpha, 0.0f);
+        g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
+        g->Disable(R_POLYGON_OFFSET_FILL);
+        g->Enable(R_CULL_FACE);
+        g->BindFramebuffer(R_FRAMEBUFFER, t->fbo);
+        g->Viewport(t->viewport[0], t->viewport[1], t->viewport[2], t->viewport[3]);
+        g->Enable(R_SCISSOR_TEST);
+        g->Scissor(x0, y0, x1 - x0, y1 - y0);
+    }
+    g->Uniform1i(g->u_spass, 0);
     /* (1) profundidade verdadeira */
     g->ColorMask(0, 0, 0, 0);
     g->DepthMask(1);

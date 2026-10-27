@@ -104,11 +104,13 @@ typedef struct {
 #define RMK_FLAG_NO_TEX 2u           /* sem textura (só luz), depuração */
 #define RMK_FLAG_NO_NMAP 4u          /* sem mapas de normal (comparação) */
 #define RMK_FLAG_FIXED_LIGHT 8u      /* luz fixa na câmera da fase 1 em vez das luzes do palco (comparação) */
+#define RMK_FLAG_NO_SHADOW 16u       /* sem sombra própria (comparação) */
 
 /* ---- GL ---------------------------------------------------------------------------------------- */
 typedef void* (*RmkGetProc)(const char* name);
 typedef struct RmkGL RmkGL;
 typedef struct {
+    uint32_t fbo;                    /* framebuffer de quem chama (religado depois do passo da sombra) */
     float ndc[4];                    /* NDC = (tela + deslocamento de desenho) * (ndc[0], ndc[2]) + (ndc[1], ndc[3]) */
     int viewport[4];                 /* do alvo (pixels) */
     int scissor[4];                  /* recorte do alvo (pixels); a profundidade é limpa só no retângulo */

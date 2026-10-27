@@ -18,13 +18,23 @@ já é construído pensando nele (fase 5).
 |---|---|---|
 | 0 | Piloto offline + prova de conceito no jogo (HEAT por pacotes GT3) | **feito** (commits 6f0816a..d7cc0d4) |
 | 1 | Atalho de render: malha direto no renderizador GL, shader moderno, núcleo portátil | **feito** (2026-10-27) |
-| 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, IA 3D) | próximo |
+| 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, sombra, luz do palco, IA 3D) | **feito**, menos o experimento de IA 3D (2026-10-27, commits 5e51099..) |
 | 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | pendente |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | pendente |
 | 5 | Port para o Polygonia (Android) | pendente |
 | 6 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 1)
+## Onde estamos (fase 2, 2026-10-27)
+- HEAT com mãos de dedos por gesto (aberta, punho, apontando; o jogo troca a mão religando o irmão do antebraço e
+  agora o remake acompanha, antes caía no HEAT original nesses quadros), orelhas de anime, nariz, mapas de normal
+  gerados das texturas, luz do palco (a do GTE, por pixel) e sombra própria por shadow map no núcleo. Asset v4
+  (grupos de faces por gesto). Detalhes, números e capturas em `notes/remake-visual.md` ("Fase 2 no jogo").
+- Medido com tudo: 59,9 fps em todos os segundos, thread do jogo 40–43 % (original 46–53 %), render 21 % e 44 %
+  (original 16 % e 48 %), modo 6 (4 HEATs) 59,9 com jogo 40 % e render 35 %; 0 underruns.
+- Falta da fase 2: experimento de IA imagem→3D (pede download de modelos; aguarda autorização do usuário).
+- Achado novo: o original troca a **expressão do rosto** (dentes, marcas) e o remake não (vem da fase 1).
+
+## Onde estávamos (fim da fase 1)
 - HEAT remake roda no exe pelo **desenho de host**: plugin `tools/recomp/bag2/src/bag2_heat.c` (hook de filtro
   em `FUN_80029D4C`) entrega a pose num marcador na OT do jogo; o renderizador GL chama o núcleo portátil
   `src/remake/` (Phong Tessellation por instancing, luz por pixel, texturas HD com mipmaps). Patch local novo
@@ -79,8 +89,24 @@ pelo DMA/GP0 emulado. Critérios de pronto:
    UV de 8 bits).
 6. Manter `heat_mode` (0 original, 1 remake, 2/3 comparação, 4..6 carga) e os contadores `bag2_heat.*`.
 
-## Fase 2 — Detalhe nos personagens
-Depende da fase 1 (orçamento de triângulos).
+## Fase 2 — Detalhe nos personagens — feita em 2026-10-27 (menos o experimento de IA)
+**Resultado** (técnica em `notes/remake-visual.md`, "Fase 2 no jogo"):
+- Mãos: `tools/remake/hands.py` gera por SDF uma mão com dedos por gesto (aberta, punho, apontando; ~720 faces),
+  com a textura da luva por projeção das costas da luva original na pose aberta. O jogo troca a mão pelo script
+  da dança (comandos 901..903/1000+ no overlay religam o irmão do antebraço, nó 15/18 +0x98, para o nó
+  16/20/21 ou 19/22/23); o plugin reconhece o nó na posição 16/19 da árvore. `heat_force` força o gesto para teste.
+- Orelhas: `tools/remake/ears.py`, folha com hélice e concha cobrindo a placa original (achatada).
+- Nariz: cone pequeno com a pele do rosto embaixo (o rosto do HEAT é côncavo). Sem mapa de normal (rosto pintado).
+- Mapas de normal: gerados das texturas HD (estampa em relevo, traço preto como sulco, dobras pintadas como
+  ondulação), mesma conta offline e no núcleo (na ativação, 0,9 s); base tangente por derivadas no shader.
+- Luzes do palco: a matriz de luz do osso (+0x4C), LCM e BK do GTE, somadas por pixel como o PS1 faz por vértice.
+  Feita antes da sombra porque a sombra usa a luz principal do palco.
+- Sombra própria: shadow map 1024² no núcleo, dentro do callback, da luz principal; a do chão continua.
+- Medido: ver "Onde estamos". Critérios atendidos (jogo abaixo do original; render +5 e −4 pontos; modo 6 a 60).
+- **Falta:** experimento de IA imagem→3D (download de modelos pendente de autorização). Limites: expressão do rosto
+  não acompanha; orelhas um pouco abertas de frente; sombra discreta sob luz frontal.
+
+Plano original da fase 2 (mantido para referência):
 - **Mãos com dedos** modeladas por código, presas ao osso da mão; uma versão por gesto (mão padrão nos nós
   16/19 e as mãos alternativas dos nós 20–23, que o jogo troca em alguns gestos; hoje o remake ignora essas).
   O jogo não tem ossos de dedo: cada gesto é uma pose fixa. Chance boa.

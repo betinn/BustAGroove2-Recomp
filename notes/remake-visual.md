@@ -1,4 +1,4 @@
-# Remake visual do HEAT (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host 2026-10-27)
+# Remake visual do HEAT (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host e detalhe 2026-10-27)
 
 Pergunta: dá para modernizar o visual dos personagens **sem artista humano**, partindo das malhas
 originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animação? Feito só com o HEAT
@@ -9,6 +9,8 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
 3. **No jogo, fase 1** (padrão): a malha vai direto ao renderizador GL por um callback de host, com shader
    próprio (Phong na GPU, luz por pixel), a 60 fps em todos os segundos e mais barato que o HEAT original.
    Os outros personagens e os palcos ficam originais.
+4. **No jogo, fase 2**: mãos com dedos por gesto, orelhas, nariz, mapas de normal, luz do palco e sombra própria
+   (seção "Fase 2 no jogo"), ainda a 60 fps em todos os segundos.
 
 ## Como reproduzir
 ```
@@ -133,6 +135,146 @@ gerados na hora), bit 3 = sem Phong, bit 4 = sem textura. `heat_light "<exposiç
 `heat_stats` mostra desenhos e µs de CPU na thread de render e os contadores do renderizador (desenhos,
 espelhos na tela larga, marcadores sem nada visível).
 
+## Fase 2 no jogo: detalhe no HEAT (2026-10-27)
+Seis peças, cada uma primeiro nos renders offline (`heat_remake.py`, `--only maos` e as variantes abaixo), depois
+no jogo lado a lado e medida. Asset novo **v4** ("HTR4", `export_heat.py`): grupos de faces por gesto das mãos,
+vértices exclusivos de cada grupo contíguos depois dos do corpo, bit 4 no modo da face (sem mapa de normal).
+O quadro leva a máscara de grupos e só os vértices ativos (corpo + as duas mãos do gesto: ~1,4 mil posições,
+~16 KB; o limite do desenho de host é 64 KB).
+
+**Convenção de enrolamento (vale para toda geometria nova):** nas faces do arquivo do jogo, a normal pela regra da
+mão direita (`cross(b - a, c - a)` no espaço do osso) aponta para **dentro** (corpo: 0 % das faces para fora;
+é o NCLIP > 0 com o y da tela para baixo). A malha gerada sai com a normal para fora, então é invertida antes de
+entrar no asset; sem isso o culling do jogo some com o lado de perto e mostra o de dentro (a primeira versão das
+mãos no jogo aparecia girada 180° em torno do dedo, palma no lugar das costas). Os renders offline não fazem
+culling e não mostram esse erro.
+
+### Mãos com dedos (`tools/remake/hands.py`)
+- **Como o jogo escolhe a mão:** o script da dança (interpretador de comandos no overlay do palco, função em
+  ~0x801CF5xx, chamada de `0x800306A4`; comandos 901..903 e 1000+) religa o **irmão** do antebraço: na RAM a árvore
+  de ossos é uma lista de irmãos, e o nó 15 (+0x98) passa a apontar para o nó 16 (aberta), 20 (punho) ou 21
+  (apontando); na direita o nó 18 para 19/22/23. O gesto também fica em `estado + 2026`. Achado com o write trace
+  do servidor de debug (`wtrace_arm` em `nó15 + 0x98`): escritas em `0x801CF6A0` (volta ao 16) e `0x801CF710`
+  (liga o 20), endereço do nó = base + índice × 0xB0. O ponteiro do mesh (+0x8C) do nó 16 nunca muda. O jogo
+  calcula a matriz do nó ligado normalmente (o punho original sai certo quando o gesto é forçado).
+- Antes da fase 2, nesses quadros a árvore não batia com a assinatura e o **HEAT original** era desenhado.
+  Agora `heat_groups` reconhece o gesto pelo MeshHeader do nó nas posições 16 e 19 da árvore e liga o grupo.
+- Mão nova por gesto: SDF de palma (caixa arredondada), 4 dedos de 3 falanges e polegar (cones arredondados com
+  mínimo suave), ângulos por gesto, no espaço do osso da mão do jogo (dedos para -y, costas para +x, polegar da
+  esquerda para +z; a direita é o espelho em z). Surface nets (célula 95) + projeção na superfície + Laplaciano
+  leve, decimação QEM até ~720 faces (~360 vértices), cache em `logs/remake/heat/maos/`.
+- Textura: a mesma página da luva (camada 11). O UV vem de uma função linear por partes de (y, z) tirada das costas
+  da luva original aberta (faces com |normal x| > 0,3; dentro da projeção vale a de maior x), avaliada na pose
+  aberta de cada ponto (o ponto vai para a pose aberta pela falange mais próxima), então a placa branca com os nós
+  pretos fica nas costas e cada linha branca fica no seu dedo, também com o punho fechado. Palma e polegar:
+  vermelho liso (mediana da textura). Um primeiro ajuste por plano único (mínimos quadrados) errava a placa em
+  ~10 texels. O punho cinza original de cada gesto (22 faces de cor com os 6 vértices do pulso) continua.
+- Comando novo `heat_force "<esq> <dir>"` (0 aberta, 1 punho, 2 apontando, -1 = o do jogo): faz o que o script
+  faz (liga o nó do gesto como irmão do antebraço) para testar; `tools/remake/game_hands.py` força cada gesto e
+  recorta as mãos do original e do remake no mesmo quadro (heat_mode devolve `maos=` e `shift=`). Contadores
+  `bag2_heat.grupo1..6` contam quadros por gesto.
+
+### Orelhas (`tools/remake/ears.py`)
+A orelha original é uma placa de 16 faces de pele (cor 230,156,102) no osso 13, com a borda de trás soldada ao
+cabelo quase até a ponta (8 dos 13 vértices são compartilhados com o resto da cabeça), não um cone com anel de
+base: só "encolher a orelha velha" deixava a placa inteira atrás da nova. Agora: os 5 vértices só dela vão para o
+plano da placa (PCA), e a orelha nova cobre a placa toda, do pé até a ponta original (×1,08): folha pontuda com
+hélice levantada (mais forte na borda de trás), concha funda escurecida pela cor do vértice, costas
+arredondadas, raiz enterrada 260 unidades na cabeça, ponta afastada 220. ~280 faces por orelha.
+
+### Nariz (`ears.attach_nose`)
+O rosto do HEAT é côncavo: queixo (z 3818) e testa (z 3772) ficam à frente da ponta do nariz da malha (z 3639),
+e com a suavização o nariz quase some. Nariz novo: cone arredondado da ponte (y 1620, enterrada) até a ponta
+(y 1120, z 3640), raios 60..110, ~160 faces; pele, camada e cores copiadas da face do rosto que fica embaixo
+(projeção em z), sem mapa de normal como o resto do rosto. Duas tentativas erraram a altura (o eixo dos olhos do
+osso da cabeça fica em y ~1900; a primeira pôs o nariz na testa, a segunda comprido demais entre os olhos).
+
+### Mapas de normal (`tools/remake/detail.py` e `rmk_asset_build_normals`)
+Gerados das camadas HD, a mesma conta em Python (offline) e em C (no jogo, na ativação; diferença máxima de 1 LSB):
+altura = 1,0 × estampa (saturação > 0,25, caixa de raio 3 duas vezes) − 0,8 × traço preto (luminância < 0,3,
+raio 2) + 1,2 × luminância (raio 8, o sombreado pintado das dobras); normal por diferenças centrais com k = 16.
+Shader: base tangente pelas derivadas da tela (Schüler, sem tangente por vértice; funciona com UV espelhado),
+segunda texture array na unidade 10. O rosto pintado (faces de cor com desenho por cima no osso 13) fica sem
+relevo: com relevo o traço dos olhos parecia gravado. Primeira tentativa (só o traço, desfoque de 2 texels, k = 6)
+quase não aparecia; o chanfro precisa de 6–16 texels HD para ser visto na tela. Custo: 0,9 s de CPU na ativação
+(antes do jogo rodar) e 50 MB de RAM/VRAM a mais; sem custo medível por quadro. Flag 32 desliga.
+
+### Luzes do palco
+O original é iluminado pelo GTE: matriz de luz de cada osso em `nó + 0x4C` (linhas = direção de cada luz no espaço
+do osso, 4.12), cores na LCM (`gte_ctrl` 16..20, coluna j = cor da luz j, pode ser negativa) e ambiente BK (13..15).
+Medido no Stage 1 do HEAT (constante em 60 s): luz 1 quase branca (0,75; 0,71; 0,75) da frente-direita-cima, luz 2
+= −luz 1 com cor **negativa** (−0,56; −0,59; −0,52), que escurece o lado de trás, luz 3 laranja fraca (0,38; 0,31;
+0,06) de trás-esquerda, BK (0,55; 0,53; 0,59). Direção na câmera = MATRIX câmera×osso (+0x6C) × linha de L; todos
+os ossos dão a mesma (conferido). A luz fixa da fase 1 vinha de cima-esquerda, do lado oposto ao do palco.
+Agora o plugin lê L e a MATRIX do nó 0 e LCM/BK na entrada de `FUN_80029D4C`, o núcleo (`rmk_stage_light`) leva
+para a câmera e o shader faz a soma do GTE por pixel, em gama como no PS1: `I = BK·AO + Σ cor·max(n·l, 0)` (wrap
+0,2 nas luzes positivas), `cor = albedo·I^2,2 + especular` das luzes positivas e contraluz do lado oposto à luz
+principal com a cor dela. `heat_light` padrão agora 1,0 / principal 1,2 / ambiente 0,8 (mais contraste para a
+sombra e o relevo aparecerem); a resposta mostra as luzes do palco. Flag 64 volta à luz fixa. Offline:
+`render.STAGE_LIGHT` (os valores medidos) com `render_set(..., stage=...)`, e o ORIGINAL com a soma do GTE por
+vértice.
+
+### Sombra própria
+Shadow map no núcleo, dentro do callback: textura de profundidade 1024² própria com comparação (PCF bilinear do
+hardware, 5 amostras), projeção ortográfica da luz principal do palco (maior cor positiva) em volta da caixa dos
+vértices ativos, passo de profundidade com as duas faces e deslocamento de polígono (1,5; 3), antes dos dois passos
+de sempre; o FBO e o viewport de quem chama são religados depois (`RmkTarget.fbo`). Refeita só quando o quadro
+muda (o espelho da tela larga reaproveita). Escurece só a luz principal. Com a luz frontal do Stage 1 a sombra é
+discreta (cabelo atrás da cabeça, pescoço sob o queixo, coxa sob a mão); com ambiente baixo (`heat_light` amb
+0,1) fica forte. Flag 128 desliga. A sombra do jogo no chão continua.
+
+### Comparação A/B no mesmo quadro
+`heat_mode` ganhou um 7º número: nos modos 4..6 as cópias usam `flags ^ isto`. `game_sidebyside.py` com modo 4
+recorta o remake e a cópia (ex.: `"4 0.6 0.25 2 3300 128"` = com e sem sombra). `HEAT_LIGHT="..."` no ambiente
+aplica um `heat_light` antes das capturas.
+
+### Medições da fase 2
+Build-debug, RTX 3070 Ti, 9x + 16:9, `game_perf.py`, 60 s por janela, 2 janelas por partida (ordem trocada entre
+sessões). Por peça (cada uma com as anteriores):
+
+| peça | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|
+| mãos (mesma sessão: original 59,9, jogo 47 %, render 53 %) | 59,9 (mín. 59,9) | 39 % (máx. 41) | 33 % (máx. 39) | 0 |
+| + orelhas | 59,9 (mín. 59,9) | 44 % (máx. 47) | 31 % (máx. 46) | 0 |
+| + mapas de normal e nariz | 59,9 (mín. 59,9) | 44 % (máx. 47) | 29 % (máx. 42) | 0 |
+| (a mesma sem mapas de normal, flag 32) | 59,9 (mín. 59,8) | 39 % (máx. 45) | 32 % (máx. 51) | 0 |
+| + luzes do palco | 59,9 (mín. 59,9) | 39 % (máx. 40) | 34 % (máx. 43) | 0 |
+
+Final, todas as peças (com a sombra):
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| A / 1ª | HEAT original | 59,9 (mín. 59,9) | 53 % (máx. 57) | 16 % (máx. 25) | 0 |
+| A / 2ª | remake fase 2 | 59,9 (mín. 59,9; nenhum abaixo de 59,5) | 40 % (máx. 46) | 21 % (máx. 40) | 0 |
+| B / 1ª | remake fase 2 | 59,9 (mín. 59,9) | 43 % (máx. 46) | 44 % (máx. 48) | 0 |
+| B / 2ª | HEAT original | 59,9 (mín. 59,7) | 46 % (máx. 53) | 48 % (máx. 69) | 0 |
+| C / 1ª | modo 6: 4 HEATs da fase 2 | 59,9 (mín. 59,9) | 40 % (máx. 42) | 35 % (máx. 42) | 0 |
+| C / 2ª | HEAT original | 59,9 (mín. 59,9) | 47 % (máx. 48) | 50 % (máx. 61) | 0 |
+
+Critérios: thread do jogo abaixo do original em todas as sessões (pedido: até +3 pontos); render +5 pontos na
+sessão A (21 contra 16 %, num trecho em que o original ficou bem abaixo das outras medições) e −4 na B (pedido:
+até +10); modo 6 a 59,9 em todos os segundos. Plugin na thread do jogo: 57 µs por HEAT (fase 1: 22 µs; o skinning
+agora tem ~1,4 mil vértices ativos e lê as luzes). Thread de render: 109–168 µs de CPU por desenho (fase 1: 60–70 µs),
+133 µs no modo 6.
+
+### Capturas
+Offline (`tools/recomp/logs/remake/heat/`): `maos_{aberta,punho,aponta}.png`, `orelhas_close.png`,
+`normal_{corpo,rosto,perna}.png`, `luz_palco.png`. Jogo (`tools/recomp/logs/remake/jogo/`): `maos_{0,1}_{gesto}.png`
+(close das mãos, original x remake), `orelhas_*.png`, `nmap_*.png`, `luz_*.png` (modo 3), `ab_sombra*_*.png`
+(modo 4, com e sem sombra), `fimA..C.log` (medição final).
+
+### Limites e o que não deu (fase 2)
+- **Expressão do rosto**: o original troca de expressão (dentes cerrados, marca verde no olho) e o remake fica
+  sempre com o rosto do disco. Vem da fase 1 (não é regressão), ficou bem visível nas capturas. Não é troca de
+  imagem na VRAM (o filho 1 do container de texturas, `DBI_`, é código MIPS por personagem); o mais provável é UV ou
+  CLUT das primitivas do rosto mudadas na RAM por esse código. Próximo passo: ler o UV/CLUT das faces da cabeça da
+  RAM a cada quadro (endereços pelo MeshHeader) e mandar no quadro.
+- Orelhas: de frente abrem um pouco mais que as originais (mesmo com a ponta a 220).
+- Sombra própria discreta sob a luz frontal do palco; só a luz principal faz sombra.
+- As luzes saem do nó 0; se um palco mudar LCM/BK com os efeitos, o remake acompanha, mas só medi o Stage 1.
+- Mapas de normal: 0,9 s de CPU na ativação; para o Polygonia (CPU mais lenta) vale gravar os mapas no asset.
+- Experimento de IA imagem→3D não feito: exige download de modelos (aguarda autorização).
+
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos
 (`FUN_80029C6C`: filho em +0x94, irmão em +0x98; +0x6C = MATRIX câmera×osso já pronta para o GTE, +0x8C =
@@ -227,20 +369,17 @@ diagnóstico).
 - Arredondamento de braços, pernas, sapatos e rosto; texturas HD nítidas; luz com volume.
 
 ## Limites reais (honesto)
-- **Suavizar não cria detalhe.** Dedos continuam uma luva de poucos polígonos, a orelha é um cone, o nariz é
-  a textura. Real-ESRGAN deixa as bordas nítidas mas é a mesma arte 4bpp; o que é desenhado na textura
+- **Suavizar não cria detalhe.** (Fase 2: mãos, orelhas e nariz agora são geometria nova gerada por código.) Real-ESRGAN deixa as bordas nítidas mas é a mesma arte 4bpp; o que é desenhado na textura
   (olhos, sobrancelhas, traços) continua pintado.
-- A luz (por pixel desde a fase 1) é fixa em relação à câmera; não usa as luzes do palco (o original usa as
-  matrizes de luz do jogo, `node+0x4C`), então não muda de cor com os efeitos do palco. Sem sombra própria
-  (nem auto-sombra): fica a sombra simples do jogo. Os renders offline têm shadow map; o jogo ainda não.
+- (Resolvido na fase 2: a luz segue as luzes do palco do GTE e há sombra própria.)
 - Composição: o HEAT entra inteiro num slot da OT (o da face visível mais próxima). Contra o palco e o HUD fica
   igual ao original nas capturas; se o outro dançarino se sobrepuser ao HEAT na mesma profundidade, as faces
   dele à frente desse slot cobrem o HEAT e as de trás ficam por baixo (visto com a cópia deslocada do modo 7,
   `tres_2.png`). Em partida normal os dois ficam lado a lado; não vi isso num quadro real. Oclusão por pixel
   pediria o `pgxp_depth_buffer` do framework (desligado no `game.toml`).
 - Caminho GLES 3.0 do núcleo escrito, mas só testado em GL 3.3 core (NVIDIA). Rewind não testado (savestate sim).
-- Mãos alternativas (nós 20–23, trocadas pelo jogo em alguns gestos) ficam de fora: nesses momentos o remake
-  mostra a mão padrão.
+- (Resolvido na fase 2: as mãos alternativas, nós 20–23, têm versão com dedos; antes o HEAT original aparecia
+  nesses quadros.)
 - HEAT como jogador 2 usa outra paleta (container 88+2k); o `heat.bin` tem só a do jogador 1, então um HEAT
   P2 sairia com as cores do P1. Não testado.
 - O hook também pega o HEAT de outras telas que usam `FUN_80029D4C` (seleção, resultado); não conferido.

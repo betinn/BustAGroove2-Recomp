@@ -40,7 +40,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-27)
+## Estado (2026-10-27, fase 2 do remake)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
@@ -58,16 +58,21 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build ...` e `cmake --build ... --target
   psx-runtime` direto (flags na linha 50 do script) com o PATH de `env.ps1`.
-- **Remake do HEAT no jogo** (fases 0 e 1 de `notes/remake-plano.md` concluídas; técnica em
-  `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de filtro em `FUN_80029D4C`, listado em
+- **Remake do HEAT no jogo** (fases 0, 1 e 2 de `notes/remake-plano.md`; da 2 falta só o experimento de IA 3D;
+  técnica em `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de filtro em `FUN_80029D4C`, listado em
   `[recompiler] mod_function_entry_funcs`) entrega a pose num marcador na OT e o renderizador GL desenha com o
-  núcleo portátil `src/remake/` (C99, GL 3.3/GLES 3.0: Phong Tessellation por instancing, luz por pixel,
-  texturas HD com mipmaps; o mesmo código vai para o Polygonia). Pacote `mods/preloaded/packages/bag2.remake.heat`,
-  asset v3 `mods/remake/heat.bin` (50 MB) gerado por `tools/remake/export_heat.py` (fora do git). Exige o patch
-  local `psxrecomp-host-draw.patch`. Caminho por pacotes da fase 0 = fallback (`heat_mode` flags bit 2).
-  Medido (60 s por janela): HEAT original jogo 47–52 %, render 50–62 %; remake novo 59,9 fps em todos os segundos, jogo 40–44 %, render 33–48 %; 4 HEATs (modo 6) 59,9, jogo 40 %, render 33 %; 0 underruns. Medir: `tools/remake/game_perf.py` (no máximo 2 variantes de 60 s por sessão). Testes na
-  build-debug: `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3 ou 7), comandos `heat_mode`,
-  `heat_light`, `heat_stats`.
+  núcleo portátil `src/remake/` (C99, GL 3.3/GLES 3.0: Phong Tessellation por instancing, luz por pixel com as
+  luzes do palco lidas do GTE, mapas de normal gerados na ativação, sombra própria por shadow map, texturas HD com
+  mipmaps; o mesmo código vai para o Polygonia). Mãos com dedos por gesto (`tools/remake/hands.py`; o jogo troca a
+  mão religando o irmão do antebraço, nó 15/18 +0x98), orelhas e nariz (`tools/remake/ears.py`). Pacote
+  `mods/preloaded/packages/bag2.remake.heat`, asset v4 `mods/remake/heat.bin` (50 MB) gerado por
+  `tools/remake/export_heat.py` (fora do git). Exige o patch local `psxrecomp-host-draw.patch`. Caminho por
+  pacotes da fase 0 = fallback (`heat_mode` flags bit 2). Geometria nova: enrolamento do jogo (normal para dentro).
+  Medido (60 s por janela, fase 2): HEAT original jogo 46–53 %, render 16–50 %; remake 59,9 fps em todos os
+  segundos, jogo 40–43 %, render 21–44 %; 4 HEATs (modo 6) 59,9, jogo 40 %, render 35 %; 0 underruns. Medir:
+  `tools/remake/game_perf.py` (no máximo 2 variantes de 60 s por sessão). Testes na build-debug:
+  `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3, 7, ou 4 com flags da cópia para A/B),
+  `game_hands.py` (gestos forçados), comandos `heat_mode`, `heat_light`, `heat_force`, `heat_stats`.
 - As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
   antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e
   `_deps/*-build`, `_deps/*-subbuild` e configurar de novo.
@@ -75,8 +80,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 
 ## Próximo passo
-- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Próxima fase: 2,
-  detalhe nos personagens (mãos, orelhas, mapas de normal; sombra própria e luzes do palco também cabem aqui).
+- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita menos o
+  experimento de IA imagem→3D (pede download; perguntar antes). Pendente achado na fase 2: expressão do rosto do
+  original (UV/CLUT do rosto na RAM) não chega ao remake. Próxima fase: 3 (palco).
   Ao avançar uma fase: atualizar a tabela de estado do `notes/remake-plano.md`, a linha "Remake do HEAT" acima e
   os achados em `notes/remake-visual.md`.
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).

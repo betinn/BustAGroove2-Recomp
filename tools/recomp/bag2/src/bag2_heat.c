@@ -64,14 +64,15 @@ static int s_mode = 1;               /* 0 original, 1 remake, 2 os dois sobrepos
                                         7 original + pacotes (fase 0) + desenho de host lado a lado */
 static float s_shift;                /* deslocamento x do remake nos modos 3..6 (pixels do PS1) */
 static float s_last_shift;           /* o do último desenho (capturas) */
+static int s_copy_xor;               /* modos 4..6: flags das cópias = s_flags ^ isto (comparação A/B no mesmo quadro) */
 static int s_level = 4;              /* pacotes: máximo de divisões por aresta (4 -> até 16 triângulos por face) */
 static float s_alpha = 0.6f;         /* Phong Tessellation */
 /* bit 0 = pacotes sem cor base sob textura (depuração); bit 1 = pacotes agrupados por banco dentro do slot da
  * OT (corta as trocas de textura, ~79 % -> ~49 % da thread de render por HEAT); bit 2 = caminho por pacotes
  * (fase 0) em vez do desenho de host; bit 3 = desenho de host sem Phong (malha original); bit 4 = sem textura;
- * bit 5 = sem mapas de normal; bit 6 = luz fixa da fase 1 em vez das luzes do palco. */
+ * bit 5 = sem mapas de normal; bit 6 = luz fixa da fase 1 em vez das luzes do palco; bit 7 = sem sombra própria. */
 static int s_flags = 2;
-static float s_light[7] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 0.01f};   /* exposição, principal, preenchimento,
+static float s_light[7] = {1.0f, 1.2f, 1.0f, 1.0f, 0.8f, 0.5f, 0.01f};   /* exposição, principal, preenchimento,
                                                          contraluz, ambiente, rugosidade, tolerância de profundidade */
 static float s_zr[2];                /* faixa de Z do último remake (comando heat_mode) */
 static volatile int s_dump_request;
@@ -260,7 +261,8 @@ static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, 
     fr->n_verts = rmk_active_verts(&A, mask);
     fr->serial = ++s_serial;
     fr->flags = ((s_flags & 8) ? RMK_FLAG_FLAT : 0u) | ((s_flags & 16) ? RMK_FLAG_NO_TEX : 0u) |
-                ((s_flags & 32) ? RMK_FLAG_NO_NMAP : 0u) | ((s_flags & 64) ? RMK_FLAG_FIXED_LIGHT : 0u);
+                ((s_flags & 32) ? RMK_FLAG_NO_NMAP : 0u) | ((s_flags & 64) ? RMK_FLAG_FIXED_LIGHT : 0u) |
+                ((s_flags & 128) ? RMK_FLAG_NO_SHADOW : 0u);
     memcpy(fr->ldir, s_stage.ldir, sizeof fr->ldir);
     memcpy(fr->lcol, s_stage.lcol, sizeof fr->lcol);
     memcpy(fr->bk, s_stage.bk, sizeof fr->bk);
@@ -277,7 +279,7 @@ static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, 
 }
 
 /* Um HEAT pelo desenho de host (shift = deslocamento na tela, para comparação e carga). */
-static void host_heat(const RmkProj* pr, const float* pos, uint32_t mask, float shift) {
+static void host_heat(const RmkProj* pr, const float* pos, uint32_t mask, float shift, int copy) {
     const double t0 = now_us();
     RmkFrameInfo fi;
     rmk_frame_info(&A, pos, mask, pr, shift, &fi);
@@ -285,7 +287,10 @@ static void host_heat(const RmkProj* pr, const float* pos, uint32_t mask, float 
     int slot = fi.ot_near;
     slot = slot < OT_MIN ? OT_MIN : slot > OT_MAX ? OT_MAX : slot;
     RmkFrame fr;
+    const int saved = s_flags;
+    if (copy) s_flags ^= s_copy_xor;
     host_frame(&fr, pr, &fi, shift, mask);
+    s_flags = saved;
     const double t1 = now_us();
     if (emit_marker((uint32_t)slot, 0, &fr, pos)) psx_mod_counter_add("bag2_heat.markers", 1);
     memcpy(s_bbox, fi.bbox, sizeof s_bbox);
@@ -318,6 +323,7 @@ static void heat_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
         fr->n_verts != rmk_active_verts(&A, fr->groups) || bytes < sizeof *fr + 12u * fr->n_verts) return;
     rmk_expand(&A, fr->groups, (const float*)(fr + 1), full);
     RmkTarget rt;
+    rt.fbo = t->fbo;
     rt.ndc[0] = 1.0f / t->x_half;
     rt.ndc[1] = ((float)t->draw_off_x + t->shift + t->x_off) / t->x_half - 1.0f;
     rt.ndc[2] = 1.0f / t->y_half;
@@ -811,7 +817,7 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
         s_shift = w;
         draw_heat_packets(cpu, nodes, n, mask);
         s_shift = 0;
-        if (host) host_heat(&pr, pos7, mask, 2.0f * w);   /* por último: s_bbox fica com o retângulo deste */
+        if (host) host_heat(&pr, pos7, mask, 2.0f * w, 0);   /* por último: s_bbox fica com o retângulo deste */
         return 0;
     }
     const int copies = s_mode >= 4 ? s_mode - 3 : 0;   /* teste de carga: cópias do remake ao lado */
@@ -830,10 +836,10 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
             s_hand_xy[k][0] = pr.ofx + pr.h * b->t[0] / z; s_hand_xy[k][1] = pr.ofy + pr.h * b->t[1] / z;
             s_hand_xy[k][2] = z;
         }
-        host_heat(&pr, pos, mask, s_shift);
+        host_heat(&pr, pos, mask, s_shift, 0);
         float bb[4];
         memcpy(bb, s_bbox, sizeof bb);
-        for (int c = 1; c <= copies; c++) host_heat(&pr, pos, mask, w * c);
+        for (int c = 1; c <= copies; c++) host_heat(&pr, pos, mask, w * c, 1);
         if (copies) memcpy(s_bbox, bb, sizeof bb);
     } else {
         draw_heat_packets(cpu, nodes, n, mask);
@@ -851,9 +857,10 @@ static int heat_dump_cmd(const char* args, char* reply, int cap) {
 }
 
 static int heat_mode_cmd(const char* args, char* reply, int cap) {
-    int m = -1, lv = -1, fl = -1, bud = -1; float al = -1, tol = -1;
-    if (args) sscanf(args, "%d %d %f %f %d %d", &m, &lv, &al, &tol, &fl, &bud);
+    int m = -1, lv = -1, fl = -1, bud = -1, cx = -1; float al = -1, tol = -1;
+    if (args) sscanf(args, "%d %d %f %f %d %d %d", &m, &lv, &al, &tol, &fl, &bud, &cx);
     if (bud > 0) s_budget = (uint32_t)bud;
+    if (cx >= 0) s_copy_xor = cx;
     if (fl >= 0) s_flags = fl;
     if (tol > 0) s_tol = tol;
     if (m >= 0 && m <= 7) s_mode = m;
