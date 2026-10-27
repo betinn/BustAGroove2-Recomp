@@ -69,6 +69,11 @@ void rmk_expand(const RmkAsset* a, uint32_t mask, const float* compact, float* f
 void rmk_skin(const RmkAsset* a, const RmkBone* bones, int n_bones, uint32_t mask, float* pos);
 
 typedef struct { float ofx, ofy, h; } RmkProj;            /* tela = OF + H * (x, y) / z */
+/* Luzes do palco como o GTE as usa: L = matriz de luz do osso (linhas = direção de cada luz no espaço do osso,
+ * 4.12), M = MATRIX câmera×osso do mesmo osso, lcm = matriz de cor (LR1 LR2 LR3 LG1 .. LB3, 4.12; coluna j =
+ * cor da luz j, pode ser negativa), bk = cor ambiente (20.12). Vira direção na câmera (normalizada) e cor. */
+void rmk_stage_light(const int16_t L[9], const int16_t M[9], const int16_t lcm[9], const int32_t bk[3],
+                     float ldir[3][3], float lcol[3][3], float bk_out[3]);
 typedef struct {
     float bbox[4];                   /* x0, y0, x1, y1 na tela do PS1, com margem para o Phong */
     float zmin, zmax;                /* Z dos vértices de faces visíveis */
@@ -92,10 +97,13 @@ typedef struct {
     float expo, key, fill, rim, amb, rough;   /* luz (ajustável por comando de depuração) */
     float zbias;                     /* tolerância relativa de profundidade (ordem de pintor dentro dela) */
     float bbox[4];                   /* RmkFrameInfo.bbox: retângulo do desenho na tela */
+    float ldir[3][3], lcol[3][3];    /* luzes do palco (GTE) no espaço da câmera: direção para a luz e cor */
+    float bk[3];                     /* cor ambiente do palco (BK do GTE) */
 } RmkFrame;                          /* seguido de float pos[3 * n_verts] (compacto, rmk_compact) */
 #define RMK_FLAG_FLAT 1u             /* sem Phong (só a malha original), para conferir a geometria */
 #define RMK_FLAG_NO_TEX 2u           /* sem textura (só luz), depuração */
 #define RMK_FLAG_NO_NMAP 4u          /* sem mapas de normal (comparação) */
+#define RMK_FLAG_FIXED_LIGHT 8u      /* luz fixa na câmera da fase 1 em vez das luzes do palco (comparação) */
 
 /* ---- GL ---------------------------------------------------------------------------------------- */
 typedef void* (*RmkGetProc)(const char* name);

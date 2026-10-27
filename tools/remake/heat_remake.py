@@ -180,20 +180,24 @@ def side_by_side(imgs):
 
 
 def render_set(ch, rd, pose, yaw, size, pts, styles=('ps1', 'hd', 'modern'), floor_y=0.0, pitch=8.0,
-               ps1_scale=3, margin=0.9):
-    """Um painel por estilo, mesma câmera, enquadrando os pontos `pts`."""
+               ps1_scale=3, margin=0.9, stage=None):
+    """Um painel por estilo, mesma câmera, enquadrando os pontos `pts`. stage = luzes do palco (render.STAGE_LIGHT,
+    no espaço da câmera do GTE): o ORIGINAL usa a soma do GTE por vértice e o MODERNIZADO a mesma por pixel."""
     data_o, _ = ch.original(pose)
     center, dist = Renderer.fit(pts, yaw, pitch, size, margin)
     radius = np.linalg.norm(pts.max(0) - pts.min(0)) / 2
     vp, eye = Renderer.camera(center, dist, yaw, pitch, size)
+    from render import look_at
+    view = look_at(eye, center)
+    sk = dict(stage=stage, view=view)
     out = {}
     if 'ps1' in styles:
         small = (size[0] // ps1_scale, size[1] // ps1_scale)
         vps, _ = Renderer.camera(center, dist, yaw, pitch, small)
-        out['ps1'] = rd.render_ps1(data_o, vps, small).resize(size, Image.NEAREST)
+        out['ps1'] = rd.render_ps1(data_o, vps, small, **sk).resize(size, Image.NEAREST)
     if 'hd' in styles:
-        out['hd'] = rd.render_ps1(data_o, vp, size)
-    kw = dict(floor_y=floor_y)
+        out['hd'] = rd.render_ps1(data_o, vp, size, **sk)
+    kw = dict(floor_y=floor_y, **sk)
     if 'modern' in styles or 'toon' in styles:
         data_m = ch.modern(pose, rd)
         if 'modern' in styles:

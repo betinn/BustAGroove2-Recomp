@@ -23,12 +23,18 @@ in float in_ao;
 
 PS1_VS = VS_COMMON + """
 uniform vec3 u_ldir; uniform float u_amb;
+uniform int u_stage; uniform vec3 u_sdir[3]; uniform vec3 u_scol[3]; uniform vec3 u_sbk;
 out vec3 v_base; out vec3 v_over;
 noperspective out vec2 v_uv;
 flat out float v_layer; flat out float v_mode;
 void main() {
   gl_Position = u_vp * vec4(in_pos, 1.0);
-  float l = u_amb + max(dot(normalize(in_nrm), -u_ldir), 0.0) * (1.0 - u_amb) * 1.1;
+  vec3 l = vec3(u_amb + max(dot(normalize(in_nrm), -u_ldir), 0.0) * (1.0 - u_amb) * 1.1);
+  if (u_stage != 0) {   // a conta do GTE: BK + LCM * max(L * n, 0)
+    l = u_sbk;
+    for (int i = 0; i < 3; i++) l += u_scol[i] * max(dot(normalize(in_nrm), u_sdir[i]), 0.0);
+    l = max(l, 0.0);
+  }
   v_base = in_base / 255.0 * l;
   v_over = in_over / 128.0 * l;
   v_uv = in_uv; v_layer = in_layer; v_mode = in_mode;
@@ -79,6 +85,7 @@ uniform vec3 u_fill_dir; uniform vec3 u_fill_col;
 uniform vec3 u_rim_dir; uniform vec3 u_rim_col;
 uniform vec3 u_sky; uniform vec3 u_ground;
 uniform float u_rough; uniform float u_toon; uniform float u_shadow_texel;
+uniform int u_stage; uniform vec3 u_sdir[3]; uniform vec3 u_scol[3]; uniform vec3 u_sbk;
 in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in vec4 v_lpos; in float v_ao;
 flat in float v_layer; flat in float v_mode;
 out vec4 f_color;
@@ -141,15 +148,27 @@ void main() {
   float sh = shadow();
   if (u_toon > 0.5) { f_color = vec4(pow(toon(n, v, alb, sh), vec3(1.0 / 2.2)), 1.0); return; }
   vec3 c = vec3(0.0);
-  c += light(n, v, -u_key_dir, u_key_col, alb, sh, 0.25);
-  c += light(n, v, -u_fill_dir, u_fill_col, alb, 1.0, 0.5);
+  if (u_stage != 0) {   // luzes do palco: a soma do GTE por pixel, em gama, como src/remake/rmk_gl.c
+    vec3 I = u_sbk * mix(0.6, 1.0, v_ao), sp = vec3(0.0);
+    for (int i = 0; i < 3; i++) {
+      float nl = dot(n, u_sdir[i]);
+      vec3 pos = max(u_scol[i], 0.0), ng = min(u_scol[i], 0.0);
+      float s = (i == 0) ? sh : 1.0;
+      I += pos * max((nl + 0.2) / 1.2, 0.0) * s + ng * max(nl, 0.0);
+      sp += light(n, v, u_sdir[i], pos, vec3(0.0), s, 0.0);
+    }
+    c = alb * pow(max(I, 0.0), vec3(2.2)) + sp * 1.6;
+  } else {
+    c += light(n, v, -u_key_dir, u_key_col, alb, sh, 0.25);
+    c += light(n, v, -u_fill_dir, u_fill_col, alb, 1.0, 0.5);
+    vec3 amb = mix(u_ground, u_sky, n.y * 0.5 + 0.5);
+    c += amb * alb * v_ao;
+  }
   float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, -u_rim_dir), 0.0);
   c += u_rim_col * rim * (0.3 + alb) * v_ao;
-  vec3 amb = mix(u_ground, u_sky, n.y * 0.5 + 0.5);
-  c += amb * alb * v_ao;
   c *= mix(0.55, 1.0, v_ao);          // oclusão também nas luzes diretas (contato), mais leve
   // exposição + ACES (Narkowicz) + gamma
-  c *= 0.7;
+  c *= (u_stage != 0) ? 1.0 : 0.7;
   c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
   f_color = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 }
@@ -234,6 +253,21 @@ def ortho(l, r, b, t, n, f):
 
 def _m(M):
     return np.asarray(M, 'f4').T.tobytes()
+
+
+# Luzes de um palco medidas no jogo (heat_light, 2026-10-27; partida com o HEAT, Stage 1), no espaço da câmera
+# do GTE (x direita, y para baixo, z para dentro): luz 1 quase branca da frente-direita-cima, luz 2 = -luz 1 com
+# cor negativa (escurece o lado de trás), luz 3 laranja fraca de trás-esquerda; BK = ambiente.
+STAGE_LIGHT = dict(ldir=np.array([[0.65, -0.31, -0.69], [-0.65, 0.31, 0.69], [-0.72, -0.10, 0.68]]),
+                   lcol=np.array([[0.75, 0.71, 0.75], [-0.56, -0.59, -0.52], [0.375, 0.31, 0.06]]),
+                   bk=np.array([0.555, 0.531, 0.586]))
+
+
+def stage_world(stage, view):
+    """Direções da câmera do GTE -> mundo do render (câmera GL: y para cima, z para fora da tela)."""
+    d = np.asarray(stage['ldir'], float) * np.array([1, -1, -1])
+    w = d @ view[:3, :3]          # inversa da rotação da vista (ortogonal) aplicada a cada linha
+    return w / np.linalg.norm(w, axis=1, keepdims=True)
 
 
 ATTRS = (('in_pos', 3), ('in_nrm', 3), ('in_base', 3), ('in_over', 3), ('in_uv', 2), ('in_layer', 1),
@@ -398,7 +432,8 @@ class Renderer:
         img = np.frombuffer(fbo.read(components=4), np.uint8).reshape(size[1], size[0], 4)[::-1]
         return Image.fromarray(img[..., :3].copy())
 
-    def render_ps1(self, data, vp, size, ldir=(0.35, -0.75, -0.55), amb=0.45, bg=(0.10, 0.10, 0.13)):
+    def render_ps1(self, data, vp, size, ldir=(0.35, -0.75, -0.55), amb=0.45, bg=(0.10, 0.10, 0.13), stage=None,
+                   view=None):
         c = self.ctx
         fbo = self._target(size, 0)
         fbo.use(); c.viewport = (0, 0, *size)
@@ -408,6 +443,12 @@ class Renderer:
         self.p_ps1['u_vp'].write(_m(vp))
         l = np.array(ldir, float); l /= np.linalg.norm(l)
         self.p_ps1['u_ldir'].value = tuple(l); self.p_ps1['u_amb'].value = amb
+        self.p_ps1['u_stage'].value = 1 if stage is not None else 0
+        if stage is not None:
+            w = stage_world(stage, view)
+            self.p_ps1['u_sdir'].write(np.asarray(w, 'f4').tobytes())
+            self.p_ps1['u_scol'].write(np.asarray(stage['lcol'], 'f4').tobytes())
+            self.p_ps1['u_sbk'].value = tuple(stage['bk'])
         self.tex_ps1.use(0); self.p_ps1['u_tex'].value = 0
         vao.render()
         img = self._read(fbo, size, 0)
@@ -415,9 +456,12 @@ class Renderer:
         return img
 
     def render_modern(self, data, vp, eye, size, center, radius, toon=False, ss=2, samples=8,
-                      outline_width=0.0, rough=0.5, floor_y=0.0):
+                      outline_width=0.0, rough=0.5, floor_y=0.0, stage=None, view=None):
         c = self.ctx
         key = np.array([-0.45, -0.8, -0.55]); key /= np.linalg.norm(key)
+        if stage is not None:   # a sombra vem da luz principal do palco (key aponta da luz para a cena)
+            sw = stage_world(stage, view)
+            key = -sw[0]
         # shadow map
         lv = look_at(np.asarray(center) - key * radius * 3, center)
         lp = ortho(-radius * 1.8, radius * 1.8, -radius * 1.8, radius * 1.8, radius * 0.5, radius * 6)
@@ -459,6 +503,15 @@ class Renderer:
         p['u_rim_dir'].value = tuple(rim); p['u_rim_col'].value = (0.9, 0.88, 1.0)
         p['u_sky'].value = (0.2, 0.21, 0.27); p['u_ground'].value = (0.09, 0.075, 0.07)
         p['u_rough'].value = rough; p['u_toon'].value = 1.0 if toon else 0.0
+        p['u_stage'].value = 1 if stage is not None else 0
+        if stage is not None:
+            p['u_sdir'].write(np.asarray(sw, 'f4').tobytes())
+            p['u_scol'].write(np.asarray(stage['lcol'], 'f4').tobytes())
+            p['u_sbk'].value = tuple(stage['bk'])
+            k0 = np.asarray(stage['lcol'][0]); kc = 2.7 / max(k0.sum(), 1e-3)
+            rd = np.array([-stage['ldir'][0][0], stage['ldir'][0][1] * 0.5 - 0.3, 0.9])
+            rdw = stage_world(dict(ldir=[rd / np.linalg.norm(rd)]), view)[0]
+            p['u_rim_dir'].value = tuple(-rdw); p['u_rim_col'].value = tuple(k0 * kc * 0.95)
         p['u_shadow_texel'].value = st
         self.tex_hd.use(0); p['u_tex'].value = 0; p['u_shadow'].value = 1
         if self.tex_nmap is not None:

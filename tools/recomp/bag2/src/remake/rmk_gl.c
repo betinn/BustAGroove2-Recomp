@@ -127,6 +127,7 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, Uniform1f, (GLint_ l, float v)) \
     X(void, Uniform1i, (GLint_ l, GLint_ v)) \
     X(void, Uniform3f, (GLint_ l, float x, float y, float z)) \
+    X(void, Uniform3fv, (GLint_ l, GLsizei_ n, const float* v)) \
     X(void, Uniform4f, (GLint_ l, float x, float y, float z, float w)) \
     X(void, UseProgram, (GLuint_ p)) \
     X(void, VertexAttribDivisor, (GLuint_ i, GLuint_ d)) \
@@ -161,6 +162,7 @@ struct RmkGL {
     uint16_t* slot;                  /* slot da OT por face, por quadro */
     GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_depth, u_tex, u_nmap, u_nmap_on, u_misc, u_prepass;
     GLint_ u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;
+    GLint_ u_stage, u_ldir, u_lcol, u_bk;
     char err[512];
 };
 
@@ -217,6 +219,8 @@ static const char* FS_BODY =
     "uniform float u_nmap_on; /* 1: mapas de normal das camadas */\n"
     "uniform vec3 u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;\n"
     "uniform vec4 u_misc;   /* exposição, rugosidade, textura ligada, contraluz */\n"
+    "uniform int u_stage;   /* 1: luzes do palco (GTE); 0: luz fixa na câmera da fase 1 */\n"
+    "uniform vec3 u_ldir[3], u_lcol[3], u_bk;\n"
     "uniform int u_prepass; /* 1: só profundidade (o recorte por alfa vale igual) */\n"
     "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao;\n"
     "flat in int v_layer; flat in int v_mode;\n"
@@ -257,11 +261,25 @@ static const char* FS_BODY =
     "    vec3 t = texture(u_nmap, vec3(v_uv, float(v_layer))).xyz * 2.0 - 1.0;\n"
     "    n = perturb(n, v_pos, v_uv, t);\n"
     "  }\n"
-    "  vec3 c = light(n, v, u_key_dir, u_key_col, alb, 0.25);\n"
-    "  c += light(n, v, u_fill_dir, u_fill_col, alb, 0.5);\n"
+    "  vec3 c;\n"
+    "  if (u_stage != 0) {\n"
+    "    /* a soma do GTE (BK + cor * max(n.l, 0) por luz), por pixel e no espaço de gama como no PS1; luz de cor\n"
+    "       positiva com um pouco de wrap; a negativa (o jogo usa uma para escurecer o lado de trás) sem */\n"
+    "    vec3 I = u_bk * mix(0.6, 1.0, v_ao), sp = vec3(0.0);\n"
+    "    for (int i = 0; i < 3; i++) {\n"
+    "      float nl = dot(n, u_ldir[i]);\n"
+    "      vec3 pos = max(u_lcol[i], 0.0), neg = min(u_lcol[i], 0.0);\n"
+    "      I += pos * max((nl + 0.2) / 1.2, 0.0) + neg * max(nl, 0.0);\n"
+    "      sp += light(n, v, u_ldir[i], pos, vec3(0.0), 0.0);   /* só o especular */\n"
+    "    }\n"
+    "    c = alb * pow(max(I, 0.0), vec3(2.2)) + sp * 1.6;\n"
+    "  } else {\n"
+    "    c = light(n, v, u_key_dir, u_key_col, alb, 0.25);\n"
+    "    c += light(n, v, u_fill_dir, u_fill_col, alb, 0.5);\n"
+    "    c += mix(u_ground, u_sky, -n.y * 0.5 + 0.5) * alb * v_ao;   /* y da câmera do GTE aponta para baixo */\n"
+    "  }\n"
     "  float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * max(dot(n, u_rim_dir), 0.0);\n"
     "  c += u_rim_col * rim * (0.3 + alb) * v_ao * u_misc.w;\n"
-    "  c += mix(u_ground, u_sky, -n.y * 0.5 + 0.5) * alb * v_ao;   /* y da câmera do GTE aponta para baixo */\n"
     "  c *= mix(0.55, 1.0, v_ao);\n"
     "  c *= u_misc.x;\n"
     "  c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);\n"
@@ -324,6 +342,9 @@ static int build_program(RmkGL* g) {
 #define U(name) g->name = g->GetUniformLocation(g->prog, #name)
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_misc); U(u_prepass);
     U(u_key_dir); U(u_key_col); U(u_fill_dir); U(u_fill_col); U(u_rim_dir); U(u_rim_col); U(u_sky); U(u_ground);
+    U(u_stage); U(u_bk);
+    g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
+    g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
 #undef U
     return 1;
 }
@@ -563,8 +584,9 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     const float n = fr->znear * (1.0f - fr->zbias), f = fr->zfar;
     const float dA = (f + n) / (f - n), dB = -2.0f * f * n / (f - n), alpha = (fr->flags & RMK_FLAG_FLAT) ? 0.0f : fr->alpha;
     g->Uniform4f(g->u_misc, fr->expo, fr->rough, (fr->flags & RMK_FLAG_NO_TEX) ? 0.0f : 1.0f, fr->rim);
-    /* luzes fixas na câmera (x direita, y para baixo, z para dentro): principal quente de cima/esquerda/
-     * frente, preenchimento frio da direita, contraluz por trás; cores de tools/remake/render.py */
+    /* luz fixa da fase 1 (flag RMK_FLAG_FIXED_LIGHT), na câmera (x direita, y para baixo, z para dentro):
+     * principal quente de cima/esquerda/frente, preenchimento frio da direita, contraluz por trás; cores de
+     * tools/remake/render.py. Sem a flag valem as luzes do palco (mais abaixo). */
     static const float kd[3] = {-0.45f, -0.80f, -0.55f}, fd[3] = {0.75f, -0.15f, -0.55f}, rd[3] = {0.25f, -0.45f, 1.0f};
     const float lk = 1.0f / sqrtf(kd[0] * kd[0] + kd[1] * kd[1] + kd[2] * kd[2]);
     const float lf = 1.0f / sqrtf(fd[0] * fd[0] + fd[1] * fd[1] + fd[2] * fd[2]);
@@ -577,6 +599,30 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform3f(g->u_rim_col, 0.9f, 0.88f, 1.0f);
     g->Uniform3f(g->u_sky, 0.2f * fr->amb, 0.21f * fr->amb, 0.27f * fr->amb);
     g->Uniform3f(g->u_ground, 0.09f * fr->amb, 0.075f * fr->amb, 0.07f * fr->amb);
+    const int stage = !(fr->flags & RMK_FLAG_FIXED_LIGHT);
+    g->Uniform1i(g->u_stage, stage);
+    if (stage) {
+        /* luzes do palco; key/fill/amb do heat_light viram ganho da luz mais forte, das outras e do BK */
+        float col[3][3], bk[3];
+        int key = 0;
+        float best = -1e9f;
+        for (int i = 0; i < 3; i++) {
+            const float s = fr->lcol[i][0] + fr->lcol[i][1] + fr->lcol[i][2];
+            if (s > best) { best = s; key = i; }
+        }
+        for (int i = 0; i < 3; i++)
+            for (int c = 0; c < 3; c++) col[i][c] = fr->lcol[i][c] * (i == key ? fr->key : fr->fill);
+        for (int c = 0; c < 3; c++) bk[c] = fr->bk[c] * fr->amb;
+        g->Uniform3fv(g->u_ldir, 3, &fr->ldir[0][0]);
+        g->Uniform3fv(g->u_lcol, 3, &col[0][0]);
+        g->Uniform3f(g->u_bk, bk[0], bk[1], bk[2]);
+        /* contraluz: do lado oposto à luz principal, por trás (z para dentro), com a cor dela */
+        float rd2[3] = {-fr->ldir[key][0], fr->ldir[key][1] * 0.5f - 0.3f, 0.9f};
+        const float l2 = 1.0f / sqrtf(rd2[0] * rd2[0] + rd2[1] * rd2[1] + rd2[2] * rd2[2]);
+        g->Uniform3f(g->u_rim_dir, rd2[0] * l2, rd2[1] * l2, rd2[2] * l2);
+        const float kc = best > 1e-3f ? 2.7f / best : 1.0f;
+        g->Uniform3f(g->u_rim_col, fr->lcol[key][0] * kc * 0.95f, fr->lcol[key][1] * kc * 0.95f, fr->lcol[key][2] * kc * 0.95f);
+    }
     g->BindVertexArray(g->vao);
     /* (1) profundidade verdadeira */
     g->ColorMask(0, 0, 0, 0);

@@ -69,7 +69,7 @@ static float s_alpha = 0.6f;         /* Phong Tessellation */
 /* bit 0 = pacotes sem cor base sob textura (depuração); bit 1 = pacotes agrupados por banco dentro do slot da
  * OT (corta as trocas de textura, ~79 % -> ~49 % da thread de render por HEAT); bit 2 = caminho por pacotes
  * (fase 0) em vez do desenho de host; bit 3 = desenho de host sem Phong (malha original); bit 4 = sem textura;
- * bit 5 = sem mapas de normal. */
+ * bit 5 = sem mapas de normal; bit 6 = luz fixa da fase 1 em vez das luzes do palco. */
 static int s_flags = 2;
 static float s_light[7] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 0.01f};   /* exposição, principal, preenchimento,
                                                          contraluz, ambiente, rugosidade, tolerância de profundidade */
@@ -189,6 +189,23 @@ static void read_bones(const uint32_t* nodes, int n, RmkBone* b) {
     }
 }
 
+/* Luzes do palco do quadro (fase 2): o GTE ilumina cada osso com a matriz de luz do nó (+0x4C, direções no
+ * espaço do osso), a matriz de cor LCM (gte_ctrl 16..20, uma cor por luz, pode ser negativa) e o ambiente BK
+ * (13..15). Com a MATRIX câmera×osso do mesmo nó (+0x6C) as direções vão para a câmera; todos os ossos dão a
+ * mesma direção (conferido no heat_dump). Lido na entrada de FUN_80029D4C: o palco põe LCM e BK antes. */
+static struct { float ldir[3][3], lcol[3][3], bk[3]; } s_stage;
+static void read_stage_light(const struct CPUState* cpu, uint32_t node0) {
+    int16_t L[9], M[9], lcm[9];
+    int32_t bk[3];
+    for (int k = 0; k < 9; k++) { L[k] = rd16(node0 + 0x4C + 2 * k); M[k] = rd16(node0 + 0x6C + 2 * k); }
+    const uint32_t c16 = cpu->gte_ctrl[16], c17 = cpu->gte_ctrl[17], c18 = cpu->gte_ctrl[18], c19 = cpu->gte_ctrl[19];
+    lcm[0] = (int16_t)c16; lcm[1] = (int16_t)(c16 >> 16); lcm[2] = (int16_t)c17;
+    lcm[3] = (int16_t)(c17 >> 16); lcm[4] = (int16_t)c18; lcm[5] = (int16_t)(c18 >> 16);
+    lcm[6] = (int16_t)c19; lcm[7] = (int16_t)(c19 >> 16); lcm[8] = (int16_t)cpu->gte_ctrl[20];
+    for (int k = 0; k < 3; k++) bk[k] = (int32_t)cpu->gte_ctrl[13 + k];
+    rmk_stage_light(L, M, lcm, bk, s_stage.ldir, s_stage.lcol, s_stage.bk);
+}
+
 static RmkProj gte_proj(const struct CPUState* cpu) {
     RmkProj p;
     p.ofx = (float)(int32_t)cpu->gte_ctrl[24] / 65536.0f;
@@ -243,7 +260,10 @@ static void host_frame(RmkFrame* fr, const RmkProj* pr, const RmkFrameInfo* fi, 
     fr->n_verts = rmk_active_verts(&A, mask);
     fr->serial = ++s_serial;
     fr->flags = ((s_flags & 8) ? RMK_FLAG_FLAT : 0u) | ((s_flags & 16) ? RMK_FLAG_NO_TEX : 0u) |
-                ((s_flags & 32) ? RMK_FLAG_NO_NMAP : 0u);
+                ((s_flags & 32) ? RMK_FLAG_NO_NMAP : 0u) | ((s_flags & 64) ? RMK_FLAG_FIXED_LIGHT : 0u);
+    memcpy(fr->ldir, s_stage.ldir, sizeof fr->ldir);
+    memcpy(fr->lcol, s_stage.lcol, sizeof fr->lcol);
+    memcpy(fr->bk, s_stage.bk, sizeof fr->bk);
     fr->ofx = pr->ofx; fr->ofy = pr->ofy; fr->h = pr->h; fr->shift_x = shift;
     float zn = fi->zmin * 0.9f - 16.0f, zf = fi->zmax * 1.1f + 16.0f;
     if (zn < 16.0f) zn = 16.0f;
@@ -736,7 +756,9 @@ static void dump_tree(struct CPUState* cpu) {
         uint32_t mesh = rd32(nodes[i] + 0x8C);
         fprintf(f, "node %d addr=%08X mesh=%08X nverts=%u base=%u\n  M=", i, nodes[i], mesh, rd32(mesh + 0x94), rd32(mesh + 0x98));
         for (int k = 0; k < 9; k++) fprintf(f, " %d", rd16(nodes[i] + 0x6C + k * 2));
-        fprintf(f, " T= %d %d %d\n", (int32_t)rd32(nodes[i] + 0x80), (int32_t)rd32(nodes[i] + 0x84), (int32_t)rd32(nodes[i] + 0x88));
+        fprintf(f, " T= %d %d %d\n  L=", (int32_t)rd32(nodes[i] + 0x80), (int32_t)rd32(nodes[i] + 0x84), (int32_t)rd32(nodes[i] + 0x88));
+        for (int k = 0; k < 9; k++) fprintf(f, " %d", rd16(nodes[i] + 0x4C + k * 2));   /* matriz de luz do nó */
+        fprintf(f, "\n");
     }
     fclose(f);
 }
@@ -775,6 +797,7 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
     const uint32_t mask = heat_groups(nodes, n);
     if (!mask) return 0;
     count_groups(mask);
+    read_stage_light(cpu, nodes[0]);
     s_last_mask = mask;
     if ((!host || s_mode == 7) && (!s_arena || !ensure_banks())) return 0;
     const float w = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
@@ -856,8 +879,13 @@ static int heat_light_cmd(const char* args, char* reply, int cap) {
     float v[7] = {-1, -1, -1, -1, -1, -1, -1};
     if (args) sscanf(args, "%f %f %f %f %f %f %f", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]);
     for (int i = 0; i < 7; i++) if (v[i] >= 0) s_light[i] = v[i];
-    snprintf(reply, cap, "expo=%.2f key=%.2f fill=%.2f rim=%.2f amb=%.2f rough=%.2f zbias=%.4f", s_light[0], s_light[1],
-             s_light[2], s_light[3], s_light[4], s_light[5], s_light[6]);
+    snprintf(reply, cap, "expo=%.2f key=%.2f fill=%.2f rim=%.2f amb=%.2f rough=%.2f zbias=%.4f | palco: l0=%.2f,%.2f,%.2f "
+             "c0=%.2f,%.2f,%.2f l1=%.2f,%.2f,%.2f c1=%.2f,%.2f,%.2f l2=%.2f,%.2f,%.2f c2=%.2f,%.2f,%.2f bk=%.2f,%.2f,%.2f",
+             s_light[0], s_light[1], s_light[2], s_light[3], s_light[4], s_light[5], s_light[6],
+             s_stage.ldir[0][0], s_stage.ldir[0][1], s_stage.ldir[0][2], s_stage.lcol[0][0], s_stage.lcol[0][1], s_stage.lcol[0][2],
+             s_stage.ldir[1][0], s_stage.ldir[1][1], s_stage.ldir[1][2], s_stage.lcol[1][0], s_stage.lcol[1][1], s_stage.lcol[1][2],
+             s_stage.ldir[2][0], s_stage.ldir[2][1], s_stage.ldir[2][2], s_stage.lcol[2][0], s_stage.lcol[2][1], s_stage.lcol[2][2],
+             s_stage.bk[0], s_stage.bk[1], s_stage.bk[2]);
     return 0;
 }
 

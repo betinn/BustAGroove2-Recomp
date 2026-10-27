@@ -5,6 +5,19 @@
 #include <math.h>
 #include <string.h>
 
+void rmk_stage_light(const int16_t L[9], const int16_t M[9], const int16_t lcm[9], const int32_t bk[3],
+                     float ldir[3][3], float lcol[3][3], float bk_out[3]) {
+    for (int i = 0; i < 3; i++) {
+        float d[3];
+        for (int r = 0; r < 3; r++)
+            d[r] = (float)M[3 * r] * L[3 * i] + (float)M[3 * r + 1] * L[3 * i + 1] + (float)M[3 * r + 2] * L[3 * i + 2];
+        const float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        for (int r = 0; r < 3; r++) ldir[i][r] = l > 1e-6f ? d[r] / l : (r == 2 ? -1.0f : 0.0f);
+        for (int c = 0; c < 3; c++) lcol[i][c] = (float)lcm[3 * c + i] / 4096.0f;
+        bk_out[i] = (float)bk[i] / 4096.0f;
+    }
+}
+
 void rmk_bone_from_gte(RmkBone* b, const int16_t m[9], const int32_t t[3]) {
     for (int k = 0; k < 9; k++) b->m[k] = (float)m[k] / 4096.0f;
     for (int k = 0; k < 3; k++) b->t[k] = (float)t[k];
