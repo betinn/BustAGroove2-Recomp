@@ -47,6 +47,7 @@ def main():
             lines = log_lines(s)[n0:]
             fps = [float(re.search(r' fps=([\d.]+)', l).group(1)) for l in lines]
             busy = [float(re.search(r'emu_busy=([\d.]+)', l).group(1)) for l in lines]
+            rbusy = [float(m.group(1)) for l in lines for m in [re.search(r'render_busy=([\d.]+)', l)] if m]
             d = {k: c1.get(k, 0) - c0.get(k, 0) for k in c1}
             fr = max(d.get('bag2_heat.frames', 0), 1)
             us = sum(d.get(f'bag2_heat.us_{k}', 0) for k in ('geometry', 'prepare', 'emit')) / fr
@@ -55,7 +56,7 @@ def main():
             rows.append((v, fps, busy, d.get('bag2_heat.packets', 0) / fr, us, audio))
             print(f'[{v}] fps med {sum(fps) / max(len(fps), 1):.1f} min {min(fps, default=0):.1f} '
                   f'<59.5: {sum(f < 59.5 for f in fps)}/{len(fps)} s | emu_busy med {sum(busy) / max(len(busy), 1):.0f}% '
-                  f'max {max(busy, default=0):.0f}% | pacotes/quadro {rows[-1][3]:.0f} plugin {us:.0f} us', flush=True)
+                  f'max {max(busy, default=0):.0f}% render {sum(rbusy) / max(len(rbusy), 1):.0f}% max {max(rbusy, default=0):.0f}% | pacotes/quadro {rows[-1][3]:.0f} plugin {us:.0f} us', flush=True)
             print('   por quadro: ' + ' '.join(f'{k[10:]}={d.get(k, 0) / fr:.0f}' for k in (
                 'bag2_heat.faces_visible', 'bag2_heat.faces_uvforced', 'bag2_heat.children', 'bag2_heat.pk_textured',
                 'bag2_heat.pk_base')), flush=True)

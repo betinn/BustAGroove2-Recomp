@@ -106,6 +106,23 @@ emulado anda junto com o real e a música mantém o ritmo. O que mudou da 1ª ve
    pacotes por quadro. A GPU emulada gasta ~0,2 us por palavra de comando no DMA (10 palavras por pacote),
    e era isso que travava o thread do jogo.
 
+**Carga de mais personagens** (modo de teste 4..6: o plugin desenha 1..3 cópias extras do HEAT remake ao
+lado, para simular outros personagens com remake; mesmo método, 25 s cada):
+
+| cópias do remake | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|
+| 0 (original) | 59,9 | 48 % | 62 % | 0 |
+| 1 | 59,9 | 60 % | ~50 % | 0 |
+| 2 (dois jogadores) | 60,0, mín. 57, 3 s abaixo de 59,5 | 82 % (máx. 91) | 66 % (máx. 78) | 0 |
+| 3 (dois jogadores + algo do tamanho de um palco) | 58,1, mín. 51 | 99 % | 84 % | 107 |
+| 4 | 48,8 | 100 % | 81 % | 573 |
+
+Com a ordem padrão do jogo dentro do slot (sem agrupar por banco) já 2 cópias caíam para 54 fps com a thread
+de render em 95 %; por isso o agrupamento por banco virou o padrão (`s_flags = 2`). Conclusão: este caminho
+(cada triângulo passa pelo DMA e pela GPU emulados, ~0,2 us por palavra) aguenta dois personagens no
+limite, sem folga para um palco. Para mais, o PSXRecomp precisaria de uma submissão direta de malha ao
+renderizador GL (a doc do próprio framework diz que ainda não existe) e de bancos num texture array.
+
 **Comandos de depuração** (só na build-debug, TCP 4370): `mod_cmd heat_mode "<modo> <nível> <α> <tol>
 <flags> <orçamento>"` com modo 0 original, 1 remake, 2 os dois sobrepostos, 3 os dois lado a lado (o remake ao lado do
 original, no mesmo quadro); `heat_dump <arquivo>` despeja nós, matrizes e registradores do GTE.

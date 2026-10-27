@@ -62,11 +62,15 @@ static struct {
 static uint8_t* s_amask[64];         /* máscara de alfa 1024x1024 por camada HD (1 byte por texel) */
 static uint32_t s_arena;             /* endereço guest da arena (2 metades) */
 static uint32_t s_arena_off, s_last_parity = 0xFFFFFFFFu;
-static int s_mode = 1;               /* 0 original, 1 remake, 2 os dois sobrepostos, 3 os dois lado a lado */
+static int s_mode = 1;               /* 0 original, 1 remake, 2 os dois sobrepostos, 3 os dois lado a lado,
+                                        4..6 mais 1..3 cópias do remake ao lado (teste de carga) */
 static float s_shift;                /* deslocamento x do remake no modo 3 (pixels do PS1) */
 static int s_level = 4;              /* máximo de divisões por aresta (4 -> até 16 triângulos por face) */
 static float s_alpha = 0.6f;         /* Phong Tessellation */
-static int s_flags;                  /* bit 0 = sem cor base sob textura (depuração); bit 1 = agrupar por banco no slot */
+/* bit 0 = sem cor base sob textura (depuração); bit 1 = dentro de cada slot da OT, overlays agrupados por banco e
+ * depois as bases, em vez da ordem de inserção do jogo. Padrão ligado: corta as trocas de textura (cada uma fecha
+ * um lote do GL) e a thread de render cai de ~79 % para ~49 % por HEAT; nas capturas não se vê diferença. */
+static int s_flags = 2;
 static volatile int s_dump_request;
 static char s_dump_path[260] = "heat_dump.txt";
 
@@ -581,7 +585,12 @@ static int heat_filter(struct CPUState* cpu, uint32_t address) {
     s_shift = 0;
     if (s_mode == 3) s_shift = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
     draw_heat(cpu, nodes, n);
-    return s_mode == 1;   /* 1: pula o desenho original; 2 e 3: desenha os dois (conferir alinhamento/comparar) */
+    if (s_mode >= 4) {   /* teste de carga: mais (modo - 3) cópias do remake ao lado (simula outros personagens) */
+        const float w = (s_bbox[2] > s_bbox[0] ? s_bbox[2] - s_bbox[0] : 60.0f) * 1.05f;
+        for (int c = 1; c <= s_mode - 3; c++) { s_shift = w * c; draw_heat(cpu, nodes, n); }
+        s_shift = 0;
+    }
+    return s_mode == 1 || s_mode >= 4;   /* 1 e 4+ pulam o original; 2 e 3 desenham os dois (comparar) */
 }
 
 static int heat_dump_cmd(const char* args, char* reply, int cap) {
@@ -597,7 +606,7 @@ static int heat_mode_cmd(const char* args, char* reply, int cap) {
     if (bud > 0) s_budget = (uint32_t)bud;
     if (fl >= 0) s_flags = fl;
     if (tol > 0) s_tol = tol;
-    if (m >= 0 && m <= 3) s_mode = m;
+    if (m >= 0 && m <= 6) s_mode = m;
     if (lv >= 1 && lv <= 6) s_level = lv;
     if (al >= 0 && al <= 1) s_alpha = al;
     snprintf(reply, cap, "mode=%d level=%d alpha=%.2f tol=%.3f (efetiva %.3f) budget=%u loaded=%d arena=%08X "
