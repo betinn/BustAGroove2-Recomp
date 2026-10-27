@@ -1,0 +1,258 @@
+# Patch local do PSXRecomp para o remake do HEAT (notes/remake-visual.md, seção Desempenho).
+# Aplicar em C:/tools/psxrecomp depois de psxrecomp-hd-cache-caps.patch: git apply --ignore-whitespace <este arquivo>
+diff --git a/runtime/include/mod_memory.h b/runtime/include/mod_memory.h
+index 98fb0ec6..31b2aeaa 100644
+--- a/runtime/include/mod_memory.h
++++ b/runtime/include/mod_memory.h
+@@ -76,6 +76,8 @@ uint32_t psx_mod_gpu_dma_resolve_address(uint32_t address);
+ /* A complete range in the allocated GPU packet aperture (CPU or tag address).
+  * Unallocated bytes, BIOS aliases and a range crossing its end are refused. */
+ int psx_mod_gpu_dma_memory_contains(uint32_t address,uint32_t bytes);
++/* bag2 (patch local): ponteiro de host para bytes já alocados da arena (NULL fora dela). */
++uint8_t *psx_mod_gpu_dma_host_ptr(uint32_t address, uint32_t bytes);
+ uint32_t psx_mod_memory_alloc(uint32_t size, uint32_t alignment);
+ /* Allocations are fixed during activation. Snapshot allocated bytes, never
+  * host pointers; immutable host assets are reconstructed separately. */
+diff --git a/runtime/include/mod_plugins.h b/runtime/include/mod_plugins.h
+index d77acc18..f4bb4695 100644
+--- a/runtime/include/mod_plugins.h
++++ b/runtime/include/mod_plugins.h
+@@ -243,6 +243,9 @@ int psx_mod_dma_write_ram(uint32_t address, const void* data, uint32_t bytes,
+ /* Store bytes through the CPU store path (any alignment): for data the
+  * original code produces with CPU stores, e.g. a decompressor's output. */
+ int psx_mod_host_write_ram(uint32_t address, const void* data, uint32_t bytes);
++/* bag2 (patch local): cópia em bloco para a arena de pacotes (psx_mod_alloc_texture_packet_memory),
++ * sem passar pelo caminho de store da CPU palavra a palavra. 0 fora da arena. */
++int psx_mod_write_gpu_dma(uint32_t address, const void* data, uint32_t bytes);
+ /* PsyQ SpuWrite by DMA, completed synchronously: transfer address, DMA-write
+  * transfer mode, the words through the SPU's DMA write path (address
+  * advance and sample-IRQ checks), then transfer mode stop when stop_after.
+diff --git a/runtime/src/gpu.c b/runtime/src/gpu.c
+index 0e50a7cd..d44101a0 100644
+--- a/runtime/src/gpu.c
++++ b/runtime/src/gpu.c
+@@ -5608,12 +5608,19 @@ static void gp0_exec_shaded_textured_tri(void) {
+                       !gl_renderer_select_texture_bank(host_bank))) return;
+ 
+     gr_set_semi_transparency(semi_trans, (int)semi_transparency);
+-    prepare_precise_triangle(1, 4, 7,
+-                             vx, vy);
+-    prepare_texture_triangle(1, 4, 7);
++    /* bag2 (patch local): pacote de arena com sufixo de precisão já traz x/y e 1/z exatos; as buscas do
++     * PGXP (prepare_*) por vértice eram trabalho jogado fora a cada triângulo do remake. */
++    float bank_q[3], bank_xy[6];
++    const int bank_precise = host_bank && mod_texture_packet_precision(gp0_cmd_source_addr, bank_q, bank_xy);
++    if (!bank_precise) {
++        prepare_precise_triangle(1, 4, 7,
++                                 vx, vy);
++        prepare_texture_triangle(1, 4, 7);
++    }
+     if (host_bank) {
+         float q[3], xy[6];
+-        if (mod_texture_packet_precision(gp0_cmd_source_addr, q, xy)) {
++        if (bank_precise) { memcpy(q, bank_q, sizeof q); memcpy(xy, bank_xy, sizeof xy); }
++        if (bank_precise) {
+             gr_set_precise_triangle(1,
+                 (int32_t)((xy[0] + draw_offset_x) * 65536.0f),
+                 (int32_t)((xy[1] + draw_offset_y) * 65536.0f),
+diff --git a/runtime/src/memory.c b/runtime/src/memory.c
+index 53b3c460..092086ba 100644
+--- a/runtime/src/memory.c
++++ b/runtime/src/memory.c
+@@ -156,6 +156,13 @@ uint32_t psx_mod_gpu_dma_resolve_address(uint32_t address) {
+         address, mod_gpu_dma_memory_used);
+ }
+ 
++/* bag2 (patch local): ponteiro de host para um trecho alocado da arena de DMA (NULL fora dela). */
++uint8_t *psx_mod_gpu_dma_host_ptr(uint32_t address, uint32_t bytes) {
++    uint32_t off;
++    if (!bytes || !mod_gpu_dma_memory_offset(address & 0x1FFFFFFFu, bytes, &off)) return NULL;
++    return mod_gpu_dma_memory + off;
++}
++
+ int psx_mod_gpu_dma_memory_contains(uint32_t address,uint32_t bytes) {
+     return bytes!=0 && mod_gpu_dma_memory_offset(address&0x1FFFFFFFu,bytes,NULL);
+ }
+diff --git a/runtime/src/mod_guest_services.c b/runtime/src/mod_guest_services.c
+index a15282bf..2dfa5cd2 100644
+--- a/runtime/src/mod_guest_services.c
++++ b/runtime/src/mod_guest_services.c
+@@ -112,6 +112,16 @@ static int ram_span(uint32_t address, uint32_t bytes) {
+     return address < 0xC0000000u && phys < live && bytes <= live - phys;
+ }
+ 
++int psx_mod_write_gpu_dma(uint32_t address, const void* data, uint32_t bytes) {
++    extern uint8_t *psx_mod_gpu_dma_host_ptr(uint32_t address, uint32_t bytes);
++    uint8_t *dst;
++    if (psx_mod_host_output_scope()) return 0;
++    dst = psx_mod_gpu_dma_host_ptr(address, bytes);
++    if (!dst || !data) return 0;
++    memcpy(dst, data, bytes);
++    return 1;
++}
++
+ int psx_mod_host_write_ram(uint32_t address, const void* data, uint32_t bytes) {
+     if (psx_mod_host_output_scope()) return 0;
+     const uint8_t* p = (const uint8_t*)data;
+diff --git a/runtime/src/mod_texture_banks.c b/runtime/src/mod_texture_banks.c
+index d58d9f0f..d6086110 100644
+--- a/runtime/src/mod_texture_banks.c
++++ b/runtime/src/mod_texture_banks.c
+@@ -83,11 +83,15 @@ int mod_texture_packet_precision(uint32_t source, float q[3], float xy[6]) {
+     for (i = 0; i < arena_count; ++i) {
+         if (arenas[i].size < 80u || address < arenas[i].begin ||
+             address - arenas[i].begin > arenas[i].size - 76u) continue;
+-        if (psx_mod_read_word(source + 36u) != 0x48545031u) return 0;
+-        for (j = 0; j < 9u; ++j) {
+-            uint32_t bits = psx_mod_read_word(source + 40u + j * 4u);
++        {   /* bag2 (patch local): leitura direta da arena em vez de 10 leituras pelo barramento */
++            const uint8_t *src = psx_mod_gpu_dma_host_ptr(source + 36u, 40u);
++            uint32_t magic;
++            if (!src) return 0;
++            memcpy(&magic, src, 4);
++            if (magic != 0x48545031u) return 0;
++            for (j = 0; j < 9u; ++j) {
+             float f;
+-            memcpy(&f, &bits, sizeof f);
++            memcpy(&f, src + 4u + j * 4u, sizeof f);
+             if (!isfinite(f)) return 0;
+             if (j < 3u) {
+                 if (f <= 0.0f || f > 1.0f) return 0;
+@@ -97,6 +101,7 @@ int mod_texture_packet_precision(uint32_t source, float q[3], float xy[6]) {
+                 xy[j - 3u] = f;
+             }
+         }
++        }
+         return 1;
+     }
+     return 0;
+--- a/runtime/src/gpu_gl_renderer.c
++++ b/runtime/src/gpu_gl_renderer.c
+@@ -469,7 +469,8 @@
+     RTH_WIDE_DISABLE, RTH_WIDE_CLEAR, RTH_WIDE_CLEAR_MARGINS, RTH_PROJ_TRI,
+     RTH_WIDE_RECOVERY, RTH_INTERP_SUSPENDED, RTH_PRESENT_VRAM,
+     RTH_PRESENT_WIDE, RTH_STATE, RTH_PEEK, RTH_RING_CAPTURE, RTH_DYN_STEP,
+-    RTH_FRAME, RTH_FG_SRC, RTH_DEPTH, RTH_HD_NOTE, RTH_DITHER, RTH_WIDE_FEEDBACK
++    RTH_FRAME, RTH_FG_SRC, RTH_DEPTH, RTH_HD_NOTE, RTH_DITHER, RTH_WIDE_FEEDBACK,
++    RTH_BANK   /* bag2: seleção de banco de textura gravada no fluxo (sem sync por pacote) */
+ };
+ /* GP0(A0) whose payload gpu.c is still streaming into its array (the
+  * facade's vram_upload_open, emulation thread), tracked whatever the HD
+@@ -6416,8 +6417,10 @@
+                                 cap_px, ow, oh);
+ }
+ 
+-int gl_renderer_select_texture_bank(uint16_t id) {
+-    GL_RT_SYNC("select_texture_bank");
++/* bag2 (patch local): a seleção de banco roda na thread que tem o contexto GL. Com a thread de render
++ * ligada, a thread do jogo só grava RTH_BANK; antes cada seleção chamava GL_RT_SYNC, que devolve o
++ * contexto e copia a VRAM inteira de volta, uma vez por pacote. */
++static int glb_select_texture_bank(uint16_t id, int live_clut) {
+     uint32_t width, height;
+     const uint16_t* pixels;
+     GLint alignment, row_length;
+@@ -6448,14 +6451,38 @@
+         }
+     }
+     s_selected_bank_tex = s_bank_tex[id];
++    s_selected_bank_live_clut = live_clut != 0;
++    return 1;
++}
++
++static int rth_record_mode(void);
++/* Banco já gravado no fluxo (-1 = desconhecido) e volta ao banco 0 pendente. gpu.c seleciona o banco antes
++ * de cada pacote da arena e volta ao 0 depois; gravar as duas coisas por pacote dobrava os registros. A
++ * volta ao 0 só é gravada quando outro desenho vier (rth_rec_ints), e some se o próximo pacote usar o
++ * mesmo banco. */
++static int s_rec_bank = -1, s_rec_bank_live = 0, s_rec_bank_zero_pending = 0;
++static int s_rec_semi = -1;   /* último SEMI gravado (rtb_set_semi_transparency) */
++static int rth_record_bank(uint16_t id, int live_clut) {
++    uint32_t w, h;
++    if (id && (!gl_renderer_texture_banks_supported() || !mod_texture_bank_pixels(id, &w, &h))) return 0;
++    if (!id) { if (s_rec_bank != 0) s_rec_bank_zero_pending = 1; return 1; }
++    s_rec_bank_zero_pending = 0;
++    if (s_rec_bank == (int)id && s_rec_bank_live == live_clut) return 1;
++    RTH_REC(RTH_BANK, 0, (int32_t)id, live_clut);
++    s_rec_bank = id; s_rec_bank_live = live_clut;
+     return 1;
+ }
+ 
++int gl_renderer_select_texture_bank(uint16_t id) {
++    if (rth_record_mode()) return rth_record_bank(id, 0);
++    GL_RT_SYNC("select_texture_bank");
++    return glb_select_texture_bank(id, 0);
++}
++
+ int gl_renderer_select_texture_bank_live_clut(uint16_t id) {
++    if (rth_record_mode()) return rth_record_bank(id, 1);
+     GL_RT_SYNC("select_texture_bank_live_clut");
+-    if (!gl_renderer_select_texture_bank(id)) return 0;
+-    s_selected_bank_live_clut = id != 0;
+-    return 1;
++    return glb_select_texture_bank(id, 1);
+ }
+ 
+ int gl_renderer_init_context(SDL_Window *win) {
+@@ -11260,6 +11287,15 @@
+ }
+ 
+ static int rth_rec_ints(uint16_t op, uint16_t flags, int n, const int32_t *v) {
++    if (s_rec_bank_zero_pending && op != RTH_BANK && op != RTH_SEMI && op != RTH_MASK && op != RTH_TWIN &&
++        op != RTH_MOD && op != RTH_PRECISE && op != RTH_PERSP && op != RTH_DEPTH && op != RTH_DITHER &&
++        op != RTH_STATE) {
++        const int32_t z[2] = {0, 0};
++        int32_t *q = (int32_t *)rt_cmd_begin(RTH_BANK, 0, 8u);
++        if (q) { memcpy(q, z, 8u); rt_cmd_commit(); }
++        s_rec_bank = 0; s_rec_bank_live = 0; s_rec_bank_zero_pending = 0;
++    }
++    if (op == RTH_FRAME) { s_rec_bank = -1; s_rec_semi = -1; }   /* bag2: nada de cache entre quadros */
+     int32_t *p = (int32_t *)rt_cmd_begin(op, flags, (uint32_t)n * 4u);
+     if (!p) return 0;
+     memcpy(p, v, (size_t)n * 4u);
+@@ -11313,6 +11349,12 @@
+ 
+ static void gl_rth_acquire(const char *reason) {
+     if (!s_rth_on || rt_on_render_thread() || rt_held()) return;
++    if (s_rec_bank_zero_pending) {   /* a volta ao banco 0 pendente vira estado direto */
++        s_rec_bank_zero_pending = 0;
++        RTH_REC(RTH_BANK, 0, 0, 0);
++    }
++    s_rec_bank = -1;
++    s_rec_semi = -1;
+     rt_acquire(reason);
+     rth_hd_publish_private();
+     s_vram = s_rth_vram_pub;
+@@ -11848,7 +11890,7 @@
+     case RTH_TEX_TRI: case RTH_SHADED_TEX_TRI: case RTH_FLAT_RECT: case RTH_TEX_RECT:
+     case RTH_TEX_RECT_SCALED: case RTH_LINE: case RTH_SHADED_LINE: case RTH_AREA:
+     case RTH_OFFSET: case RTH_WIDE_VIEW: case RTH_WIDE_TARGET: case RTH_WIDE_DISABLE:
+-    case RTH_WIDE_CLEAR: case RTH_WIDE_CLEAR_MARGINS: case RTH_PROJ_TRI: case RTH_STATE:
++    case RTH_WIDE_CLEAR: case RTH_WIDE_CLEAR_MARGINS: case RTH_PROJ_TRI: case RTH_STATE: case RTH_BANK:
+         return 1;
+     default:
+         return 0;
+@@ -14174,8 +14216,15 @@
+ static int  rtb_texture_filter(void) { return s_tex_filter; }
+ static void rtb_set_dither(int on) {
+     RTH_DIRECT_OR(RTH_REC(RTH_DITHER, 0, on ? 1 : 0)); glb_set_dither(on); }
++/* bag2 (patch local): não grava SEMI repetido (cada polígono chama; o remake manda milhares por quadro). */
+ static void rtb_set_semi_transparency(int e, int m) {
+-    RTH_DIRECT_OR(RTH_REC(RTH_SEMI, 0, e, m)); glb_set_semi_transparency(e, m); }
++    if (rth_record_mode()) {
++        const int key = (e ? 1 : 0) | (m << 1);
++        if (key != s_rec_semi) { RTH_REC(RTH_SEMI, 0, e, m); s_rec_semi = key; }
++        return;
++    }
++    s_rec_semi = -1;
++    glb_set_semi_transparency(e, m); }
+ static void rtb_set_mask_bits(int sb, int cb) {
+     RTH_DIRECT_OR(RTH_REC(RTH_MASK, 0, sb, cb)); glb_set_mask_bits(sb, cb); }
+ static void rtb_set_texture_window(uint32_t r) {
+@@ -14432,6 +14481,7 @@
+     if (s_fg_on) fg_capture(c, payload);
+     switch (c->op) {
+     case RTH_SEMI:      glb_set_semi_transparency(v[0], v[1]); break;
++    case RTH_BANK:      (void)glb_select_texture_bank((uint16_t)v[0], v[1]); break;
+     case RTH_DITHER:    glb_set_dither(v[0]); break;
+     case RTH_MASK:      glb_set_mask_bits(v[0], v[1]); break;
+     case RTH_TWIN:      glb_set_texture_window((uint32_t)v[0]); break;

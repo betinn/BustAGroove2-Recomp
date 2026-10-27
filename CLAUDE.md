@@ -48,7 +48,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   deduplicados) em `build/mods/texture-packs/SLUS-01159/replacements/` (fora do git). Para capturar mais palcos:
   `build/mods/state.toml` com `dump = "true"`, `replacements = "false"` (strings), jogar, fechar a janela (não
   `Stop-Process`, senão perde o último lote), rodar o script de novo (incremental). Notas §12 e §12.1.
-- **Framework patcheado localmente** (`tools/recomp/patches/psxrecomp-hd-cache-caps.patch`): caches do mod HD
+- **Framework patcheado localmente** (`tools/recomp/patches/psxrecomp-hd-cache-caps.patch` e, por cima,
+  `psxrecomp-texture-bank-render-thread.patch`): caches do mod HD
   (composições e imagens GL) ampliados; sem isso a partida trava (13–35 fps). Reaplicar se `C:/tools/psxrecomp`
   for atualizado. Medição de desempenho: `build-debug/` (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370) + `tools/recomp/bag2perf.py`.
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
@@ -57,7 +58,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Remake do HEAT no jogo** (prova de conceito, `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de
   filtro em `FUN_80029D4C`, listado em `[recompiler] mod_function_entry_funcs`), pacote
   `mods/preloaded/packages/bag2.remake.heat`, asset `mods/remake/heat.bin` gerado por
-  `tools/remake/export_heat.py` (fora do git). Exige `render_thread = false` (já no `game.toml`).
+  `tools/remake/export_heat.py` (fora do git). Exige o patch local
+  `tools/recomp/patches/psxrecomp-texture-bank-render-thread.patch` no framework (sem ele, ~30-40 fps).
+  Medir: `tools/remake/game_perf.py` (fps por segundo, thread do jogo, underruns de áudio).
   Testes automáticos na build-debug: `tools/remake/game_session.py`, `game_sidebyside.py`.
 - As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
   antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e

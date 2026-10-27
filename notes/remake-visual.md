@@ -5,7 +5,7 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
 (id 0, container `k = 3`), em duas etapas:
 1. **Offline** (`tools/remake/heat_remake.py`): renders ORIGINAL x MODERNIZADO, turntable e GIF de dança.
 2. **No jogo** (`tools/recomp/bag2/src/bag2_heat.c`): o exe troca o desenho do HEAT pela malha suavizada
-   com texturas HD e luz nova, numa partida de verdade, a 54–59 fps (ainda abaixo de 60). Os outros personagens e os palcos ficam
+   com texturas HD e luz nova, numa partida de verdade, a 60 fps estáveis (ver Desempenho). Os outros personagens e os palcos ficam
    originais.
 
 ## Como reproduzir
@@ -66,8 +66,8 @@ outra árvore segue o caminho original.
 1. posição de cada vértice no espaço da câmera = matriz do osso dono lida da RAM (a mesma do GTE);
 2. culling pelo mesmo NCLIP > 0 do jogo, normais por vértice;
 3. Phong Tessellation com nível **adaptativo**: cada face é dividida só o necessário para a curva de Phong
-   ficar a menos de 0,12 pixel do PS1 da corda (até 4 divisões por aresta), e o bastante para o UV de cada
-   pedaço caber numa janela de 256 texels HD (o UV do GT3 tem 8 bits);
+   ficar a menos de 0,25 pixel do PS1 da corda (até 4 divisões por aresta; orçamento de 3300 triângulos por
+   quadro), e o bastante para o UV de cada pedaço caber numa janela de 256 texels HD (o UV do GT3 tem 8 bits);
 4. luz por vértice nova no espaço da câmera (principal quente, preenchimento frio, contraluz, um brilho e
    oclusão ambiente pré-calculada por vértice);
 5. pacotes GT3 numa **arena de DMA do runtime** (`psx_mod_alloc_texture_packet_memory`, 0x80800000) com o
@@ -82,18 +82,32 @@ outra árvore segue o caminho original.
    (decalques) ficam como no original. Face com textura sobre cor: base e textura no mesmo slot, a base
    desenhada antes; pedaços com textura toda opaca dispensam a base, pedaços sem texel dispensam a textura.
 
-**Desempenho** (build-debug, partida de 2 personagens, RTX 3070 Ti): ~5 a 6 mil pacotes por quadro,
-plugin ~3,8 ms. Por segundo, o jogo fica em **57–59 fps** num palco e **54–59 fps** noutro, mais pesado, com o
-thread do jogo em 98–100 % (sem folga), desde que `[video] render_thread = false`. **Ainda não é 60 estável**:
-perde alguns quadros por segundo, e o efeito disso no ritmo da música não foi medido. Com a thread de render
-ligada cada troca de banco de textura faz o runtime devolver o contexto GL ao thread do jogo e copiar a VRAM
-inteira, e a partida cai para ~40 fps; por isso o `game.toml` agora tem `render_thread = false` (o jogo sem
-o remake também roda a 60 assim). Antes de agrupar por slot/banco, uma chamada de desenho por triângulo
-derrubava para 9 fps. Para corrigir de vez, o PSXRecomp precisaria gravar a seleção de banco no fluxo de
-comandos da thread de render (patch no framework).
+**Desempenho** (build-debug, partida de 2 personagens, RTX 3070 Ti; `tools/remake/game_perf.py`):
+
+| | fps por segundo | thread do jogo | underruns de áudio |
+|---|---|---|---|
+| HEAT original | 59,9 (mín. 59,9) | 48 % | 0 |
+| remake, 1ª versão, `render_thread = true` | 31 (mín. 27) | 82 % | 528 em 30 s |
+| remake, 1ª versão, `render_thread = false` | 58,0 (mín. 49,7) | 96 % (máx. 100) | — |
+| **remake atual, `render_thread = true`, 150 s** | **59,9 (mín. 59,9, nenhum segundo abaixo)** | **61 % (máx. 64)** | **0** |
+
+Underrun é o áudio sem amostras na hora de tocar, o que se ouve como engasgo; com o jogo a 60 o tempo
+emulado anda junto com o real e a música mantém o ritmo. O que mudou da 1ª versão para a atual:
+1. **Patch local no PSXRecomp** (`tools/recomp/patches/psxrecomp-texture-bank-render-thread.patch`, aplicar
+   depois do `psxrecomp-hd-cache-caps.patch`): a seleção de banco de textura passa a ser gravada no fluxo de
+   comandos da thread de render (`RTH_BANK`) em vez de devolver o contexto GL e copiar a VRAM a cada pacote;
+   a volta ao banco 0 depois de cada pacote só é gravada quando outro desenho vier; SEMI repetido não é
+   gravado; o sufixo de precisão é lido direto da arena; pacote com sufixo pula as buscas do PGXP; nova
+   função `psx_mod_write_gpu_dma` copia os pacotes para a arena de uma vez. Com isso `render_thread` volta a
+   `true` (o jogo base também ganha: 48 % do thread do jogo contra 72 % sem a thread de render).
+2. Plugin de 3,8 ms para 0,6 ms: cópia única para a arena, OT lida e escrita uma vez por slot, sem `lrintf`.
+3. **Menos pacotes**: tolerância de Phong 0,25 pixel do PS1 (era 0,12) e orçamento de 3300 triângulos por
+   desenho do HEAT; num close, em vez de multiplicar os pacotes, a tolerância sobe sozinha. Ficam ~3,4 mil
+   pacotes por quadro. A GPU emulada gasta ~0,2 us por palavra de comando no DMA (10 palavras por pacote),
+   e era isso que travava o thread do jogo.
 
 **Comandos de depuração** (só na build-debug, TCP 4370): `mod_cmd heat_mode "<modo> <nível> <α> <tol>
-<flags>"` com modo 0 original, 1 remake, 2 os dois sobrepostos, 3 os dois lado a lado (o remake ao lado do
+<flags> <orçamento>"` com modo 0 original, 1 remake, 2 os dois sobrepostos, 3 os dois lado a lado (o remake ao lado do
 original, no mesmo quadro); `heat_dump <arquivo>` despeja nós, matrizes e registradores do GTE.
 `mod_counters` mostra `bag2_heat.*` (pacotes, filhos, microssegundos por etapa).
 
@@ -106,7 +120,7 @@ palco) e `game_compare.py` (alterna variantes; os quadros ficam ~1 s um do outro
 ## O que funcionou
 - Formato, esqueleto, texturas e animação do disco até o quadro animado.
 - No jogo: posição, pose, culling e ordem batem com o original; o HEAT novo dança a partida inteira com
-  palco, sombra do jogo, HUD e o outro dançarino intactos, perto de 60 fps (54–59; falta folga, ver Desempenho).
+  palco, sombra do jogo, HUD e o outro dançarino intactos, a 60 fps com o thread do jogo em ~61 %.
 - Arredondamento de braços, pernas, sapatos e rosto; texturas HD nítidas; luz com volume.
 
 ## Limites reais (honesto)
@@ -128,7 +142,7 @@ palco) e `game_compare.py` (alterna variantes; os quadros ficam ~1 s um do outro
 - **Release com só o HEAT**: empacotar `heat.bin` e o exe como `v1.4.0` (meia sessão), depois de jogar
   algumas partidas e decidir se fica `default_enabled`.
 - **Melhorias do HEAT no jogo** (1–2 sessões): usar as matrizes de luz do jogo, paleta do P2, mãos
-  alternativas, patch no framework para a thread de render.
+  alternativas.
 - **Outros 17 personagens**: o pipeline é genérico (exporte por personagem + assinatura dos ossos);
   1–2 sessões para todos, mais ajustes nos que fugirem do esqueleto de 19 ossos ou usarem primitivas que o
   HEAT não usa (semitransparência ainda não implementada).

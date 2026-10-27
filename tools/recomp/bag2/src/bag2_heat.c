@@ -195,8 +195,13 @@ static GridPt* s_grid;                     /* GRID_PTS por face */
 static Child* s_kids;
 static uint8_t* s_vis;
 static Pkt* s_pk;
+static uint32_t* s_out;                    /* pacotes na ordem final, copiados de uma vez para a arena */
+static int iround(float f) { return (int)(f >= 0 ? f + 0.5f : f - 0.5f); }   /* sem chamada à libm */
 static uint32_t* s_order; static uint32_t* s_tmp;
-static float s_tol = 0.12f;                /* desvio máximo da corda, em pixels do PS1 */
+static float s_tol = 0.25f;                /* desvio máximo da corda, em pixels do PS1 */
+static uint32_t s_budget = 3300;           /* máximo de triângulos (filhos) por desenho do HEAT */
+static float s_tol_used;                   /* tolerância efetiva do último quadro (sobe em closes) */
+static float* s_dev; static uint8_t* s_luv;
 static float s_bbox[4];                    /* último retângulo do HEAT na tela (pixels do PS1), para capturas */
 /* Cobertura do overlay por filho e por nível (UV é fixo): bit 0 = algum texel opaco, bit 1 = todos.
  * Filho todo opaco dispensa a cor base; filho sem texel dispensa o overlay. */
@@ -303,12 +308,12 @@ static void prepare(Pkt* pk, int oi, uint32_t face, const GridPt* g[3], int text
     uint32_t* w = pk->w;
     const float sc = 128.0f / 255.0f;
     for (int i = 0; i < 3; i++) {
-        int uu = textured ? (int)lrintf(g[i]->u) - x0 : 8, vv = textured ? (int)lrintf(g[i]->v) - y0 : 8;
+        int uu = textured ? iround(g[i]->u) - x0 : 8, vv = textured ? iround(g[i]->v) - y0 : 8;
         uint32_t u = (uint32_t)(uu < 0 ? 0 : uu > 255 ? 255 : uu), v = (uint32_t)(vv < 0 ? 0 : vv > 255 ? 255 : vv);
         const float* c = textured ? g[i]->over : g[i]->base;
         const float s = textured ? 1.0f : sc;
         w[1 + i * 3] = rgb(c[0] * s * g[i]->lit[0], c[1] * s * g[i]->lit[1], c[2] * s * g[i]->lit[2]);
-        int x = (int)lrintf(g[i]->sx), y = (int)lrintf(g[i]->sy);
+        int x = iround(g[i]->sx), y = iround(g[i]->sy);
         w[2 + i * 3] = (uint32_t)(uint16_t)(int16_t)x | (uint32_t)(uint16_t)(int16_t)y << 16;
         w[3 + i * 3] = v << 8 | u;
     }
@@ -364,9 +369,12 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
         s_grid = (GridPt*)malloc(sizeof(GridPt) * A.n_tris * GRID_PTS);
         s_kids = (Child*)malloc(sizeof(Child) * A.n_tris * LMAX * LMAX);
         s_vis = (uint8_t*)malloc(A.n_tris);
+        s_dev = (float*)malloc(sizeof(float) * A.n_tris);
+        s_luv = (uint8_t*)malloc(A.n_tris);
         s_pk = (Pkt*)malloc(sizeof(Pkt) * MAX_PKTS);
         s_order = (uint32_t*)malloc(sizeof(uint32_t) * MAX_PKTS);
         s_tmp = (uint32_t*)malloc(sizeof(uint32_t) * MAX_PKTS);
+        s_out = (uint32_t*)malloc(PKT_BYTES * MAX_PKTS);
         s_lk = norm(v3(-0.45f, -0.80f, -0.55f)); s_lf = norm(v3(0.75f, -0.15f, -0.55f)); s_lr = norm(v3(0.25f, -0.45f, 1.0f));
         compute_cover();
     }
@@ -395,13 +403,14 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
     /* grade de Phong por face visível, com nível adaptativo: divide só onde a curva de Phong se afasta da
      * corda mais que s_tol pixels (o desvio cai com L², daí a raiz). Arestas vizinhas com níveis diferentes
      * deixam uma junção em T com fresta menor que s_tol. */
-    uint32_t nk = 0;
-    float bb4[4] = {1e9f, 1e9f, -1e9f, -1e9f};
+    /* Passo A: desvio de Phong (pixels do PS1) e mínimo de divisões pelo UV de cada face visível. */
+    uint32_t n_uvforced = 0, n_vis = 0, n_tex = 0, n_base = 0;
     for (uint32_t f = 0; f < A.n_tris; f++) {
         if (!s_vis[f]) continue;
+        n_vis++;
         const HTri* t = &A.tris[f];
-        V3 P[3], N[3]; float ao[3];
-        for (int k = 0; k < 3; k++) { P[k] = s_P[t->v[k]]; N[k] = s_N[t->v[k]]; ao[k] = A.verts[t->v[k]].ao / 255.0f; }
+        V3 P[3], N[3];
+        for (int k = 0; k < 3; k++) { P[k] = s_P[t->v[k]]; N[k] = s_N[t->v[k]]; }
         float dev = 0;
         for (int e = 0; e < 4; e++) {   /* meios das 3 arestas e o centro */
             V3 m = e < 3 ? mul(add(P[e], P[(e + 1) % 3]), 0.5f) : mul(add(add(P[0], P[1]), P[2]), 1.0f / 3.0f);
@@ -415,8 +424,8 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
             float px = sqrtf(dot(d, d)) * H / (m.z > 64 ? m.z : 64);
             if (px > dev) dev = px;
         }
-        int L = (int)ceilf(sqrtf(dev / s_tol));
-        L = L < 1 ? 1 : L > Lmax ? Lmax : L;
+        s_dev[f] = dev;
+        s_luv[f] = 1;
         if (t->mode != 0 && t->layer >= 0) {
             /* o UV do GT3 tem 8 bits: cada pedaço tem de caber numa janela de 256 texels HD alinhada a 64,
              * ou seja, extensão <= 192; senão o UV satura e a textura sai em cacos */
@@ -426,8 +435,36 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
                 vmin = fminf(vmin, t->uv[k][1]); vmax = fmaxf(vmax, t->uv[k][1]);
             }
             int Luv = (int)ceilf(fmaxf(umax - umin, vmax - vmin) * (float)A.hd_scale / 192.0f);
-            if (Luv > L) L = Luv > LMAX ? LMAX : Luv;
+            s_luv[f] = (uint8_t)(Luv < 1 ? 1 : Luv > LMAX ? LMAX : Luv);
         }
+    }
+    /* Orçamento: o custo do quadro cresce com o nº de pacotes (a GPU emulada gasta ~0,2 us por palavra de
+     * comando), e num close o mesmo s_tol pediria muito mais divisões. Se a soma de L² passar do orçamento,
+     * a tolerância sobe (L² ~ desvio/tol) até caber. */
+    float tol = s_tol;
+    for (int it = 0; it < 6; it++) {
+        uint32_t total = 0;
+        for (uint32_t f = 0; f < A.n_tris; f++) {
+            if (!s_vis[f]) continue;
+            int L = (int)ceilf(sqrtf(s_dev[f] / tol));
+            L = L < 1 ? 1 : L > Lmax ? Lmax : L;
+            if (s_luv[f] > L) L = s_luv[f];
+            total += (uint32_t)(L * L);
+        }
+        if (total <= s_budget) break;
+        tol *= (float)total / (float)s_budget * 1.05f;
+    }
+    s_tol_used = tol;
+    uint32_t nk = 0;
+    float bb4[4] = {1e9f, 1e9f, -1e9f, -1e9f};
+    for (uint32_t f = 0; f < A.n_tris; f++) {
+        if (!s_vis[f]) continue;
+        const HTri* t = &A.tris[f];
+        V3 P[3], N[3]; float ao[3];
+        for (int k = 0; k < 3; k++) { P[k] = s_P[t->v[k]]; N[k] = s_N[t->v[k]]; ao[k] = A.verts[t->v[k]].ao / 255.0f; }
+        int L = (int)ceilf(sqrtf(s_dev[f] / tol));
+        L = L < 1 ? 1 : L > Lmax ? Lmax : L;
+        if (s_luv[f] > L) { L = s_luv[f]; n_uvforced++; }
         GridPt* g = &s_grid[(size_t)f * GRID_PTS];
         int idx = 0;
         for (int i = 0; i <= L; i++)
@@ -469,10 +506,10 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
         oi = oi < OT_MIN ? OT_MIN : oi > OT_MAX ? OT_MAX : oi;
         const uint8_t cov = (t->mode != 0 && t->layer >= 0) ? s_cover[(size_t)ch->tri * KIDS_ALL + kid_off(ch->L) + ch->kid] : 0;
         if (cov & 1) {                                        /* textura (sobre a cor base no modo 1) */
-            prepare(&s_pk[np], oi, ch->tri, g, 1, (uint16_t)(1 + t->layer * BANKS_PER_LAYER)); s_order[np] = np; np++;
+            prepare(&s_pk[np], oi, ch->tri, g, 1, (uint16_t)(1 + t->layer * BANKS_PER_LAYER)); s_order[np] = np; np++; n_tex++;
         }
         if (t->mode == 0 || (t->mode == 1 && !(cov & 2) && !(s_flags & 1))) {   /* cor do material: GT3 com texel branco */
-            prepare(&s_pk[np], oi, ch->tri, g, 0, 0); s_order[np] = np; np++;
+            prepare(&s_pk[np], oi, ch->tri, g, 0, 0); s_order[np] = np; np++; n_base++;
         }
     }
     radix_sort(np);
@@ -481,21 +518,36 @@ static void draw_heat(struct CPUState* cpu, const uint32_t* nodes, int n) {
     if (parity != s_last_parity) { s_last_parity = parity; s_arena_off = 0; }
     const uint32_t half = parity * MAX_PKTS * PKT_BYTES;
     const uint32_t ot_base = rd32(OT_PTR) - 0x180u;
-    uint32_t emitted = 0;
-    for (uint32_t k = 0; k < np && s_arena_off + PKT_BYTES <= MAX_PKTS * PKT_BYTES; k++) {
-        Pkt* pk = &s_pk[s_order[k]];
-        const uint32_t ot = ot_base + 4u * (pk->key >> 16), addr = s_arena + half + s_arena_off;
-        pk->w[0] = 9u << 24 | (rd32(ot) & 0xFFFFFFu);
-        for (int i = 0; i < 20; i++) wr32(addr + 4u * i, pk->w[i]);
-        wr32(ot, addr & 0xFFFFFFu);
-        s_arena_off += PKT_BYTES; emitted++;
+    /* Liga na ordem ordenada: pacotes do mesmo slot ficam seguidos, então a corrente de cada slot é montada
+     * no host e a OT do jogo é lida e escrita uma vez por slot; os pacotes vão para a arena numa cópia só
+     * (psx_mod_write_gpu_dma, patch local do framework), em vez de 20 stores por pacote. */
+    uint32_t emitted = (MAX_PKTS * PKT_BYTES - s_arena_off) / PKT_BYTES;
+    if (emitted > np) emitted = np;
+    const uint32_t base_addr = s_arena + half + s_arena_off;
+    for (uint32_t k = 0; k < emitted;) {
+        const uint32_t slot = s_pk[s_order[k]].key >> 16, ot = ot_base + 4u * slot;
+        uint32_t prev = rd32(ot) & 0xFFFFFFu;
+        for (; k < emitted && (s_pk[s_order[k]].key >> 16) == slot; k++) {
+            uint32_t* w = &s_out[(size_t)k * (PKT_BYTES / 4u)];
+            memcpy(w, s_pk[s_order[k]].w, PKT_BYTES);
+            w[0] = 9u << 24 | prev;
+            prev = (base_addr + k * PKT_BYTES) & 0xFFFFFFu;
+        }
+        wr32(ot, prev);
     }
+    if (emitted && !psx_mod_write_gpu_dma(base_addr, s_out, emitted * PKT_BYTES))
+        for (uint32_t i = 0; i < emitted * (PKT_BYTES / 4u); i++) wr32(base_addr + 4u * i, s_out[i]);
+    s_arena_off += emitted * PKT_BYTES;
     const double t2 = now_us();
     psx_mod_counter_add("bag2_heat.us_geometry", (uint32_t)(t1 - t0));
     psx_mod_counter_add("bag2_heat.us_prepare", (uint32_t)(t15 - t1));
     psx_mod_counter_add("bag2_heat.us_emit", (uint32_t)(t2 - t15));
     psx_mod_counter_add("bag2_heat.packets", emitted);
     psx_mod_counter_add("bag2_heat.children", nk);
+    psx_mod_counter_add("bag2_heat.faces_visible", n_vis);
+    psx_mod_counter_add("bag2_heat.faces_uvforced", n_uvforced);
+    psx_mod_counter_add("bag2_heat.pk_textured", n_tex);
+    psx_mod_counter_add("bag2_heat.pk_base", n_base);
     psx_mod_counter_add("bag2_heat.frames", 1);
 }
 
@@ -540,15 +592,16 @@ static int heat_dump_cmd(const char* args, char* reply, int cap) {
 }
 
 static int heat_mode_cmd(const char* args, char* reply, int cap) {
-    int m = -1, lv = -1, fl = -1; float al = -1, tol = -1;
-    if (args) sscanf(args, "%d %d %f %f %d", &m, &lv, &al, &tol, &fl);
+    int m = -1, lv = -1, fl = -1, bud = -1; float al = -1, tol = -1;
+    if (args) sscanf(args, "%d %d %f %f %d %d", &m, &lv, &al, &tol, &fl, &bud);
+    if (bud > 0) s_budget = (uint32_t)bud;
     if (fl >= 0) s_flags = fl;
     if (tol > 0) s_tol = tol;
     if (m >= 0 && m <= 3) s_mode = m;
     if (lv >= 1 && lv <= 6) s_level = lv;
     if (al >= 0 && al <= 1) s_alpha = al;
-    snprintf(reply, cap, "mode=%d level=%d alpha=%.2f tol=%.3f loaded=%d arena=%08X bbox=%.1f,%.1f,%.1f,%.1f", s_mode,
-             s_level, s_alpha, s_tol, A.loaded, s_arena, s_bbox[0], s_bbox[1], s_bbox[2], s_bbox[3]);
+    snprintf(reply, cap, "mode=%d level=%d alpha=%.2f tol=%.3f (efetiva %.3f) budget=%u loaded=%d arena=%08X "
+             "bbox=%.1f,%.1f,%.1f,%.1f", s_mode, s_level, s_alpha, s_tol, s_tol_used, s_budget, A.loaded, s_arena, s_bbox[0], s_bbox[1], s_bbox[2], s_bbox[3]);
     return 0;
 }
 
