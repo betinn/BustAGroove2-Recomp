@@ -5,7 +5,7 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
 (id 0, container `k = 3`), em duas etapas:
 1. **Offline** (`tools/remake/heat_remake.py`): renders ORIGINAL x MODERNIZADO, turntable e GIF de dança.
 2. **No jogo** (`tools/recomp/bag2/src/bag2_heat.c`): o exe troca o desenho do HEAT pela malha suavizada
-   com texturas HD e luz nova, numa partida de verdade, a 60 fps. Os outros personagens e os palcos ficam
+   com texturas HD e luz nova, numa partida de verdade, a 54–59 fps (ainda abaixo de 60). Os outros personagens e os palcos ficam
    originais.
 
 ## Como reproduzir
@@ -83,7 +83,9 @@ outra árvore segue o caminho original.
    desenhada antes; pedaços com textura toda opaca dispensam a base, pedaços sem texel dispensam a textura.
 
 **Desempenho** (build-debug, partida de 2 personagens, RTX 3070 Ti): ~5 a 6 mil pacotes por quadro,
-plugin ~3,8 ms, jogo a **59–60 fps**, desde que `[video] render_thread = false`. Com a thread de render
+plugin ~3,8 ms. Por segundo, o jogo fica em **57–59 fps** num palco e **54–59 fps** noutro, mais pesado, com o
+thread do jogo em 98–100 % (sem folga), desde que `[video] render_thread = false`. **Ainda não é 60 estável**:
+perde alguns quadros por segundo, e o efeito disso no ritmo da música não foi medido. Com a thread de render
 ligada cada troca de banco de textura faz o runtime devolver o contexto GL ao thread do jogo e copiar a VRAM
 inteira, e a partida cai para ~40 fps; por isso o `game.toml` agora tem `render_thread = false` (o jogo sem
 o remake também roda a 60 assim). Antes de agrupar por slot/banco, uma chamada de desenho por triângulo
@@ -104,7 +106,7 @@ palco) e `game_compare.py` (alterna variantes; os quadros ficam ~1 s um do outro
 ## O que funcionou
 - Formato, esqueleto, texturas e animação do disco até o quadro animado.
 - No jogo: posição, pose, culling e ordem batem com o original; o HEAT novo dança a partida inteira com
-  palco, sombra do jogo, HUD e o outro dançarino intactos, a 60 fps.
+  palco, sombra do jogo, HUD e o outro dançarino intactos, perto de 60 fps (54–59; falta folga, ver Desempenho).
 - Arredondamento de braços, pernas, sapatos e rosto; texturas HD nítidas; luz com volume.
 
 ## Limites reais (honesto)
