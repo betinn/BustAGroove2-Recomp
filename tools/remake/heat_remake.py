@@ -74,7 +74,7 @@ class Character:
     original do mesmo gesto. Gesto atual: self.gesture = (esquerda, direita), índices em hands.GESTURES."""
 
     def __init__(self, name='HEAT', levels=2, crease_deg=80.0, method='phong', pin_open=True, hands=None,
-                 ears=True):
+                 ears=True, ai_body=None):
         self.method, self.levels = method, levels
         k = CHARS.index(name)
         self.nodes, self.anims, self.tims, _ = load_character(DISC, k)
@@ -93,6 +93,11 @@ class Character:
             if ears:
                 import ears as E
                 self.rig = E.attach_nose(E.attach_ears(self.rig))
+            if ai_body:   # experimento de IA: roupa da malha gerada (tools/remake/ai_hybrid.py)
+                import ai_hybrid
+                z = np.load(os.path.join(OUT, 'ai', f'{ai_body}_encaixe.npz'))
+                self.rig, self.ai_info = ai_hybrid.attach_ai_body(
+                    self.rig, self.nodes, z['V'], z['F'], (np.zeros(3), {14: (0, 0, 450), 17: (0, 4096, 450)}))
             import detail
             detail.mark_flat(self.rig)
         else:

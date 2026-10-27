@@ -223,6 +223,33 @@ muda (o espelho da tela larga reaproveita). Escurece só a luz principal. Com a 
 discreta (cabelo atrás da cabeça, pescoço sob o queixo, coxa sob a mão); com ambiente baixo (`heat_light` amb
 0,1) fica forte. Flag 128 desliga. A sombra do jogo no chão continua.
 
+### Experimento de IA imagem→3D (Hunyuan3D-2mini): não entra no jogo
+Autorizado pelo usuário em 2026-10-27. Modelo `tencent/Hunyuan3D-2mini`, subpasta `hunyuan3d-dit-v2-mini`
+(Hugging Face; `model.fp16.safetensors` de 3,8 GB; o repositório trouxe também uma cópia `.ckpt` de 3,8 GB em
+pickle, apagada), código oficial `Tencent-Hunyuan/Hunyuan3D-2` (GitHub), licença Tencent Hunyuan Community (uso
+não comercial; não vale na UE, Reino Unido e Coreia do Sul). Tudo em `tools/recomp/logs/remake/ai/` (fora do git):
+venv próprio com PyTorch 2.11 + CUDA 12.8, `transformers<5` (a série 5 renomeou as camadas do DINOv2 e o
+checkpoint não carrega) e `diffusers<0.36` (compatível com o `huggingface_hub` dessa série).
+Fluxo (scripts em `tools/remake/`):
+1. `ai_input.py`: o HEAT em pose em A (braços a 450/4096 de volta dos nós 14 e 17; na pose de descanso os braços
+   colam no corpo), texturas HD, fundo transparente, 4 vistas 1024².
+2. `ai_mesh.py` (venv da IA): só a vista de frente (o mini é de uma imagem). Octree 256, 50 passos: 75 mil
+   vértices, 150 mil faces, fechada, 20 s de geração, 4,3 GB de VRAM.
+3. `ai_decimate.py` (pymeshlab, quádricas) para 12 mil faces; `ai_fit.py`: escala/centro pela caixa, orientação
+   por Chamfer, ICP de similaridade; erro final 2,3 % da altura.
+4. `ai_hybrid.py` (`Character(ai_body=...)`): roupa da IA (quadril, tronco, braços, pernas; 7,3 mil faces) e o
+   resto como está; vértice rígido no osso do vértice original mais próximo (o esquema do PS1), faces só entre
+   ossos vizinhos, textura da face original mais próxima.
+Resultado (`logs/remake/ai/malha_frente_256_compara.png`, `..._hibrido.png`, `hibrido_zoom.png`): a forma da IA
+tem dobras de pano bonitas (punhos, barra do casaco, gola, barra da calça), mas **perde a identidade** (cabeça
+genérica sem os óculos, sem a peça grande das costas, sapato de caixa, luva fechada) e o híbrido **piora a roupa**
+na dança: a estampa sai picada (cada face pega uma face original diferente e as chamas se partem), há buracos e
+bordas serrilhadas onde as faces entre ossos não vizinhos saem (sem isso, membranas esticadas entre as pernas e um
+fio entre os pés). O remake atual (malha original suavizada + mapas de normal) fica com a estampa limpa. Não foi
+para o jogo nem foi medido. Para valer a pena faltaria: modelo de várias vistas (`tencent/Hunyuan3D-2mv`, outro
+download), textura assada num atlas novo (UV de 16 bits no asset; hoje o UV é u8 por página de 256) e pesos de
+pele suaves nas juntas (o núcleo só tem um osso por vértice).
+
 ### Comparação A/B no mesmo quadro
 `heat_mode` ganhou um 7º número: nos modos 4..6 as cópias usam `flags ^ isto`. `game_sidebyside.py` com modo 4
 recorta o remake e a cópia (ex.: `"4 0.6 0.25 2 3300 128"` = com e sem sombra). `HEAT_LIGHT="..."` no ambiente
@@ -273,7 +300,8 @@ Offline (`tools/recomp/logs/remake/heat/`): `maos_{aberta,punho,aponta}.png`, `o
 - Sombra própria discreta sob a luz frontal do palco; só a luz principal faz sombra.
 - As luzes saem do nó 0; se um palco mudar LCM/BK com os efeitos, o remake acompanha, mas só medi o Stage 1.
 - Mapas de normal: 0,9 s de CPU na ativação; para o Polygonia (CPU mais lenta) vale gravar os mapas no asset.
-- Experimento de IA imagem→3D não feito: exige download de modelos (aguarda autorização).
+- Experimento de IA imagem→3D feito offline (Hunyuan3D-2mini): resultado pior que o remake atual, não entra no jogo
+  (ver a seção do experimento).
 
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos

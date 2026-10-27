@@ -58,7 +58,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build ...` e `cmake --build ... --target
   psx-runtime` direto (flags na linha 50 do script) com o PATH de `env.ps1`.
-- **Remake do HEAT no jogo** (fases 0, 1 e 2 de `notes/remake-plano.md`; da 2 falta só o experimento de IA 3D;
+- **Remake do HEAT no jogo** (fases 0, 1 e 2 de `notes/remake-plano.md`; a IA 3D da fase 2 foi testada offline e
+  descartada, venv e modelo em `tools/recomp/logs/remake/ai/`;
   técnica em `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de filtro em `FUN_80029D4C`, listado em
   `[recompiler] mod_function_entry_funcs`) entrega a pose num marcador na OT e o renderizador GL desenha com o
   núcleo portátil `src/remake/` (C99, GL 3.3/GLES 3.0: Phong Tessellation por instancing, luz por pixel com as
@@ -80,11 +81,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 
 ## Próximo passo
-- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita menos o
-  experimento de IA imagem→3D (pede download; perguntar antes). Pendente achado na fase 2: expressão do rosto do
-  original (UV/CLUT do rosto na RAM) não chega ao remake. Próxima fase: 3 (palco).
-  Ao avançar uma fase: atualizar a tabela de estado do `notes/remake-plano.md`, a linha "Remake do HEAT" acima e
-  os achados em `notes/remake-visual.md`.
+- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita (a IA
+  imagem→3D ficou só offline, pior que o remake atual). Pendente achado na fase 2: expressão do rosto do original
+  (UV/CLUT do rosto na RAM) não chega ao remake. Próxima fase: 3 (palco).
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
