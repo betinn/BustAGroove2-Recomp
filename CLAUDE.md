@@ -36,10 +36,11 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `mods/bundled/`, `mods/texture-packs/SLUS-01159/replacements/`, `game.toml`, `settings.toml`, `keybinds.ini`,
   `input.ini`, `Jogar.bat`), escrever `VERSION.txt`, registrar em `releases/README.md` e no `README.md`.
 - Notas técnicas: `notes/recomp.md` (§8 overlays AOT, §10 1080p, §11 widescreen/nitidez, §12 texturas HD), `notes/formats.md`,
-  `notes/model-format.md`, `notes/media-formats.md`, `notes/remake-visual.md` (piloto de modernização do HEAT,
+  `notes/model-format.md`, `notes/media-formats.md`, `notes/remake-plano.md` (plano e estado do remake visual),
+  `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-23)
+## Estado (2026-10-26)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
@@ -55,7 +56,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build ...` e `cmake --build ... --target
   psx-runtime` direto (flags na linha 50 do script) com o PATH de `env.ps1`.
-- **Remake do HEAT no jogo** (prova de conceito, `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de
+- **Remake do HEAT no jogo** (fase 0 de `notes/remake-plano.md` concluída; técnica em `notes/remake-visual.md`): plugin `src/bag2_heat.c` (hook de
   filtro em `FUN_80029D4C`, listado em `[recompiler] mod_function_entry_funcs`), pacote
   `mods/preloaded/packages/bag2.remake.heat`, asset `mods/remake/heat.bin` gerado por
   `tools/remake/export_heat.py` (fora do git). Exige o patch local
@@ -68,7 +69,11 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - Sem servidor TCP de debug na build (`PSX_DEBUG_TOOLS=OFF`): testes pelo computer-use. Toque curto de tecla não
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 
-## Próximo passo (ideias)
+## Próximo passo
+- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Próxima fase: 1, atalho
+  de render no PSXRecomp (malha direto no renderizador GL, shader moderno, núcleo portátil para o Polygonia), só PC.
+  Ao avançar uma fase: atualizar a tabela de estado do `notes/remake-plano.md`, a linha "Remake do HEAT" acima e
+  os achados em `notes/remake-visual.md`.
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 

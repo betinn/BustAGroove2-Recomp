@@ -155,19 +155,8 @@ palco) e `game_compare.py` (alterna variantes; os quadros ficam ~1 s um do outro
 - O hook também pega o HEAT de outras telas que usam `FUN_80029D4C` (seleção, resultado); não conferido.
 - Só testado na build-debug (dirigida por TCP). A build normal compila com o mesmo código.
 
-## Plano decidido com o usuário (2026-10-26)
-Foco no jogo em si (palco + jogadores). Abertura em vídeo fica para depois.
-1. **Atalho de render no PSXRecomp**: o plugin entrega ao renderizador GL a malha do personagem e as
-   matrizes dos ossos; deformação e Phong Tessellation na placa de vídeo, shader próprio (luz por pixel,
-   especular, contraluz, sombra no chão, cel-shading opcional). Compor com o palco pela ordem da OT (um
-   marcador no slot do personagem) ou pelo buffer de profundidade do PGXP. Tira o custo por triângulo da
-   GPU emulada.
-2. **Detalhe nos personagens**: mãos com dedos de verdade (inclusive as mãos alternativas dos nós 20–23),
-   orelhas e nariz remodelados por código; mapas de normal das texturas; experimento com geração de malha
-   por IA (pedir autorização antes de baixar modelos).
-3. **Palco**: luz e efeitos (bloom, cor, luzes pulsando com a música) e, com o atalho, geometria/luz do
-   palco renderizadas pelo caminho novo.
-4. **Dois jogadores**: um segundo personagem pelo mesmo pipeline, medido com `game_perf.py`.
+## Plano
+Plano completo, fases e estado: `notes/remake-plano.md` (decidido em 2026-10-26).
 
 ## Esforço estimado para seguir
 - **Release com só o HEAT**: empacotar `heat.bin` e o exe como `v1.4.0` (meia sessão), depois de jogar
