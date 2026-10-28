@@ -31,7 +31,7 @@ def main():
     s.start()
     shots = []
     try:
-        s.to_match()
+        s.enter_match()
         s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': '3'})
         for rep in range(reps):
             for g in (1, 2, 0):

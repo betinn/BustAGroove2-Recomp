@@ -10,7 +10,9 @@ inteira este script:
      diminui = deriva (o ritmo sai do lugar durante a música);
   4. amostras do SPU por quadro do jogo (esperado 44100 / 59,94 = 735,7).
 A latência que quem joga sente a mais que no console = buffer de saída (fill_ms) + buffer do dispositivo + vídeo.
-Uso: python tools/remake/audio_sync.py [segundos] [ciclos do vblank, comando vblank_ntsc] | analise
+Rota: 2 jogadores (BAG2_MATCH, padrão HEAT x COMET no palco do HEAT): mesma música e palco entre as variantes.
+Uso: python tools/remake/audio_sync.py [segundos] [ciclos do vblank, comando vblank_ntsc] | analise [rótulo]
+Saída: logs/remake/ritmo/ritmo_<rótulo>.json (rótulo = ciclos pedidos ou "padrao").
 """
 from __future__ import annotations
 
@@ -31,6 +33,7 @@ MUSIC_TICK = 0x8005FBB4
 
 def main():
     secs = float(sys.argv[1]) if len(sys.argv) > 1 else 170.0
+    tag = sys.argv[2] if len(sys.argv) > 2 else 'padrao'
     os.makedirs(OUT, exist_ok=True)
     s = Session(label='ritmo')
     s.start()
@@ -38,7 +41,7 @@ def main():
     try:
         if len(sys.argv) > 2:
             print(s.cmd({'cmd': 'mod_cmd', 'name': 'vblank_ntsc', 'args': sys.argv[2]}).get('reply'), flush=True)
-        s.to_match()
+        s.enter_match()
         print(s.cmd({'cmd': 'mod_cmd', 'name': 'vblank_ntsc', 'args': ''}).get('reply'), flush=True)
         rows, fills, marks, chunks = [], [], [], []
 
@@ -49,7 +52,7 @@ def main():
 
         def dump():
             a0 = marks[-2][1] if len(marks) > 1 else marks[0][1]
-            p = os.path.join(OUT, f'ritmo_{len(chunks)}.wav').replace('\\', '/')
+            p = os.path.join(OUT, f'ritmo_{tag}_{len(chunks)}.wav').replace('\\', '/')
             r = s.cmd({'cmd': 'audio_wav', 'path': p, 'start': str(a0), 'count': str(marks[-1][1] - a0)}, 60)
             chunks.append({'path': p, 'start': a0, 'count': marks[-1][1] - a0, 'reply': r})
 
@@ -67,16 +70,16 @@ def main():
             if time.time() - td > 55.0:
                 td = time.time(); mark(); dump()
         mark(); dump()
-        with open(os.path.join(OUT, 'ritmo.json'), 'w', encoding='utf-8') as fp:
+        with open(os.path.join(OUT, f'ritmo_{tag}.json'), 'w', encoding='utf-8') as fp:
             json.dump({'rows': rows, 'fills': fills, 'marks': marks, 'chunks': chunks}, fp)
         print('amostras', len(rows), s.fps())
     finally:
         s.stop()
-    analyse()
+    analyse(tag)
 
 
-def analyse():
-    J = json.load(open(os.path.join(OUT, 'ritmo.json'), encoding='utf-8'))
+def analyse(tag='padrao'):
+    J = json.load(open(os.path.join(OUT, f'ritmo_{tag}.json'), encoding='utf-8'))
     R = np.array(J['rows'], float)
     marks = np.array(J['marks'], float)
     spf = (marks[-1, 1] - marks[0, 1]) / (marks[-1, 0] - marks[0, 0])
@@ -127,10 +130,35 @@ def analyse():
     if len(res) > 1:
         L = np.array([r[1] for r in res])
         print(f'  deriva: {L[-1] - L[0]:+.2f} quadros do começo ao fim; desvio {L.std():.2f}')
+    # Fase circular (fase 4): onde caem os ataques do som dentro da batida do tick, média vetorial ponderada pela
+    # força do ataque, por janela. Não escolhe pico (a correlação acima pula entre tempo e contratempo nas músicas
+    # de ataque fraco); a 2ª harmônica (meia batida) é estável mesmo se o som marca o contratempo. Deriva = reta
+    # pelas fases desembrulhadas.
+    fpb = 256.0 / rate                                       # quadros por batida
+    print(f'fase circular dos ataques na batida do tick ({fpb:.1f} quadros por batida; + = som depois do tick):')
+    out = []
+    for w0 in range(0, len(Fr) - win // 2, win):
+        sl = slice(w0, min(w0 + win, len(Fr)))
+        if tk[sl][-1] - tk[sl][0] < 0.8 * (sl.stop - sl.start) * rate:
+            continue
+        w = on[sl]
+        z1 = np.sum(w * np.exp(2j * np.pi * phase[sl])) / (w.sum() + 1e-12)
+        z2 = np.sum(w * np.exp(4j * np.pi * phase[sl])) / (w.sum() + 1e-12)
+        out.append((Fr[sl][0] - f0, np.angle(z1), abs(z1), np.angle(z2), abs(z2)))
+    if out:
+        o = np.array(out)
+        d1 = np.unwrap(o[:, 1]) / (2 * np.pi) * fpb
+        d2 = np.unwrap(o[:, 3]) / (2 * np.pi) * fpb / 2
+        for r, a, b in zip(o, d1, d2):
+            print(f'  quadro {r[0]:6.0f}: batida {a:+6.2f} (força {r[2]:.2f}) | meia batida {b:+6.2f} (força {r[4]:.2f})')
+        if len(o) > 2:
+            t20 = o[:, 0] / 1200.0
+            print(f'  deriva por 20 s (reta): batida {np.polyfit(t20, d1, 1)[0]:+.2f} quadros, '
+                  f'meia batida {np.polyfit(t20, d2, 1)[0]:+.2f} quadros')
 
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'analise':
-        analyse()
+        analyse(sys.argv[2] if len(sys.argv) > 2 else 'padrao')
     else:
         main()

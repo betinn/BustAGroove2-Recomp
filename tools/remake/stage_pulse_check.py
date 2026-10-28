@@ -31,7 +31,7 @@ def main():
     s.start()
     scratch = os.path.join(OUT, 'marca.wav').replace('\\', '/')
     try:
-        s.to_match()
+        s.enter_match()
         pts, rows = [], []
         def mark():
             f = s.cmd({'cmd': 'frame'})['frame']

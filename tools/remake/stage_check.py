@@ -7,7 +7,8 @@
    origem dos pacotes (palco, personagens, HUD), de `gpu_frame_dump`.
 3. Fim da música e tela de resultado: A/B a cada ~12 s até `fim` segundos, para ver se o efeito chega lá e se o
    HUD do resultado fica intacto.
-Saída: tools/recomp/logs/remake/palco/chk_*.png e chk.json.  Uso: python tools/remake/stage_check.py [fim_s]
+Rota: 2 jogadores (BAG2_MATCH, padrão HEAT x COMET no palco do HEAT; capturas também da tela de palco).
+Saída: tools/recomp/logs/remake/palco/chk_*.png e chk.json.  Uso: python tools/remake/stage_check.py [fim_s depois da carga]
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, r'C:/tools/psxrecomp/tools')
-from game_session import Session, REPO, START, CROSS  # noqa: E402
+from game_session import Session, REPO  # noqa: E402
 from stage_beat import present_shot  # noqa: E402
 import psx_gpu_frame as pgf  # noqa: E402
 
@@ -63,7 +64,7 @@ def gp0_split(conn):
 
 
 def main():
-    end = float(sys.argv[1]) if len(sys.argv) > 1 else 300.0
+    end = float(sys.argv[1]) if len(sys.argv) > 1 else 216.0   # segundos depois de a partida começar a carregar
     os.makedirs(OUT, exist_ok=True)
     s = Session(label='palco_check')
     s.start()
@@ -71,10 +72,7 @@ def main():
     try:
         s.at(20); shot(s, 'fmv', log)
         s.at(72); shot(s, 'titulo', log)
-        s.press(START); s.at(77); shot(s, 'menu', log)
-        s.press(CROSS); s.at(80); shot(s, 'selecao', log)
-        s.press(CROSS); s.at(83); s.press(CROSS)
-        s.at(102)
+        s.enter_match(on_step=lambda name: shot(s, name, log))   # rota do 2 jogadores (BAG2_MATCH)
         shot(s, 'partida_tudo', log)
         s.cmd({'cmd': 'mod_cmd', 'name': 'stage_post', 'args': '0 0'}); time.sleep(0.1)
         shot(s, 'partida_orig', log)
@@ -92,8 +90,8 @@ def main():
         for fr, tot, w in splits:
             print('quadro', fr, 'palavras', tot, {k: f'{100 * v / tot:.0f}%' for k, v in sorted(w.items(), key=lambda x: -x[1])})
         k = 0
-        while time.time() - s.t0 < end:
-            s.at(225 + 12 * k)
+        while time.time() - s.t0 < s.t_match + end:
+            s.at(s.t_match + 141 + 12 * k)
             shot(s, f'fim{k}_tudo', log)
             s.cmd({'cmd': 'mod_cmd', 'name': 'stage_post', 'args': '0 0'}); time.sleep(0.1)
             shot(s, f'fim{k}_orig', log)

@@ -54,7 +54,7 @@ def main():
     s = Session(label='palco_batida')
     s.start()
     try:
-        s.to_match()
+        s.enter_match()
         pts = [audio_point(s, scratch)]
         frames, data = [], {a: [] for a, _ in REGIONS}
         t0 = time.time()

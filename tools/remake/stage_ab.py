@@ -40,7 +40,7 @@ def main():
     try:
         s.at(74)
         print('marcadores antes da partida:', counter(s, 'bag2_stage.markers'))
-        s.to_match()
+        s.enter_match()
         print('marcadores na partida:', counter(s, 'bag2_stage.markers'))
         for k in range(moments):
             time.sleep(gap)

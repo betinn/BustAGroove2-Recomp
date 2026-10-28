@@ -6,6 +6,7 @@ Para cada valor pedido, roda uma sessão inteira (abertura, título, menu, sele�
 da música e a tela seguinte) com um game.toml temporário na build-debug, amostra o `audio_stats` a cada ~0,5 s e
 relata, por fase: enchimento do buffer (fill_ms) e underruns (cada um é um trecho de silêncio com fade, ouvido
 como estalo). O valor certo é o menor sem underrun em nenhuma fase.
+Rota: 2 jogadores (BAG2_MATCH; a fase "carregamento" vai da tela de palco até a partida começar).
 Uso: python tools/remake/audio_buffer_check.py "60|90" [segundos depois da partida começar]
 """
 from __future__ import annotations
@@ -13,10 +14,11 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from game_session import Session, BUILD, START, CROSS  # noqa: E402
+from game_session import Session, BUILD  # noqa: E402
 
 
 def toml_with_buffer(ms):
@@ -34,7 +36,7 @@ def main():
     for ms in values:
         s = Session(game=toml_with_buffer(ms), label=f'buf{ms}')
         s.start()
-        phases, cur, last = {}, ['boot'], [None]
+        phases, cur, last, stop = {}, ['boot'], [None], [False]
         def sample():
             o = s.cmd({'cmd': 'audio_stats'}).get('out', {})
             u = o.get('underruns', 0) or 0
@@ -44,20 +46,29 @@ def main():
                 ph['du'] += u - last[0]          # o que entrou desde a amostra anterior vai para a fase atual
             last[0] = u
             return o
-        def wait_until(t):
-            while time.time() - s.t0 < t:
-                sample(); time.sleep(0.5)
+        def sampler():                           # amostra a cada ~0,5 s enquanto a rota anda
+            while not stop[0]:
+                try:
+                    sample()
+                except OSError:
+                    pass
+                time.sleep(0.5)
+        def phase(name):
+            cur[0] = name
         try:
             o = sample()
             print(f'buffer {ms} ms: alvo {o.get("target_ms")} ms', flush=True)
-            wait_until(70); cur[0] = 'abertura/título'
-            wait_until(75); s.press(START); cur[0] = 'menu/seleção'
-            wait_until(78); s.press(CROSS)
-            wait_until(81); s.press(CROSS)
-            wait_until(84); s.press(CROSS); cur[0] = 'carregamento'
-            wait_until(100); cur[0] = 'partida'
-            wait_until(100 + after - 20); cur[0] = 'fim da música/tela seguinte'
-            wait_until(100 + after)
+            th = threading.Thread(target=sampler, daemon=True)
+            th.start()
+            s.at(70); phase('abertura/título')
+            # rota do 2 jogadores (BAG2_MATCH); fases: menu/seleção até a tela de palco, depois carregamento
+            steps = {'menu': 'menu/seleção', 'palco': 'carregamento'}
+            s.enter_match(on_step=lambda name: phase(steps[name]) if name in steps else None)
+            s.at(s.t_match + 16); phase('partida')
+            s.at(s.t_match + 16 + after - 20); phase('fim da música/tela seguinte')
+            s.at(s.t_match + 16 + after)
+            stop[0] = True
+            th.join(2)
             total = 0
             for k, v in phases.items():
                 f = v['fill'] or [0.0]

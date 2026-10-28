@@ -33,9 +33,9 @@ def main():
     s.start()
     rows = {}
     try:
-        s.to_match()
+        s.enter_match()
         print(s.cmd({'cmd': 'mod_cmd', 'name': 'gpu_timers', 'args': '1'}).get('reply'))
-        s.at(110)
+        s.at(s.t_match + 26)
         for name, v in variants + variants[::-1]:
             heat, post = v.split(';')
             s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': heat})

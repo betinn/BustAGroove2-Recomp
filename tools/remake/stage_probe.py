@@ -46,7 +46,7 @@ def main():
     s = Session(label='palco_sonda')
     s.start()
     try:
-        s.to_match()
+        s.enter_match()
         if slot >= 0:
             print('savestate', s.cmd({'cmd': 'savestate', 'op': 'save', 'slot': slot}))
         s.shot(os.path.join(OUT, 'tela_0.png'))

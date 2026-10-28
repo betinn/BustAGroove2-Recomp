@@ -27,7 +27,7 @@ def main():
     s = Session(label=sys.argv[2] if op == 'start' and len(sys.argv) > 2 else 'palco_tcp')
     if op == 'start':
         s.start()
-        s.to_match()
+        s.enter_match()
         print('na partida', s.fps())
     elif op == 'mod':
         print(s.cmd({'cmd': 'mod_cmd', 'name': sys.argv[2], 'args': sys.argv[3] if len(sys.argv) > 3 else ''}).get('reply'))

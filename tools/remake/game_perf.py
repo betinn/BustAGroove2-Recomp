@@ -36,7 +36,7 @@ def main():
     s.start()
     rows = []
     try:
-        s.to_match()
+        s.enter_match()
         for v in variants:
             hv, _, sv = v.partition(';')
             s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': hv})

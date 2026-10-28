@@ -44,7 +44,7 @@ def main():
     s.start()
     shots = []
     try:
-        s.to_match()
+        s.enter_match()
         for k in range(moments):
             time.sleep(4)
             remake = next((v for v in variants if v.strip() != '0'), '1')

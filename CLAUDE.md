@@ -125,8 +125,12 @@ Para avaliar um palco ou um personagem específico, jogar no **modo 2 jogadores*
 principal): ali se escolhem **os dois personagens e o palco**. Isso dá controle total sobre o teste, sem depender do
 sorteio do oponente nem do personagem que o cartão de memória lembra, e deixa medições, A/B, regressão e dumps HD
 repetíveis (mesmo palco e mesmos dançarinos nas duas variantes). Preferir esse modo a partidas de 1 jogador nos
-testes. Os scripts de `tools/remake/` (`game_session.py` `to_match`) ainda entram pelo 1 jogador; adaptar para o
-2 jogadores antes da próxima rodada de testes (rota no menu e a seleção do 2º jogador e do palco).
+testes. Os scripts de `tools/remake/` entram pelo 2 jogadores (`game_session.py` `enter_match`/`to_match_2p`, desde
+2026-10-28): ambiente `BAG2_MATCH="P1 P2 palco"` (padrão `HEAT COMET 0`; `palco` = toques para a direita a partir
+do palco do 1P; `BAG2_MATCH=1p` volta à rota antiga). O pad 2 fica ligado por `set_input` persistente na porta 2
+(um `press` na porta 2 expira e o jogo pausa com "CONTROLLER REMOVED"); um toque de 6 quadros anda uma casa na grade
+(15 andam duas). Grade do cartão do usuário (10 liberados): linha 0 HEAT, COMET; linha 1 SHORTY, STRIKE, TSUTOMU,
+CAPOEIRA; linha 2 BI-O, HIRO, KITTY-N, KELLY. `s.who()` confere os personagens pela assinatura do nó 0.
 
 ## Testes com captura de tela
 `PrintWindow` e `CopyFromScreen` voltam preto na janela GL sem borda. Funciona: captura de tela do app

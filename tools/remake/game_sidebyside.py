@@ -41,7 +41,7 @@ def main():
     s.start()
     out = []
     try:
-        s.to_match()
+        s.enter_match()
         s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': f'{mode} ' + params})
         if os.environ.get('HEAT_LIGHT'):   # ajuste de luz para o teste (args do heat_light)
             print(s.cmd({'cmd': 'mod_cmd', 'name': 'heat_light', 'args': os.environ['HEAT_LIGHT']}).get('reply'))

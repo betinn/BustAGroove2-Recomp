@@ -462,9 +462,25 @@ subia +3,3 quadros a cada 20 s (+5 → +22 em 100 s, 0,28 %), quase uma batida a
 sem patch: o construtor de `src/bag2_mods.c` põe `g_psx_vblank_cycles = 566121` (e o HBlank do Timer 1 =
 566121/263) antes da emulação começar; `psx_video_timing_set_pal(0)` não reescreve (só troca quando o padrão
 muda). Comando `vblank_ntsc [ciclos]` para A/B. Depois: 737,2 amostras por quadro, atraso som × tick estável em
-−0,1 a +1,7 quadro nas janelas que travam na batida (as janelas em +16 são o contratempo, meia batida). Ressalva: o
-oponente sorteado trouxe outra música (125 × 132 BPM); o A/B na mesma música fica para os scripts do modo 2
-jogadores. O pacer do PC segue em 59,94 Hz: o emulado anda 0,19 % mais rápido que o real e o DRC do áudio
+−0,1 a +1,7 quadro nas janelas que travam na batida (as janelas em +16 são o contratempo, meia batida).
+
+**A/B na mesma música (2026-10-28, fase 4)**, fechando a ressalva da primeira medição (o oponente sorteado do 1
+jogador trouxe outra música): rota do 2 jogadores (`game_session.py` `to_match_2p`, HEAT × COMET no palco do HEAT,
+~114 BPM, 32 quadros por batida), `audio_sync.py 170 564480` contra `audio_sync.py 170 566121`, uma sessão cada, com
+o resultado em `logs/remake/ritmo/ab2p_*`. Nesta música os ataques são fracos e a correlação por pico pula entre
+tempo e contratempo (força 0,1; desvio de 9–10 quadros); por isso `audio_sync.py` ganhou a **fase circular**: média
+vetorial da fase do tick nos ataques do som, ponderada pela força, por janela de 20 s; a 2ª harmônica (meia batida)
+é estável mesmo com o contratempo, e a deriva sai de uma reta pelas fases desembrulhadas.
+
+| vblank | amostras do SPU por quadro | meia batida, janelas de 20 s (quadros) | deriva por 20 s |
+|---|---|---|---|
+| 564480 (60,000 Hz, o do framework) | 735,06 | +5,4 +8,9 +12,1 +16,4 +19,4 +23,3 +25,9 | **+3,48** |
+| 566121 (59,826 Hz, o do hardware, padrão) | 737,09 | +1,7 +1,2 +1,8 +1,9 +2,2 +2,6 +3,2 | **+0,27** |
+
+O esperado era +3,3 quadros por 20 s no 564480 (0,29 %) e nada no 566121: confere. Os +0,27 que sobram (0,02 %)
+ficam dentro do ruído da medida (a fase de cada janela varia ~0,5 quadro). Underruns na partida: 0 nas duas
+(a sessão do 566121 teve 701 antes da partida começar, fora da janela medida; a do 564480, 0; ver a regressão de
+áudio da fase 4 em `notes/remake-visual.md`). O pacer do PC segue em 59,94 Hz: o emulado anda 0,19 % mais rápido que o real e o DRC do áudio
 compensa (música 3 cents mais aguda, inaudível); o controle só proporcional dele deixa o buffer ~15 ms acima do
 alvo.
 
