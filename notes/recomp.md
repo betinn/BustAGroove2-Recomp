@@ -448,3 +448,36 @@ recortados preenchidos pela cor do vizinho opaco (dilatação) -> ESRGAN -> alfa
 bordas diagonais suaves) -> RGB zerado onde alfa = 0. Sem isso a rede devolve alfa contínuo (109 valores numa
 textura STP) e franja escura nas bordas. Ganho visual claramente maior que o xBR (bordas vetoriais, gradientes sem
 dithering) — ver `tools/recomp/logs/cap-esr-*.png`. Pack final: 472 PNG, ~99 MB.
+
+## 13. Ritmo da música: vblank NTSC e buffer de áudio (2026-10-28)
+O usuário estranhou o ritmo jogando a build normal. Medido com `tools/remake/audio_sync.py` (build-debug: tick da
+música do jogo em `0x8005FBB4` quadro a quadro + som do SPU gravado em blocos + `audio_stats`), saída em
+`tools/recomp/logs/remake/ritmo/`. Havia dois problemas, os dois do runtime e não do teclado.
+
+**1. Deriva: o som atrasava em relação ao tempo do jogo.** O jogo anda o tick da música por quadro (VSync) e a
+música XA anda pelo tempo do CD. O framework emula o vblank NTSC com 564480 ciclos (60,000 Hz redondo,
+`psx_video_timing.h`). No PS1, NTSC sem entrelaçamento tem 263 linhas de 3412,5 ciclos de vídeo a 53,693 MHz,
+ou seja, 59,826 Hz = 566121 ciclos de CPU. Com 60 Hz o SPU dava 735,0 amostras por quadro e o atraso som × tick
+subia +3,3 quadros a cada 20 s (+5 → +22 em 100 s, 0,28 %), quase uma batida ao fim da música. Correção por jogo,
+sem patch: o construtor de `src/bag2_mods.c` põe `g_psx_vblank_cycles = 566121` (e o HBlank do Timer 1 =
+566121/263) antes da emulação começar; `psx_video_timing_set_pal(0)` não reescreve (só troca quando o padrão
+muda). Comando `vblank_ntsc [ciclos]` para A/B. Depois: 737,2 amostras por quadro, atraso som × tick estável em
+−0,1 a +1,7 quadro nas janelas que travam na batida (as janelas em +16 são o contratempo, meia batida). Ressalva: o
+oponente sorteado trouxe outra música (125 × 132 BPM); o A/B na mesma música fica para os scripts do modo 2
+jogadores. O pacer do PC segue em 59,94 Hz: o emulado anda 0,19 % mais rápido que o real e o DRC do áudio
+compensa (música 3 cents mais aguda, inaudível); o controle só proporcional dele deixa o buffer ~15 ms acima do
+alvo.
+
+**2. Latência: o buffer de saída mirava 180 ms** (padrão do framework, `[audio] buffer_ms`, 30..500, lido pelo
+runtime no `game.toml`; `docs/config_schema.md`). Com o dispositivo (1024 amostras, 23 ms) a batida chegava ao
+ouvido ~190–220 ms depois da batida que o jogo julga. `tools/remake/audio_buffer_check.py` roda a sessão inteira
+por valor e conta underruns por fase: 60 ms limpo em menus, carregamento e partida, mas 2023 underruns na abertura
+(vídeo STR); 90 ms com 0 underruns em todas as fases (mínimo 57,7 ms no carregamento). Escolhido 90 ms: ~120 ms do
+som ao ouvido, ~100 ms a menos.
+
+**Pulso do palco** (fase 3, `stage_post` atraso 4 quadros): o atraso do som medido na fase 3 variava de +1 a +8
+quadros entre músicas por causa da deriva (cada medição caía num ponto da música). Agora o som do SPU fica ~+1
+quadro depois da virada do tick. O que se ouve vem ~7 quadros depois disso (buffer + dispositivo); a imagem, ~3–4
+quadros depois do quadro emulado (2 quadros em voo na thread de render + apresentação + composição do Windows).
+Pulso ideal ≈ +1 + 7 − 3,5 ≈ +4,5 quadros: os 4 ficam. Latência de vídeo e do mixer do Windows não foram medidas
+(precisariam de câmera ou loopback).

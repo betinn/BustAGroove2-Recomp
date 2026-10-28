@@ -35,7 +35,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   Atual: `v1.3.0-texturas-hd`. Para publicar uma versão nova: copiar `build/` (exe, `assets/`, `bios/`,
   `mods/bundled/`, `mods/texture-packs/SLUS-01159/replacements/`, `game.toml`, `settings.toml`, `keybinds.ini`,
   `input.ini`, `Jogar.bat`), escrever `VERSION.txt`, registrar em `releases/README.md` e no `README.md`.
-- Notas técnicas: `notes/recomp.md` (§8 overlays AOT, §10 1080p, §11 widescreen/nitidez, §12 texturas HD), `notes/formats.md`,
+- Notas técnicas: `notes/recomp.md` (§8 overlays AOT, §10 1080p, §11 widescreen/nitidez, §12 texturas HD, §13 ritmo da música), `notes/formats.md`,
   `notes/model-format.md`, `notes/media-formats.md`, `notes/remake-plano.md` (plano e estado do remake visual),
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
@@ -43,6 +43,11 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 ## Estado (2026-10-27, fim da fase 3 do remake)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
+- **Ritmo da música** (`notes/recomp.md` §13): o framework emula o vblank NTSC a 60,000 Hz e o som derivava do
+  tick do jogo (+3,3 quadros a cada 20 s); `src/bag2_mods.c` põe o período do hardware (566121 ciclos, 59,826 Hz)
+  no construtor (comando `vblank_ntsc` para A/B). `[audio] buffer_ms = 90` no `game.toml` (padrão 180: a batida
+  chegava ~200 ms atrasada; 60 estala na abertura). Medir: `tools/remake/audio_sync.py` (deriva e enchimento do
+  buffer), `tools/remake/audio_buffer_check.py` (underruns por fase).
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
   `mods/preloaded/packages/psx.enhancement.hd-textures/`; 710 dumps (467 identidades) ampliados 4x com Real-ESRGAN
   (`tools/hd_textures.py --filter esrgan`, binário em `C:/tools/realesrgan/bin`, alfa via xBR, recortes aninhados

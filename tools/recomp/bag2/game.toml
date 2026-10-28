@@ -49,6 +49,13 @@ bios_hle     = false      # LLE do OpenBIOS (mais fiel); true = pula a animaçã
 overlay_cache = true
 overlay_backend = "auto"
 
+[audio]
+# Buffer de saída do som no PC. O padrão do framework (180 ms) fazia a batida chegar ao ouvido ~190 ms depois
+# da batida que o jogo julga, o que é demais num jogo de ritmo. Com 90 ms são ~120 ms (buffer + dispositivo).
+# 60 ms estala na abertura (vídeo STR: 2023 underruns); 90 ms passou sem nenhum underrun da abertura ao fim da
+# partida (tools/remake/audio_buffer_check.py; notes/recomp.md §13).
+buffer_ms = 90
+
 [video]
 renderer          = "opengl"   # "software" é o fallback/referência (e o que a web usa)
 # Resolução interna: o PS1 desenha a 320x240; "1080p" renderiza a 5x (1200 linhas) e resolve para a
