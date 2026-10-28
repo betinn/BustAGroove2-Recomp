@@ -115,6 +115,14 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
+## Testes de palcos e personagens: usar o modo 2 jogadores
+Para avaliar um palco ou um personagem específico, jogar no **modo 2 jogadores** ("2player game" no menu
+principal): ali se escolhem **os dois personagens e o palco**. Isso dá controle total sobre o teste, sem depender do
+sorteio do oponente nem do personagem que o cartão de memória lembra, e deixa medições, A/B, regressão e dumps HD
+repetíveis (mesmo palco e mesmos dançarinos nas duas variantes). Preferir esse modo a partidas de 1 jogador nos
+testes. Os scripts de `tools/remake/` (`game_session.py` `to_match`) ainda entram pelo 1 jogador; adaptar para o
+2 jogadores antes da próxima rodada de testes (rota no menu e a seleção do 2º jogador e do palco).
+
 ## Testes com captura de tela
 `PrintWindow` e `CopyFromScreen` voltam preto na janela GL sem borda. Funciona: captura de tela do app
 (computer-use screenshot). O jogo lançado em segundo plano fica atrás das outras janelas: clicar nele ou
