@@ -52,7 +52,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Framework patcheado localmente**, três patches em `tools/recomp/patches/`, nesta ordem:
   `psxrecomp-hd-cache-caps.patch` (caches do mod HD ampliados; sem isso a partida trava, 13–35 fps),
   `psxrecomp-texture-bank-render-thread.patch` (bancos de textura na thread de render, para o fallback por pacotes)
-  e `psxrecomp-host-draw.patch` (desenho de host do remake; sem ele o plugin não compila). Reaplicar
+  e `psxrecomp-host-draw.patch` (desenho de host do remake; sem ele o plugin não compila; desde 2026-10-27 sem
+  `glGetIntegerv` no save/restore, que custava 1,5–1,9 ms por desenho com o driver da NVIDIA em modo de thread;
+  plugins usam só unidades de textura 8+ e não leem estado do GL por quadro). Reaplicar
   (`git apply --ignore-whitespace`) se `C:/tools/psxrecomp` for atualizado. Medição de desempenho: `build-debug/`
   (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370) + `tools/remake/game_perf.py`.
 - `tools/recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
@@ -85,9 +87,10 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   com o centro canônico e as laterais do espelho e escreve cada parte de volta (`rmk_post_apply_wide`). Pulso no tempo da música: tick em `0x8005FBB4` (256 por batida), atraso do som 4
   quadros (±3 entre músicas). Sombra macia do HEAT no chão (`rmk_gl_draw_floor`, PCSS) no lugar da do jogo
   (`FUN_8002A46C` pulada para o HEAT; chão pela câmera `0x8005E4D0`, luz pelo ponteiro em `0x80060CB8`). Medido
-  com o pacote HD (60 s por janela): 59,9 fps em todos os segundos, 0 underruns, jogo −1/0 e render +7 a +11 pontos
-  (média +10) contra a base; modo 6 + palco 59,9. GPU por quadro do jogo (carimbos `GL_TIMESTAMP`,
-  `src/gpu_timer.h`): pós 0,9 ms, chão 0,2 ms, corpo 0,2–0,3 ms. Comandos `stage_post` (flag 8 = metade direita,
+  com o pacote HD (60 s por janela), depois do patch do desenho de host: 59,9 fps em todos os segundos, 0 underruns,
+  render +1/0 e jogo +3/−2 pontos contra a base (base: render 25–27 %); modo 6 + palco 59,9, render 29 %. GPU por
+  quadro do jogo (carimbos `GL_TIMESTAMP`, `src/gpu_timer.h`, comando `gpu_timers 1`): pós 0,9 ms, chão 0,2 ms,
+  corpo 0,2–0,3 ms. Tempo de parede de cada desenho de host no `heat_stats` (`hd_us`). Comandos `stage_post` (flag 8 = metade direita,
   A/B no mesmo quadro; 32 = caminho antigo da tela larga), `stage_stats`, `heat_floor`, `heat_stats`; scripts
   `tools/remake/stage_ab.py`, `stage_pulse_check.py`, `stage_check.py` (regressão), `stage_gpu.py` (GPU por peça),
   `stage_dumps.py` (dumps HD de outros palcos), `game_tcp.py` (jogo aberto na partida para afinar ao vivo),
@@ -95,7 +98,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Build-debug e o pacote HD**: `build-debug/mods/texture-packs/SLUS-01159/replacements` é uma junção para a pasta
   de `build/`; conferir "HD textures:" no log antes de medir (ficou quebrada de 2026-10-24 a 2026-10-27). Com o HD
   o renderizador desliga os bancos de textura (`psx_mod_texture_banks_supported()` = 0). O cartão de memória guarda
-  o último personagem e o cursor começa nele: `BAG2_SELECT` (U/D/L/R) em `game_session.py`.
+  o último personagem e o cursor começa nele: `BAG2_SELECT` (U/D/L/R) em `game_session.py`. O driver da NVIDIA
+  alterna de modo entre sessões: sessão com a render em 49–62 % até na base é inválida, repetir.
 - As pastas `build/` e `build-debug/` foram reconfiguradas em 2026-10-26 (o cache do CMake apontava para o nome
   antigo da pasta); se o CMake reclamar de "does not match the source", apagar `CMakeCache.txt`, `CMakeFiles/` e
   `_deps/*-build`, `_deps/*-subbuild` e configurar de novo.
@@ -106,7 +110,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita (a IA
   imagem→3D ficou só offline, pior que o remake atual; a expressão do rosto do original agora chega ao remake).
   Fase 3 feita (pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco adiada com dados; render
-  com HD no limite do orçamento). Próxima: fase 4 (segundo jogador e os outros personagens).
+  dentro do orçamento depois do patch do desenho de host). Próxima: fase 4 (segundo jogador e os outros
+  personagens).
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 

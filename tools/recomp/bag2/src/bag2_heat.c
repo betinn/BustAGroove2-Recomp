@@ -1143,6 +1143,7 @@ static int heat_face_cmd(const char* args, char* reply, int cap) {
 /* Desde a última chamada: desenhos de host e tempo médio de CPU na thread de render; do renderizador
  * (patch local), desenhos com alvo, espelhos na superfície larga e marcadores sem nada visível. */
 extern uint64_t gl_renderer_host_draw_stats(uint64_t* mirrors, uint64_t* skipped);
+extern void gl_renderer_host_draw_times(double us[5]);
 static int heat_stats_cmd(const char* args, char* reply, int cap) {
     (void)args;
     static uint32_t d0;
@@ -1155,8 +1156,18 @@ static int heat_stats_cmd(const char* args, char* reply, int cap) {
     static uint64_t b_ns, b_n, f_ns, f_n;
     uint64_t bc = 0, fc = 0;
     const double bu = gt_take(&s_gt_body, &b_ns, &b_n, &bc), fu = gt_take(&s_gt_floor, &f_ns, &f_n, &fc);
-    snprintf(reply, cap, "gpu_corpo_us=%.0f (%llu) gpu_chao_us=%.0f (%llu) rt_draws=%u rt_us_per_draw=%.1f gl_calls=%llu gl_mirrors=%llu gl_skipped=%llu rt_prepares=%u "
-             "rt_ready=%d rt_failed=%d err=%s", bu, (unsigned long long)bc, fu, (unsigned long long)fc, d - d0, d > d0 ? (u - u0) / (double)(d - d0) : 0.0,
+    /* tempo de parede de cada desenho de host no framework (thread de render), por chamada e somado */
+    static double tm0[5];
+    double tm[5];
+    gl_renderer_host_draw_times(tm);
+    const double nc = c > c0 ? (double)(c - c0) : 1.0;
+    char hd[200];
+    snprintf(hd, sizeof hd, "hd_us lotes=%.1f salvar=%.1f cb0=%.1f rest_esp=%.1f total=%.1f soma_ms=%.0f | ",
+             (tm[0] - tm0[0]) / nc, (tm[1] - tm0[1]) / nc, (tm[2] - tm0[2]) / nc, (tm[3] - tm0[3]) / nc,
+             (tm[4] - tm0[4]) / nc, (tm[4] - tm0[4]) / 1000.0);
+    memcpy(tm0, tm, sizeof tm0);
+    snprintf(reply, cap, "%sgpu_corpo_us=%.0f (%llu) gpu_chao_us=%.0f (%llu) rt_draws=%u rt_us_per_draw=%.1f gl_calls=%llu gl_mirrors=%llu gl_skipped=%llu rt_prepares=%u "
+             "rt_ready=%d rt_failed=%d err=%s", hd, bu, (unsigned long long)bc, fu, (unsigned long long)fc, d - d0, d > d0 ? (u - u0) / (double)(d - d0) : 0.0,
              (unsigned long long)(c - c0), (unsigned long long)(m - m0), (unsigned long long)(k - k0), s_rt_prepares,
              s_rt_ready, s_rt_failed, s_gl ? rmk_gl_error(s_gl) : "");
     d0 = d; u0 = u; c0 = c; m0 = m; k0 = k;

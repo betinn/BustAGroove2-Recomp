@@ -34,6 +34,7 @@ def main():
     rows = {}
     try:
         s.to_match()
+        print(s.cmd({'cmd': 'mod_cmd', 'name': 'gpu_timers', 'args': '1'}).get('reply'))
         s.at(110)
         for name, v in variants + variants[::-1]:
             heat, post = v.split(';')

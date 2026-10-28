@@ -19,7 +19,7 @@ já é construído pensando nele (fase 5).
 | 0 | Piloto offline + prova de conceito no jogo (HEAT por pacotes GT3) | **feito** (commits 6f0816a..d7cc0d4) |
 | 1 | Atalho de render: malha direto no renderizador GL, shader moderno, núcleo portátil | **feito** (2026-10-27) |
 | 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, sombra, luz do palco, IA 3D) | **feito** (2026-10-27, commits 5e51099..); IA 3D testada offline e descartada |
-| 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **feito** (2026-10-27): pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco avaliada e adiada; render com HD no limite (+10) |
+| 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **feito** (2026-10-27): pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco avaliada e adiada; render +0/+1 depois do patch do desenho de host |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | pendente |
 | 5 | Port para o Polygonia (Android) | pendente |
 | 6 | Abertura em vídeo ampliada por IA | futuro |
@@ -31,14 +31,16 @@ já é construído pensando nele (fase 5).
   lugar da sombra do jogo. Tudo no núcleo portátil (`src/remake/rmk_post.c`, `rmk_gl.c`), adaptador
   `src/bag2_stage.c` + `bag2_heat.c`, pacote novo `bag2.remake.stage`. Framework sem patch novo.
 - Medido com o pacote HD (a build-debug estava sem ele desde o rename da pasta; junção refeita): 59,9 fps em todos
-  os segundos de 14 janelas de 60 s, 0 underruns; thread do jogo −1 a 0 ponto; **thread de render +10 em média
-  (+7 a +11) contra a base**, no limite do pedido; modo 6 (4 HEATs) com o palco a 59,9 (render 44–47 %). GPU do
-  remake medida por carimbos: pós 0,9 ms, chão 0,2 ms, corpo 0,2–0,3 ms por quadro do jogo. O remake do HEAT se
-  desligava com o pacote HD (exigia bancos de textura); corrigido. Detalhes, capturas e limites em
-  `notes/remake-visual.md` ("Fase 3 no jogo"); formato do palco em `notes/formats.md`.
+  os segundos, 0 underruns. A thread de render ficava +7 a +11 pontos acima da base: cada desenho de host do
+  framework fazia 13 `glGetIntegerv`, e com o driver da NVIDIA em modo de thread cada um esperava a fila do driver
+  (1,5–1,9 ms por desenho). Corrigido no patch `psxrecomp-host-draw.patch` (save/restore sem ler de volta):
+  **render tudo − base = +1 e 0 pontos**, jogo +3 e −2, render da base de 30–35 % para 25–27 %; modo 6 (4 HEATs) +
+  palco 59,9 fps, render 29 %. GPU do remake medida por carimbos: pós 0,9 ms, chão 0,2 ms, corpo 0,2–0,3 ms por
+  quadro do jogo. O remake do HEAT se desligava com o pacote HD (exigia bancos de textura); corrigido. Detalhes,
+  capturas e limites em `notes/remake-visual.md` ("Fase 3 no jogo"); formato do palco em `notes/formats.md`.
 - Ficou de fora: geometria e luz do palco pelo caminho novo (decisão com dados: formato do overlay do palco não
   mapeado, ganho menor que o das outras peças), palcos 2..8 do modo história nos dumps, afinar o atraso do som por
-  música (±3 quadros) e achar a origem dos pontos da thread de render com o HD.
+  música (±3 quadros).
 
 ## Onde estávamos (fim da fase 2, 2026-10-27)
 - HEAT com mãos de dedos por gesto (aberta, punho, apontando; o jogo troca a mão religando o irmão do antebraço e

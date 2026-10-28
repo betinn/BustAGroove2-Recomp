@@ -502,20 +502,54 @@ marcador, hdD..F depois, hdI com o caminho novo da tela larga:
 | hdI / 2ª | base | 59,9 (mín. 59,9) | 41 % (máx. 45) | 32 % (máx. 43) | 0 |
 
 Nenhum segundo abaixo de 59,5, 0 underruns em todas. Thread do jogo: −1 a 0 ponto contra a base (pedido: até +3).
-**Thread de render: +10, +11, +7, +11, +11 pontos (média +10, pedido: até +10): no limite, 3 de 5 sessões 1 ponto
-acima.** Sem o HD (tabela abaixo) era −7/+4. Modo 6 + tudo: 59,9 fps, 0 underruns.
+Thread de render: +10, +11, +7, +11, +11 pontos (média +10, pedido: até +10), no limite. Sem o HD (tabela abaixo)
+era −7/+4. Modo 6 + tudo: 59,9 fps, 0 underruns.
+
+**Causa e correção (patch `psxrecomp-host-draw.patch`, 2026-10-27).** Tempo de parede de cada parte do desenho
+de host medido no framework (`gl_renderer_host_draw_times`, no `heat_stats`): o `hostdraw_save` levava **1,5–1,9 ms
+por desenho de host** (13 `glGetIntegerv`: unidade ativa, textura 2D das unidades 0..7, ARRAY_BUFFER, unpack) e o
+resto da chamada ~0,1–0,3 ms. Com o driver da NVIDIA em modo de thread cada leitura de volta espera a fila do driver.
+Um marcador vazio (`stage_post "1 1"`, callback sem trabalho) já punha +5 a +7 pontos na render; a soma dos
+desenhos de host ia de 3,0–3,7 s (base) para 7,3–7,8 s por minuto. O pós e a sombra no chão somam 3 desenhos de
+host por quadro do jogo (o pós sempre com espelho), daí os +10. Correção: o save/restore não lê nada de volta.
+Volta aos invariantes do renderizador (unidade 0 ativa, ARRAY_BUFFER 0, unpack 4/0, que ele religa antes de
+usar); as unidades 0..7 ficam com o renderizador (os plugins só usam 8..13, conferido em `rmk_gl.c` e
+`rmk_post.c`); o recorte vem de `hr_begin` / `wide_band_scissor_x`, que guardam o último. As consultas de tempo
+de GPU dos plugins (`gpu_timer.h`) ficaram desligadas por padrão (`gpu_timers 1`), pelo mesmo motivo.
+O driver também alterna de modo entre sessões: numa sessão (hdL) o save custou 7 µs, mas a render ficou em
+49–59 % até na base. Essas são as sessões "com ruído" de antes (base a 49–62 %).
+
+Depois da correção (`perf_hdMNO.txt`, `perf_hdP.txt`):
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| hdM / 1ª | marcador vazio | 59,9 (mín. 59,9) | 40 % (máx. 42) | 24 % (máx. 31) | 0 |
+| hdM / 2ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 26 % (máx. 35) | 0 |
+| hdN / 1ª | tudo | 59,9 (mín. 59,9) | 43 % (máx. 46) | 28 % (máx. 41) | 0 |
+| hdN / 2ª | base | 59,9 (mín. 59,8) | 40 % (máx. 46) | 27 % (máx. 33) | 0 |
+| hdO / 1ª | base | 59,9 (mín. 59,9) | 41 % (máx. 42) | 25 % (máx. 29) | 0 |
+| hdO / 2ª | tudo | 59,9 (mín. 59,9) | 39 % (máx. 41) | 25 % (máx. 36) | 0 |
+| hdP / 1ª | modo 6 (4 HEATs) + tudo | 59,9 (mín. 59,9) | 44 % (máx. 46) | 29 % (máx. 35) | 0 |
+| hdP / 2ª | base | 59,9 (mín. 59,9) | 40 % (máx. 46) | 25 % (máx. 32) | 0 |
+
+Regressão depois da correção (`stage_check.py`, `chk_montagem_hostdraw.png`): abertura, título, menu e seleção com
+0 marcadores e 1920×1080; partida no palco do HIRO com texturas certas no HEAT e no HUD; volta ao título no fim. O
+HEAT fica com um degradê magenta nas pernas nesse palco (com e sem o pós): é a luz rosa do palco lida do GTE pela
+luz do remake (fase 2), não estado de textura.
+
+Desenho de host por chamada: preparar 0,1 µs (era 1,5–1,9 ms), total 65 µs com tudo e 131–135 µs na base (o corpo
+do HEAT), soma 0,22–0,24 s por minuto na base e 0,34 s com tudo. **Render: tudo − base = +1 e 0 pontos; jogo +3 e
+−2 (as 1ªs janelas da sessão tendem a 1–3 pontos a mais no jogo).** A base também caiu (render 30–35 % → 25–27 %),
+porque o desenho do HEAT pagava a mesma espera.
 
 Custo de GPU de cada peça, medido pelos próprios plugins com carimbos `GL_TIMESTAMP` em volta do trabalho
 (`src/gpu_timer.h`, `tools/remake/stage_gpu.py`; 30 chamadas por segundo, uma por quadro do jogo): pós-efeito
 0,86–0,93 ms por chamada (1,06–1,22 ms no caminho antigo com emenda), sombra no chão 0,18–0,23 ms, corpo do HEAT com
 a sombra própria 0,17–0,30 ms. Somado: ~1,1 ms de GPU por quadro do jogo, ~3 % do tempo da GPU. O caminho novo do pós
-tirou 20 % da GPU dele e a thread de render não mudou (hdI = hdA/B), então o resto dos pontos não é GPU do trabalho
-do remake. Suspeita não provada: custo fixo por desenho de host no framework (`hostdraw_save` faz ~12
-`glGetIntegerv` por chamada, e o pós e o chão somam 3 chamadas por quadro com o espelho), que com o driver em modo
-de thread pode virar espera; o teste com o marcador vazio (`stage_post "1 1"`) saiu com ruído da máquina (base a
-49 %) e um A/B na mesma partida (`render_ab`) deriva com a fase da música. `frame_perf` (GL_TIME_ELAPSED do
-framework) mede o intervalo da cena na GPU com as esperas dentro (cena + apresentação dão sempre 16,7 ms) e não
-serve para custo.
+tirou 20 % da GPU dele e a thread de render não mudou (hdI = hdA/B), então o resto dos pontos não era GPU do
+trabalho do remake (causa abaixo). Um A/B de várias variantes na mesma partida (`render_ab`) não serve: a render e
+o jogo derivam com a fase da música. `frame_perf` (GL_TIME_ELAPSED do framework) mede o intervalo da cena na GPU
+com as esperas dentro (cena + apresentação dão sempre 16,7 ms) e não serve para custo.
 
 **Sem o pacote HD** (junção quebrada, ver acima; medições da 1ª rodada da fase 3, antes da correção do HEAT com HD):
 
@@ -543,10 +577,8 @@ parâmetros da afinação), `u_grade.png` / `v_grade.png` (estúdio, metade dire
 sombra nova, ~0,2 s entre as duas), `fin1..3_ab.png` (palco original x fase 3, estúdio), `palcoA..C.log` (medições).
 
 ### Limites e o que não deu (fase 3)
-- **Thread de render com o pacote HD no limite** (+10 em média, +11 em 3 de 5 sessões; pedido +10). A GPU do remake
-  é ~1,1 ms por quadro do jogo; a origem do resto não foi provada (ver "Desempenho"). Próximo passo, se precisar:
-  medir o custo fixo de um desenho de host no framework (marcador vazio contra base em sessão limpa) e, se for o
-  `hostdraw_save`, guardar o estado sem `glGetIntegerv` no patch `psxrecomp-host-draw.patch`.
+- Contrato novo do desenho de host: o plugin usa só as unidades de textura 8 em diante e não deve ler estado do GL
+  por quadro (`glGet*`, consultas). O adaptador do Polygonia (DuckStation) precisa seguir a mesma regra.
 - **Geometria e luz do palco pelo caminho novo: não feita** (decisão com dados acima). Fica para depois da fase 4.
 - **Dumps HD**: só os Stage 1 de quatro personagens (rotas R, RR, RRR, D) e os palcos que o sorteio do oponente
   trouxe; os palcos seguintes do modo história (2..8) precisam de partidas vencidas em sequência, não feitas.

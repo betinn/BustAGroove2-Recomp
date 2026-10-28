@@ -65,6 +65,7 @@ static RmkRect s_hr_rect;
 static int s_hr_valid;
 static volatile int s_band_w, s_band_h, s_band_changes;   /* tamanho da faixa (trocas = alvos refeitos) */
 static GpuTimer s_gt;                /* tempo de GPU do pós-efeito por chamada */
+volatile int bag2_gpu_timers;        /* tempo de GPU por peça (gpu_timer.h); desligado por padrão */
 static volatile int s_last_pass, s_last_scale, s_last_fbo, s_last_area[4], s_last_vp[4], s_pass_count[3];
 
 static uint32_t rd32(uint32_t a) { return psx_mod_read_word(a); }
@@ -238,6 +239,14 @@ static int stage_post_cmd(const char* args, char* reply, int cap) {
     return 0;
 }
 
+static int gpu_timers_cmd(const char* args, char* reply, int cap) {
+    int on = -1;
+    if (args) sscanf(args, "%d", &on);
+    if (on >= 0) bag2_gpu_timers = on;
+    snprintf(reply, cap, "gpu_timers=%d", bag2_gpu_timers);
+    return 0;
+}
+
 static int stage_stats_cmd(const char* args, char* reply, int cap) {
     (void)args;
     static uint32_t d0;
@@ -263,4 +272,5 @@ PSX_MOD_CONSTRUCTOR(bag2_stage_register) {
     (void)psx_mod_register_host_draw(HOST_DRAW_POST, stage_host_draw);
     (void)psx_mod_register_command("stage_post", stage_post_cmd);
     (void)psx_mod_register_command("stage_stats", stage_stats_cmd);
+    (void)psx_mod_register_command("gpu_timers", gpu_timers_cmd);
 }

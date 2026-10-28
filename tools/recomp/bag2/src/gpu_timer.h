@@ -2,7 +2,9 @@
  * porque o GLES 3.0 não tem consultas de tempo). Usa dois carimbos GL_TIMESTAMP (glQueryCounter, GL 3.3) em vez
  * de GL_TIME_ELAPSED: o framework já tem uma consulta TIME_ELAPSED aberta em volta da cena (frame_perf) e duas
  * do mesmo alvo não podem estar ativas juntas. Resultados lidos GT_RING chamadas depois, sem parar o pipeline.
- * Só a thread de render chama gt_begin/gt_end; gt_take lê as somas de qualquer thread (aproximado). */
+ * Só a thread de render chama gt_begin/gt_end; gt_take lê as somas de qualquer thread (aproximado).
+ * Desligado por padrão (comando gpu_timers 1): com o driver da NVIDIA em modo de thread toda leitura de volta
+ * (glGetQueryObject*) pode esperar a fila do driver, o mesmo custo que o framework tinha com glGetIntegerv. */
 #ifndef BAG2_GPU_TIMER_H
 #define BAG2_GPU_TIMER_H
 
@@ -15,13 +17,14 @@
 #endif
 
 #define GT_RING 8
+extern volatile int bag2_gpu_timers;   /* bag2_stage.c, comando gpu_timers */
 typedef struct {
     void (GT_API* GenQueries)(int, unsigned*);
     void (GT_API* QueryCounter)(unsigned, unsigned);
     void (GT_API* GetQueryObjectiv)(unsigned, unsigned, int*);
     void (GT_API* GetQueryObjectui64v)(unsigned, unsigned, uint64_t*);
     unsigned q[GT_RING][2];
-    int pending[GT_RING], slot, state;   /* state: 0 ainda não, 1 pronto, -1 sem consultas */
+    int pending[GT_RING], slot, state, open;   /* state: 0 ainda não, 1 pronto, -1 sem consultas */
     volatile uint64_t ns, n;
 } GpuTimer;
 
@@ -37,7 +40,8 @@ static void gt_init(GpuTimer* t, void* (*get_proc)(const char*)) {
 }
 
 static void gt_begin(GpuTimer* t) {
-    if (t->state != 1) return;
+    t->open = 0;
+    if (t->state != 1 || !bag2_gpu_timers) return;
     const int s = t->slot;
     if (t->pending[s]) {                 /* o carimbo de GT_RING chamadas atrás: lê só se já chegou */
         int ok = 0;
@@ -51,10 +55,12 @@ static void gt_begin(GpuTimer* t) {
         t->pending[s] = 0;
     }
     t->QueryCounter(t->q[s][0], 0x8E28 /* GL_TIMESTAMP */);
+    t->open = 1;
 }
 
 static void gt_end(GpuTimer* t) {
-    if (t->state != 1) return;
+    if (!t->open) return;
+    t->open = 0;
     t->QueryCounter(t->q[t->slot][1], 0x8E28);
     t->pending[t->slot] = 1;
     t->slot = (t->slot + 1) % GT_RING;
