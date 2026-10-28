@@ -22,11 +22,25 @@ já é construído pensando nele (fase 7).
 | 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **feito** (2026-10-27): pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco avaliada e adiada; render +0/+1 depois do patch do desenho de host |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | **feito** (2026-10-28): rota do 2 jogadores, COMET e os dois figurinos de 15 personagens; 3 recusados (outro esqueleto) |
 | 5 | Memória do elenco: só quem está em cena fica carregado; lacunas da fase 4 conferidas | **feito** (2026-10-28): descarga, os 18 conferidos, asset v7 |
-| 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **próxima** (decidida em 2026-10-28, antes do Polygonia) |
-| 7 | Port para o Polygonia (Android) | pendente |
+| 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **feito** (2026-10-28): os 11 palcos da tela de palco pelo desenho de host, chão e fundos do overlay, pacote HD +92 texturas |
+| 7 | Port para o Polygonia (Android) | **próxima** |
 | 8 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 5, 2026-10-28)
+## Onde estamos (fim da fase 6, 2026-10-28)
+- Os palcos pelo caminho novo: o modelo de cada palco tem o formato dos personagens; o plugin troca na OT (entrada de
+  `DrawOTagEnv`) as sequências de pacotes do palco pelo desenho de host, na ordem de pintor exata do jogo, com os pacotes
+  vivos; chão, vigas e fundos do código do overlay entram como faces livres (vértices reconhecidos nos ganchos de
+  `FUN_8001F278` e `RotTransPers*`). Luz por pixel sobre a cor do jogo, mapa de normal, especular, AO, sombra dos
+  dançarinos no cenário, borda suave, reflexo no chão escuro (Sushi Planet, discoteca). Carga e descarga por palco.
+- Os 11 palcos da tela de palco conferidos no 2 jogadores (capturas original × remake, cores por nó); 241 e 245 não
+  aparecem nela (exportados, não conferidos).
+- Desempenho: 59,9 fps em todos os segundos e 0 underruns nos 11; jogo 0 a −4 pontos em todos; render −13 a +3 em dez,
+  e +11/−3 no 236 (duas sessões, média +4).
+- Pacote HD: dumps dos 11 palcos, 92 texturas novas (564 substituições).
+- Pendência da fase 5 (HEAT × COMET): render +9/+10 sem o palco novo; a CPU do plugin não explica (+0,1 ponto), é espera
+  pela GPU; com o palco novo a render fica 6 pontos abaixo.
+
+## Onde estávamos (fim da fase 5, 2026-10-28)
 - Só quem está em cena fica carregado: numa sessão de 5 partidas a GPU dedicada fica em 1,06–1,22 GB nas partidas e
   0,77–0,99 GB nos menus (0 personagens carregados); sem a descarga chegava a 2,1 GB e subia a cada personagem novo.
 - Os 18 personagens nos dois figurinos conferidos no jogo (partidas espelhadas do 2 jogadores, liberados só na RAM):
@@ -245,9 +259,21 @@ juntos. Tudo no núcleo portátil (`src/remake/`, C99, GL 3.3/GLES 3.0, sem geom
   Junto: as pendências da fase 5 (render do par HEAT × COMET +12/+9; build normal numa partida jogada, que precisa do
   computer-use autorizado).
 
+**Resultado** (técnica, números e limites em `notes/remake-visual.md`, "Fase 6 no jogo"; formato em
+`notes/formats.md`, "Palcos: conteúdo e desenho"):
+- Peça 0: `stage_inventory.py`; 11 palcos diferentes na tela de palco, modelo no formato dos personagens.
+- Peça 1: dumps dos 11 palcos na mesma volta; Real-ESRGAN incremental, 92 texturas novas.
+- Peça 2: `export_stage.py` (HTR7 + `.stg`, vincos, AO, alfa suave, texturas do overlay por `stage_keys.py`).
+- Peça 3: `rmk_stage.c` + `bag2_stage.c` (troca na OT, faces livres, texturas animadas com o jogo, reflexo).
+- Peça 4: `stage_perf.py`, `stage_geo_pause.py` (A/B por savestate), `stage_mem.py`, regressão `stage_check.py`.
+
 ## Fase 7 — Port para o Polygonia (Android)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.
 - Hook: detectar no CPU emulado a entrada de `0x80029D4C` e ler as matrizes da RAM.
+- Palcos (fase 6): as entradas de `DrawOTagEnv` (0x800486AC, trocar as sequências na OT antes do DMA), de `FUN_80029588`
+  (buffer e matriz do GTE de cada nó) e de `FUN_8001F278`/`RotTransPers*` (vértices do código do overlay); o núcleo
+  `rmk_stage.c` é o mesmo. Memória: 13–59 camadas 1024² por palco (55–250 MB de asset, até ~630 MB de GPU no 236): no
+  celular, camadas menores ou comprimidas (ETC2, que o GLES 3.0 tem).
 - Desenho: adaptador para o renderizador do DuckStation (Vulkan e OpenGL ES), reaproveitando o núcleo
   portátil da fase 1 (asset, poses, shaders GLES 3.0). O DuckStation de 2021 tem buffer de profundidade PGXP.
 - Assets gerados no PC a partir do disco do usuário e copiados para o celular; nada do jogo no APK nem no

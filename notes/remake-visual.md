@@ -1,4 +1,4 @@
-# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco e a memória 2026-10-28)
+# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco e a memória 2026-10-28, os palcos 2026-10-28)
 
 Pergunta: dá para modernizar o visual dos personagens **sem artista humano**, partindo das malhas
 originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animação? Feito só com o HEAT
@@ -17,6 +17,9 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
    figurinos de cada um, com semitransparência (seção "Fase 4 no jogo").
 7. **No jogo, fase 5** (memória do elenco): só quem está em cena fica carregado; os 18 personagens conferidos no jogo,
    reconhecimento de cada nó pelo mesh e asset v7 (seção "Fase 5 no jogo").
+8. **No jogo, fase 6** (os palcos): os 11 palcos da tela de palco pelo desenho de host, na ordem de pintor do jogo, com
+   texturas HD de borda suave, mapa de normal, luz por pixel e a sombra dos dançarinos no cenário; chão e fundos do
+   código do overlay reconhecidos pelos vértices transformados; pacote HD de todos os palcos (seção "Fase 6 no jogo").
 
 ## Como reproduzir
 ```
@@ -967,6 +970,177 @@ Log sem erro do plugin, pacote HD ligado (477 substituições). Cartão do usuá
 - Build normal: só a demonstração automática (sem partida jogada pelo teclado; computer-use não autorizado).
 - Desempenho do par HEAT × COMET: render +12/+9 contra +6/+6 na fase 4 (ver "Desempenho (fase 5)"); causa não achada.
 - Telas de resultado do 1 jogador não conferidas (o 2 jogadores volta direto à seleção).
+
+## Fase 6 no jogo: os palcos pelo caminho novo (2026-10-28)
+Pedido: palcos no nível dos personagens antes do port, geometria e luz pelo desenho de host e o pacote HD cobrindo todos
+os palcos. Tudo no 2 jogadores (HEAT × COMET, a posição na tela de palco escolhe o palco). Formato e desenho do palco em
+`notes/formats.md` ("Palcos: conteúdo e desenho").
+
+### Inventário (peça 0; `tools/remake/stage_inventory.py`, saída em `logs/remake/palcos/`)
+Uma sessão percorreu as 16 primeiras posições da tela de palco com captura, um quadro da GPU e a RAM inteira de cada
+partida (e o dump do pacote HD ligado, que serviu à peça 1). A tela tem **11 palcos diferentes** (231..238, 242..244;
+238 = 239 = 240); 241 e 245 não aparecem nela. O modelo de cada palco tem o formato dos personagens; os nós com mesh
+passam por `FUN_80029588` e chão, vigas e fundos saem do código do overlay. Divisão das primitivas num quadro do 234: 243
+dos nós, 160 do overlay, 75 de fora (HUD, efeitos).
+
+| pos. | container | palco | nós com mesh | vértices (com vincos) | faces | camadas HD (do overlay) | asset |
+|---|---|---|---|---|---|---|---|
+| 0 | 234 | ponte de aço | 38 | 2179 | 1820 | 42 (11) | 176 MB |
+| 1 | 233 | Sushi Planet | 41 | 2507 | 2044 | 43 (23) | 181 MB |
+| 2 | 242 | parque | 43 | 3168 | 2748 | 35 (12) | 147 MB |
+| 3 | 243 | fábrica | 29 | 1630 | 1622 | 13 (2) | 55 MB |
+| 4 | 232 | templo de pedra | 22 | 1288 | 1178 | 26 (17) | 109 MB |
+| 5 | 237 | cenário de papel | 34 | 2854 | 2317 | 51 (23) | 214 MB |
+| 6 | 244 | templo oriental | 26 | 2890 | 2557 | 34 (12) | 143 MB |
+| 7 | 235 | discoteca | 34 | 1963 | 1676 | 44 (21) | 185 MB |
+| 8 | 236 | rua | 24 | 1854 | 1363 | 59 (7) | 248 MB |
+| 9 | 231 | navio pirata | 51 | 2636 | 2265 | 26 (4) | 109 MB |
+| 10 | 238 | estúdio de TV | 20 | 2042 | 2228 | 15 (14) | 63 MB |
+| — | 241, 245 | (fora da tela de palco) | 37, 42 | 3030, 2733 | 2278, 2113 | 22, 8 | 92, 34 MB (exportados, não conferidos) |
+
+### Pacote HD de todos os palcos (peça 1)
+Os dumps da mesma sessão (60 s por palco, com o voo da câmera) deram 562 PNG novos; `tools/hd_textures.py --filter
+esrgan` (incremental) ampliou **92 texturas novas** (370 já estavam, 258 recortes redundantes): o pacote foi de 477 para
+564 substituições. Uma segunda volta com o dump ligado deixa saber se falta alguma (ver "Limites").
+
+### Asset e tabela por palco (peça 2; `tools/remake/export_stage.py`)
+- **HTR7 de sempre** (o carregador e o preparo GL são os dos personagens): um "osso" por nó com mesh, vértices no
+  espaço do nó **divididos nos vincos** (40°: a normal de uma caixa não vira a de uma almofada), oclusão ambiente por
+  vértice (na GPU, pose de descanso), camadas HD por (TIM, linha da CLUT) com Real-ESRGAN 4x. Índice do asset >= 100.
+- **Alfa suave**: nas camadas do palco o alfa é a máscara de cobertura original ampliada por bicúbica (borda em 128),
+  com o STP no bit baixo; o shader desenha a borda com antisserrilhado (`fwidth`) e mistura na ordem de pintor (o xBR do
+  pacote do framework dá escada).
+- **Tabela `.stg`**: por nó, o deslocamento do MeshHeader no modelo e o tamanho do buffer de pacotes; por primitiva, as
+  palavras dos pacotes, as faces do asset e o slot do pacote de cada canto (quad: v2, v3, v1, v0 nos slots A..D, como nos
+  personagens); a camada HD de cada (página, CLUT) que o jogo usa, pela posição dos TIMs na VRAM.
+- **Texturas do código do overlay** (`tools/remake/stage_keys.py` -> `tools/remake/stage_extra_keys.json`, só coordenadas
+  da VRAM): o plugin lista as faces livres que ficaram sem camada; o exportador monta a página 256 texels da VRAM com os
+  TIMs do palco que caem nela e a CLUT achada no bloco de algum TIM (texturas de fora do palco, como HUD, ficam fora).
+
+### No jogo (peça 3; núcleo `src/remake/rmk_stage.c`, `rmk_glfn.h`; adaptador `src/bag2_stage.c`)
+- **Troca na OT**: gancho novo na entrada de `DrawOTagEnv` (a OT do quadro pronta, com a do HUD). O plugin percorre a OT
+  e troca cada sequência de pacotes do palco (as entradas vazias da OT no meio não contam) por um marcador de desenho de
+  host com os **pacotes vivos** (cor, UV, CLUT e página de cada vértice, como o jogo montou: animação de UV e a luz do
+  GTE nos nós com luz seguem); o pacote antes da sequência passa a apontar para o marcador. A **ordem de pintor é a do
+  jogo, exata**, inclusive contra os dançarinos e o resto do quadro; sem z-buffer. No 234: ~37 sequências e ~185 pacotes
+  trocados por OT; 50–70 µs por OT na thread do jogo. Depois de cada marcador com textura vai um FT3 degenerado fora da
+  tela com a última página (o estado da GPU fica como o jogo deixaria; um E1h mexeria no dithering).
+- **Nós**: entrada de `FUN_80029588` (o mesmo endereço do gancho dos personagens, sem filtro): o modelo do palco é achado na
+  RAM pelo mesh de um nó com a assinatura e a impressão digital do começo do modelo; para cada nó desenhado, o buffer
+  (a1) e a **matriz do GTE** (a de +0x6C não serve para parte dos nós). Conferência (`stage_geo "1 64"`): 66 % dos cantos
+  projetados a < 1 px do vértice do pacote, 31 % a 1–4 px (arredondamento do GTE), 3 % fora (o GTE satura a tela longe do
+  quadro).
+- **Faces livres** (geometria do código do overlay): ganchos em `FUN_8001F278` e `RotTransPers`/`3`/`4` guardam a posição
+  na câmera e a tela de cada vértice transformado para a OT seguinte; um pacote de fora dos nós cujos vértices batem todos
+  (±1 px) vira face livre, com os vértices no marcador do quadro (o primeiro do palco, logo depois do começo da OT). Chão
+  e vigas do 234, chãos do 244 e do 235, fundos do 237 e do 231, telão do 238. Fica com o jogo: RTPT em linha no overlay
+  (o chão do 233 e de outros), janela de textura (E2h), textura sem camada, polígono semitransparente sem textura.
+- **Texturas animadas**: `LoadImage`/`MoveImage` na CLUT ou na página de uma chave depois que o palco está pronto marcam a
+  chave; os pacotes dela ficam com o jogo (as luzes que piscam do disco).
+- **Luz** (o jogo já pintou a luz do palco na cor dos vértices): reiluminação pela diferença entre as luzes do palco (as
+  dos dançarinos, GTE, câmera) na normal da geometria e uma luz média (peso 0,55), relevo do mapa de normal pela diferença
+  entre a normal perturbada e a da geometria (0,9), especular GGX pesado pelo brilho da cor do vértice (face escura não
+  brilha), oclusão ambiente (0,6), pulso da música no especular. **Sombra dos dançarinos no cenário**: os mapas de sombra
+  deles (`rmk_gl_shadow_view`: o da sombra no chão se saiu no quadro, senão a sombra própria da luz principal), PCF de 4
+  amostras, 0,55; o chão não repete quando a sombra macia no chão já sai.
+- **Carga e descarga por palco**: na ativação só as tabelas; o asset carrega numa thread quando o jogo desenha os nós do
+  palco (2,4 s no 234, durante o voo da câmera antes do "Ready"), os recursos GL aos poucos por marcadores de preparo
+  (uma camada por marcador) e a cópia de CPU das camadas sai depois; descarrega 3 s depois que o jogo para de desenhar o
+  palco (menus, outro palco), com os recursos GL apagados pela thread de render num marcador.
+- Comando `stage_geo "<on> <flags> <reiluminação> <relevo> <especular> <AO> <sombra> <exposição> <rugosidade> <pulso>"`
+  (flags: 1 sem reiluminação, 2 sem mapa de normal, 4 sem sombra, 64 confere a projeção, 128 só a metade direita, 256 cor
+  por nó e faces livres em amarelo, 512 sem faces livres); `stage_geo s` estatísticas (`sz` zera), `stage_geo k` texturas
+  sem camada. Scripts: `stage_inventory.py`, `stage_geo_check.py`, `stage_geo_pause.py` (A/B no mesmo quadro por
+  savestate), `stage_keys.py`, `stage_mem.py`, `stage_perf.py`.
+
+### Desempenho (peça 4; `tools/remake/stage_perf.py`, `logs/remake/palcos/perf6_todos.txt`)
+Build-debug, RTX 3070 Ti, 9x + 16:9, pacote HD ligado, HEAT × COMET com os dois remakes, `game_perf.py`, uma sessão por
+palco, duas janelas de 60 s com a ordem trocada de um palco para o outro. Base = estado da fase 5 (`stage_geo 0`: palco
+original com o pós-efeito e a sombra no chão); tudo = `stage_geo 1`.
+
+| pos. | palco | ordem | base: fps (mín.) | jogo | render (máx.) | tudo: fps (mín.) | jogo | render (máx.) | Δ jogo | Δ render | underruns |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 234 | base primeiro | 59,9 (59,8) | 33 % | 41 % (58) | 59,9 (59,9) | 30 % | 35 % (45) | −3 | −6 | 0/0 |
+| 1 | 233 | tudo primeiro | 59,9 (59,9) | 34 % | 37 % (50) | 59,9 (59,9) | 32 % | 30 % (46) | −2 | −7 | 0/0 |
+| 2 | 242 | base primeiro | 59,9 (59,9) | 35 % | 38 % (50) | 59,9 (59,9) | 31 % | 25 % (45) | −4 | −13 | 0/0 |
+| 3 | 243 | tudo primeiro | 59,9 (59,9) | 31 % | 44 % (48) | 59,9 (59,9) | 28 % | 32 % (47) | −3 | −12 | 0/0 |
+| 4 | 232 | base primeiro | 59,9 (59,9) | 30 % | 46 % (50) | 59,9 (59,9) | 28 % | 43 % (49) | −2 | −3 | 0/0 |
+| 5 | 237 | tudo primeiro | 59,9 (59,9) | 30 % | 44 % (50) | 59,9 (59,9) | 28 % | 47 % (50) | −2 | +3 | 0/0 |
+| 6 | 244 | base primeiro | 59,9 (59,9) | 30 % | 41 % (54) | 59,9 (59,9) | 26 % | 40 % (48) | −4 | −1 | 0/0 |
+| 7 | 235 | tudo primeiro | 59,9 (59,9) | 31 % | 40 % (45) | 59,9 (59,9) | 28 % | 31 % (48) | −3 | −9 | 0/0 |
+| 8 | 236 | base primeiro | 59,9 (59,9) | 31 % | 36 % (50) | 59,9 (59,9) | 28 % | 47 % (51) | −3 | **+11** | 0/0 |
+| 9 | 231 | tudo primeiro | 59,9 (59,9) | 30 % | 47 % (55) | 59,9 (59,8) | 29 % | 38 % (46) | −1 | −9 | 0/0 |
+| 10 | 238 | base primeiro | 59,9 (59,9) | 29 % | 42 % (50) | 59,9 (59,9) | 29 % | 41 % (50) | 0 | −1 | 0/0 |
+
+Nenhum segundo abaixo de 59,5 em nenhuma janela, 0 underruns. A thread do jogo cai em todos os palcos (0 a −4 pontos: a
+GPU emulada anda centenas de pacotes a menos por OT; a troca na OT custa 50–95 µs por OT) e a de render cai em 8 dos 11
+(até −13: menos lotes e trocas de textura no renderizador do framework). O plugin gasta 1–2 µs de CPU por desenho de host
+na thread de render; o que sobe a render no 237 e no 236 é espera pela GPU (palcos grandes na tela, 51 e 59 camadas).
+
+**236 de novo** (sombra dos dançarinos com uma leitura de PCF bilinear em vez de quatro), duas sessões com a ordem
+trocada: base 35 % → tudo 46 % (+11) com a base primeiro; tudo 40 % → base 43 % (−3) com o tudo primeiro; 59,9 fps em
+todos os segundos, 0 underruns, jogo −3 nas duas. No mesmo trecho da música entre sessões (1ª janela com 1ª janela,
+2ª com 2ª): +5 e +3. O fim da música do 236 tem a câmera mais pesada; na média das duas ordens, +4.
+
+**Pendência da fase 5: render do par HEAT × COMET** (palco do HEAT, `stage_geo 0` como na fase 5; base = só o HEAT com
+remake, flag 2048; `logs/remake/palcos/perf6_hcA.txt`, `perf6_hcB.txt`): base primeiro: render 34 → 43 % (+9), jogo 40 →
+31 %; tudo primeiro: 42 → 32 % (+10), jogo 33 → 39 %; 59,9 fps em todos os segundos, 0 underruns. A CPU do plugin na
+thread de render não explica: 125 µs por desenho de host com só o HEAT e 88 µs com os dois, soma 311 → 372 ms por minuto
+(+0,1 ponto), e o tempo de cada chamada no framework (salvar/restaurar) não muda. O aumento é a thread de render
+esperando a GPU (o segundo corpo com Phong, sombra própria e o passo semi; com a GPU perto de cheia na 9x + 16:9, como
+a fase 5 viu nos carimbos, cada ms a mais de GPU vira espera na apresentação). Não confirmei com um contador de GPU sem
+fila. Na configuração da fase 6 (os dois remakes e o palco novo) a render no palco do HEAT fica em 35 %: perto da base
+só com o HEAT (32–34 %) e 6 pontos abaixo dos dois remakes com o palco original (41 %, tabela acima). Critério de +10 da
+fase 4: +9/+10 agora, no limite.
+
+### A/B no mesmo quadro
+A câmera do palco anda até na pausa. `stage_geo_pause.py` salva um estado e, para cada variante, carrega o mesmo estado
+e captura 60 quadros depois (as primeiras OTs depois da carga foram montadas antes dela e ficam originais). Câmera e
+dançarinos batem; peças com movimento aleatório (a gaiola do 234) divergem, porque o laço principal chama `rand()`
+enquanto espera o `DrawSync` e a troca dos pacotes muda esse tempo. Capturas `logs/remake/palcos/pausa_<pos>_*.png`
+(original, remake, cores por nó), montagens `cobertura_a.png`, `cobertura_b.png`, `ab_0_2.png`; as finais, original ×
+remake de cada palco com um recorte do centro em tamanho real, em `palco_<pos>_ab.png` e a folha `palcos_ab.png`
+(`tools/remake/stage_montage.py`).
+
+O que se vê: relevo de verdade nas paredes e pedras (tijolos do 242 com bisel e junta funda, rocha, madeira), superfícies
+grandes em primeiro plano lisas em vez de posterizadas, borda das texturas recortadas em curva, especular discreto nas
+peças claras, os dançarinos fazendo sombra no cenário atrás deles e se refletindo no chão escuro do Sushi Planet e da
+discoteca. Palcos escuros (234) e muito claros (238) mudam pouco: a luz do jogo já está na cor dos vértices e a
+reiluminação é de propósito contida (peso 0,55) para não mudar o clima de cada palco.
+
+### Regressão (`tools/remake/stage_check.py`, `logs/remake/palcos/regressao.txt`, `logs/remake/palco/chk_*.png`)
+Abertura (FMV), título, menu, seleção de personagem e tela de palco: 0 marcadores do pós-efeito, 0 sequências da geometria
+do palco e nenhum asset de palco carregado, captura 1920×1080 (4:3 nos menus e no vídeo, como antes). Partida: o asset
+do palco carrega no voo da câmera e as trocas começam; HUD por cima intacto, 16:9. No fim da música o 2 jogadores volta
+à seleção: as trocas param e o asset descarrega (estado 0). Áudio: 0 underruns nas 26 janelas de 60 s da medição; nada do
+caminho do som mudou (ritmo pelo vblank de `src/bag2_mods.c`, `notes/recomp.md` §13). Pacote HD ligado em todas as
+sessões (564 substituições).
+
+### Memória (`tools/remake/stage_mem.py`, `logs/remake/palcos/mem.txt`)
+Uma sessão, três partidas (234, 236, 233) com QUIT entre elas e dois savestates em cada: GPU dedicada do processo 465 MB
+na abertura; na partida 1,55 GB (234), 1,72 GB (236, 59 camadas: ~630 MB só do palco) e 1,55 GB (233); no menu depois de
+cada QUIT, 692 MB (palco e dançarinos descarregados). Os savestates não fazem a memória subir.
+
+### Build normal (`build/`, sem servidor TCP)
+Recompilada com o código final, assets nas duas pastas. O acesso do computer-use ao exe foi **negado** nesta sessão:
+nenhuma partida jogada pelo teclado (não conferido). De fora: com o jogo parado no título, a demonstração automática
+(Sushi Planet) fez a memória de GPU ir de 866 para 1337 MB (na fase 5 a mesma demonstração ia a ~1050 MB, só os
+dançarinos) e voltar a 847 MB depois: o palco carrega e descarrega na build normal.
+
+### Limites e o que não deu (fase 6)
+- **241 e 245** não aparecem na tela de palco do 2 jogadores (com os 18 liberados): exportados, não conferidos no jogo.
+- **Chão e peças por RTPT em linha no overlay** (o chão do 233, partes do 236, 238 e de outros) e polígonos sem textura
+  semitransparentes ficam com o jogo (texturas HD do pacote, sem a luz nova). No 236, ~175 pacotes por OT sem par.
+- **Texturas animadas** (CLUT ou imagem trocada na VRAM durante a partida, 8 no disco) ficam com o jogo.
+- **Sem Phong nos adereços** (caixas e vigas: os vincos ficam vivos); superfícies curvas do palco não ganham silhueta.
+- A escada nas bordas de algumas texturas é o contorno pintado na própria textura (o Real-ESRGAN mantém), não o alfa.
+- **Desempenho**: 236 +11/−3 na render (média +4); a pendência HEAT × COMET (+9/+10 sem o palco novo) é espera pela
+  GPU, causa não confirmada por contador de GPU. Memória de GPU alta nos palcos com muitas camadas (até 1,72 GB no
+  processo): para o Polygonia, camadas menores ou comprimidas.
+- A/B pelo savestate: peças com movimento aleatório divergem entre as variantes (o sorteio depende do tempo da GPU).
+- A segunda volta de dumps HD (para saber se falta textura de algum palco) não foi feita; a primeira cobriu 60 s por
+  palco com o voo da câmera.
+- Partida na build normal pelo teclado: não conferida (computer-use negado).
 
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos

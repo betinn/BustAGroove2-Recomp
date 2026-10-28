@@ -29,9 +29,10 @@ def main():
         env = dict(os.environ, BAG2_MATCH=f'HEAT COMET {k}')
         if k >= 10:
             env['BAG2_UNLOCK'] = '1'
+        env['PYTHONIOENCODING'] = 'utf-8'
         r = subprocess.run([sys.executable, os.path.join(HERE, 'game_perf.py'), f'perf6_{k}', order, secs],
                            env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
-        lines = [l for l in r.stdout.splitlines() if l.startswith('[') or 'áudio' in l or 'geometria do palco' in l
+        lines = [l for l in r.stdout.splitlines() if l.startswith('[') or 'underruns' in l or 'geometria do palco' in l
                  or 'partida:' in l]
         with open(OUT, 'a', encoding='utf-8') as f:
             f.write(f'== posição {k}\n' + '\n'.join(lines) + '\n')

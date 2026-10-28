@@ -73,7 +73,7 @@ struct RmkGL {
     GLint_ u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;
     GLint_ u_stage, u_ldir, u_lcol, u_bk;
     GLint_ u_lu, u_lv, u_ld, u_lc, u_spass, u_shadow, u_shadow_on, u_key;
-    GLint_ u_nrm, u_rm_rect, u_rm_off, u_semi;
+    GLint_ u_nrm, u_rm_rect, u_rm_off, u_semi, u_mir, u_mpn, u_mpp;
     uint64_t bytes;                  /* memória de GPU alocada (estimativa pelos tamanhos pedidos, com mipmaps) */
     char err[512];
 };
@@ -142,6 +142,8 @@ static const char* FS_BODY =
     "uniform int u_key;     /* luz que faz a sombra */\n"
     "uniform vec3 u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;\n"
     "uniform vec4 u_misc;   /* exposição, rugosidade, textura ligada, contraluz */\n"
+    "uniform vec4 u_mir;    /* reflexo no chão (fase 6): força (0 = desenho normal), distância em que some */\n"
+    "uniform vec3 u_mpn, u_mpp;   /* plano do chão (câmera): normal para cima e um ponto */\n"
     "uniform int u_stage;   /* 1: luzes do palco (GTE); 0: luz fixa na câmera da fase 1 */\n"
     "uniform vec3 u_ldir[3], u_lcol[3], u_bk;\n"
     "uniform int u_prepass; /* 1: só profundidade (o recorte por alfa vale igual) */\n"
@@ -241,7 +243,12 @@ static const char* FS_BODY =
     "  c *= mix(0.55, 1.0, v_ao);\n"
     "  c *= u_misc.x;\n"
     "  c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);\n"
-    "  frag = vec4(pow(c, vec3(1.0 / 2.2)), 0.0);   /* alfa = bit 15 do PS1 (máscara) desligado */\n"
+    "  float ma = 0.0;\n"
+    "  if (u_mir.x > 0.0) {   /* reflexo: some com a distância abaixo do chão (o pé encosta, a cabeça quase não aparece) */\n"
+    "    float d = max(-dot(v_pos - u_mpp, u_mpn), 0.0) / u_mir.y;\n"
+    "    ma = u_mir.x * (1.0 - clamp(d, 0.0, 1.0)) * (1.0 - clamp(d, 0.0, 1.0));\n"
+    "  }\n"
+    "  frag = vec4(pow(c, vec3(1.0 / 2.2)), ma);   /* alfa = bit 15 do PS1 (não escrito no reflexo; 0 no corpo) */\n"
     "}\n";
 
 const char* rmk_gl_error(const RmkGL* g) { return g ? g->err : "sem contexto"; }
@@ -339,7 +346,7 @@ static int build_program(RmkGL* g) {
 #define U(name) g->name = g->GetUniformLocation(g->prog, #name)
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_misc); U(u_prepass);
     U(u_key_dir); U(u_key_col); U(u_fill_dir); U(u_fill_col); U(u_rim_dir); U(u_rim_col); U(u_sky); U(u_ground);
-    U(u_stage); U(u_bk);
+    U(u_stage); U(u_bk); U(u_mir); U(u_mpn); U(u_mpp);
     U(u_lu); U(u_lv); U(u_ld); U(u_lc); U(u_spass); U(u_shadow); U(u_shadow_on); U(u_key); U(u_nrm); U(u_semi);
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
@@ -930,7 +937,12 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform1f(g->u_nmap_on, (g->has_nmap && !(fr->flags & RMK_FLAG_NO_NMAP)) ? 1.0f : 0.0f);
     g->Uniform1i(g->u_geo_w, g->geo_w);
     g->Uniform4f(g->u_ndc, t->ndc[0], t->ndc[1], t->ndc[2], t->ndc[3]);
-    const int shadow = !(fr->flags & RMK_FLAG_NO_SHADOW);
+    const int mirror = (fr->flags & RMK_FLAG_MIRROR) != 0;
+    const int shadow = !(fr->flags & RMK_FLAG_NO_SHADOW) && !mirror;
+    g->Uniform4f(g->u_mir, mirror ? fr->floor_alpha : 0.0f, fr->floor_soft > 1.0f ? fr->floor_soft : 1.0f, 0.0f, 0.0f);
+    g->Uniform3f(g->u_mpn, fr->floor_n[0], fr->floor_n[1], fr->floor_n[2]);
+    g->Uniform3f(g->u_mpp, fr->floor_p[0], fr->floor_p[1], fr->floor_p[2]);
+    if (mirror) g->FrontFace(0x0900 /* GL_CW: o espelho inverte a ordem dos vértices */);
     g->Uniform3f(g->u_lu, g->lbasis[0][0], g->lbasis[0][1], g->lbasis[0][2]);
     g->Uniform3f(g->u_lv, g->lbasis[1][0], g->lbasis[1][1], g->lbasis[1][2]);
     g->Uniform3f(g->u_ld, g->lbasis[2][0], g->lbasis[2][1], g->lbasis[2][2]);
@@ -1036,15 +1048,21 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform4f(g->u_depth, dA, dB, alpha, 0.0f);
     g->Uniform1i(g->u_prepass, 1);
     g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
-    /* (2) cor na ordem de pintor do jogo, dentro da tolerância */
-    g->ColorMask(1, 1, 1, 1);
+    /* (2) cor na ordem de pintor do jogo, dentro da tolerância (o reflexo mistura pelo alfa, sem escrever o do FBO) */
+    g->ColorMask(1, 1, 1, mirror ? 0 : 1);
+    if (mirror) {
+        g->Enable(R_BLEND);
+        g->BlendEquation(0x8006 /* GL_FUNC_ADD */);
+        g->BlendFunc(0x0302 /* GL_SRC_ALPHA */, 0x0303 /* GL_ONE_MINUS_SRC_ALPHA */);
+    }
     g->DepthMask(0);
     g->DepthFunc(R_LEQUAL);
     g->Uniform4f(g->u_depth, dA, dB, alpha, fr->zbias);
     g->Uniform1i(g->u_prepass, 0);
     g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
+    if (mirror) { g->Disable(R_BLEND); g->ColorMask(1, 1, 1, 1); g->FrontFace(R_CCW); }
     /* (3) texels com STP das faces semitransparentes: 0,5 B + 0,5 F (modo 0 do PS1), sem escrever o alfa */
-    if (semi && g->n_semi) {
+    if (semi && g->n_semi && !mirror) {
         g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
         inst_attribs(g, g->n_draw);
         g->Enable(R_BLEND);

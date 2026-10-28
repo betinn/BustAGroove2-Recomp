@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Regressão e custo do remake do palco (fase 3; build-debug, TCP 4370).
 
-1. Abertura (FMV), título, menu e seleção: present_shot e contador de marcadores do palco (tem de ficar 0).
+1. Abertura (FMV), título, menu e seleção: present_shot e contador de marcadores do palco (tem de ficar 0); fase 6:
+   sequências da geometria do palco (stage_geo, também 0 fora da partida) e o estado dos assets de palco.
 2. Partida: tela cheia (tamanho da present_shot), A/B rápido com o efeito (stage_post "1 0" x "0 0"), custo do GP0
    na thread do jogo (`dma_hold_stats`: tempo de host das caminhadas da OT) e divisão das palavras GP0 do quadro por
    origem dos pacotes (palco, personagens, HUD), de `gpu_frame_dump`.
@@ -36,6 +37,14 @@ def markers(s):
     return 0
 
 
+def geo(s):
+    """Fase 6: sequências trocadas pela geometria do palco até agora e o estado dos assets de palco carregados."""
+    import re
+    r = s.cmd({'cmd': 'mod_cmd', 'name': 'stage_geo', 'args': 's'}).get('reply', '')
+    m = re.search(r'corridas=(\d+)', r)
+    return {'corridas': int(m.group(1)) if m else None, 'assets': re.findall(r'(palco\d+)\.bin: estado=(-?\d)', r)}
+
+
 def shot(s, name, log):
     p = os.path.join(OUT, f'chk_{name}.png')
     present_shot(s, p)
@@ -44,7 +53,7 @@ def shot(s, name, log):
         size = Image.open(p).size
     except Exception:
         size = None
-    log.append({'shot': name, 'markers': markers(s), 'size': size, 't': round(time.time() - s.t0, 1)})
+    log.append({'shot': name, 'markers': markers(s), 'geo': geo(s), 'size': size, 't': round(time.time() - s.t0, 1)})
     print(log[-1], flush=True)
 
 

@@ -144,6 +144,8 @@ typedef struct {
 #define RMK_FLAG_NO_SHADOW 16u       /* sem sombra própria (comparação) */
 #define RMK_FLAG_FLOOR 32u           /* este pedido é a sombra no chão (rmk_gl_draw_floor), não o personagem */
 #define RMK_FLAG_NO_SEMI 64u         /* faces semitransparentes desenhadas opacas (comparação) */
+#define RMK_FLAG_MIRROR 128u         /* fase 6: reflexo no chão brilhante; pos já espelhada pelo plano floor_n/floor_p,
+                                        floor_alpha = força, floor_soft = distância abaixo do chão em que some */
 
 /* ---- GL ---------------------------------------------------------------------------------------- */
 typedef void* (*RmkGetProc)(const char* name);

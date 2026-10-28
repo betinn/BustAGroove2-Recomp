@@ -81,6 +81,15 @@ static void stage_activate(void) {
     }
 }
 
+/* Reflexo dos dançarinos no chão (fase 6): força para o palco atual (0 = chão fosco ou geometria do palco desligada) e
+ * a distância abaixo do chão em que o reflexo some. Chão escuro e liso: Sushi Planet (233) e discoteca (235). */
+static int s_cur_container(void);
+float bag2_stage_reflection(float* fade) {
+    const int c = s_cur_container();
+    *fade = 650.0f;
+    return c == 233 ? 0.42f : c == 235 ? 0.30f : 0.0f;
+}
+
 /* Pulso do quadro atual (0..1), para a luz do remake do HEAT acompanhar o palco. */
 float bag2_stage_pulse(void) { return s_on && !(s_flags & RMK_POST_OFF) ? s_env : 0.0f; }
 
@@ -279,7 +288,7 @@ static uint32_t s_model;             /* modelo do palco atual na RAM (0 = ainda 
 static int s_geo_on = 1;
 static uint32_t s_geo_flags;         /* RMK_SFLAG_* | 64: confere a posição projetada contra o pacote (estatísticas);
                                         128: só a metade direita da tela (comparação no mesmo quadro);
-                                        512: sem as faces livres (só os nós do modelo) */
+                                        512: sem as faces livres (só os nós do modelo); 1024: sem o reflexo no chão */
 static float s_geo_par[8] = {0.55f, 0.9f, 0.35f, 0.6f, 0.55f, 1.0f, 0.45f, 0.6f};
 /* reiluminação, relevo do mapa de normal, especular, oclusão ambiente, sombra dos dançarinos, exposição, rugosidade,
  * pulso (no especular) */
@@ -319,6 +328,11 @@ static volatile double s_geo_us;
 int bag2_heat_stage_lights(float ldir[3][3], float lcol[3][3], float bk[3]);
 int bag2_heat_shadow_views(RmkShadowView* out, int max);
 int bag2_heat_ground(float n[3], int* floor_shadow);
+
+static int s_cur_container(void) {
+    return s_geo_on && s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready && !(s_geo_flags & 1024u)
+           ? (int)s_st[s_cur].t.container : 0;
+}
 
 static void geo_activate(void) {
     if (!s_nst) {

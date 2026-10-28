@@ -595,6 +595,7 @@ static void read_stage_light(const struct CPUState* cpu, uint32_t node0, Inst* i
 }
 
 float bag2_stage_pulse(void);
+float bag2_stage_reflection(float* fade);
 
 /* Plano do chão (y = 0 do mundo) e direção da sombra do jogo no espaço da câmera: a sombra original é o esqueleto
  * cisalhado para y = 0 ao longo da luz em SHADOW_LIGHT, pela câmera em CAMERA_MATRIX (FUN_8002A46C). A normal fica
@@ -1039,6 +1040,28 @@ static void host_char(Inst* in, int ch, const RmkProj* pr, uint32_t mask, float 
     const uint32_t addr = emit_marker((uint32_t)slot, (uint16_t)(ch << HD_CHAR_SHIFT), a, &fr, in->pos);
     if (addr) psx_mod_counter_add("bag2_heat.markers", 1);
     note_mark(in, addr);
+    /* reflexo no chão brilhante do palco (fase 6): a pose espelhada pelo plano do chão, logo antes da sombra no chão */
+    float fade = 0.0f;
+    const float refl = copy || !in->ground.ok ? 0.0f : bag2_stage_reflection(&fade);
+    if (refl > 0.0f && a->n_verts <= s_max_verts) {
+        static float mpos[3u * 65536u];
+        const float* n = in->ground.n;
+        const float* pp = in->ground.p;
+        for (uint32_t i = 0; i < a->n_verts; i++) {
+            const float* q = &in->pos[3 * i];
+            const float d = 2.0f * ((q[0] - pp[0]) * n[0] + (q[1] - pp[1]) * n[1] + (q[2] - pp[2]) * n[2]);
+            mpos[3 * i] = q[0] - d * n[0]; mpos[3 * i + 1] = q[1] - d * n[1]; mpos[3 * i + 2] = q[2] - d * n[2];
+        }
+        RmkFrameInfo mi;
+        rmk_frame_info(a, mpos, mask, pr, shift, &mi);
+        RmkFrame mf;
+        host_frame(&mf, in, a, pr, &mi, shift, mask);
+        mf.flags |= RMK_FLAG_MIRROR | RMK_FLAG_NO_SHADOW;
+        mf.floor_alpha = refl;
+        mf.floor_soft = fade;
+        if (emit_marker(SHADOW_SLOT + 1u, (uint16_t)(ch << HD_CHAR_SHIFT), a, &mf, mpos))
+            psx_mod_counter_add("bag2_heat.mirror_marks", 1);
+    }
     if (!copy) {                     /* a sombra no chão sai quando o jogo chama a função de sombra deste personagem */
         in->floor_fr = fr;
         in->floor_fc = psx_mod_read_half(GAME_FRAME);

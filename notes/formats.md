@@ -146,3 +146,32 @@ endereço do pacote.
   e números em `notes/remake-visual.md`, "Fase 3 no jogo").
 - **Atualização de personagem**: `FUN_8002BEB4` (por personagem, todo quadro de partida que o jogo monta; o jogo
   monta a OT a 30 Hz) chama `FUN_80029D4C` para o HEAT e funções do overlay para outros personagens.
+
+### Palcos: conteúdo e desenho (fase 6, 2026-10-28; `tools/remake/stage_inventory.py`, `export_stage.py`)
+- **Container do palco** (231..245): entrada 0 = DBI_ do código (overlay em `0x801DB1B8`), 1 = SEDT, depois 3..14 TIMs
+  4 bpp 256×256 (cabeçalho com a posição na VRAM, que o jogo usa como está), um **modelo no formato dos personagens**
+  (`notes/model-format.md`; lido sem sobra pelo `bag2model.parse_model` em todos) e uma lista de trilhas
+  (`{u32 len; data}`, 18..31 blocos: câmera/eventos, não decodificados). 238, 239 e 240 são iguais byte a byte.
+- **Modelo**: 22..69 nós; quase todos raízes (pai -1, posição no mundo), tipo 1 (mesh) ou 0 (junta sem mesh); 20..51 nós
+  com mesh, 781..1712 vértices, 692..1816 primitivas, quase todas sem luz do GTE (listas 24..27, 10, 11: cor por vértice
+  já pintada); 233, 237, 243 e 245 têm listas com luz (0..9). Nenhum `refs`/`uses` entre nós, e os vértices na RAM são
+  os do arquivo (nada animado na malha).
+- **Tela de palco do 2 jogadores** (toques para a direita a partir do palco do HEAT, HEAT × COMET): com os 18 personagens
+  liberados, 0 = 234 (ponte de aço), 1 = 233 (Sushi Planet), 2 = 242 (parque), 3 = 243 (fábrica), 4 = 232 (templo de
+  pedra), 5 = 237 (cenário de papel), 6 = 244 (templo oriental), 7 = 235 (discoteca), 8 = 236 (rua com táxis), 9 = 231
+  (navio pirata), 10 = 238 (estúdio de TV); a lista dá a volta depois disso. Com 10 personagens no cartão a lista é mais
+  curta (a posição 10 cai no 242). **241 e 245 não aparecem na tela de palco** (do modo história, não conferidos).
+- **Nós do modelo**: o código do overlay põe a matriz no GTE (RT em `gte_ctrl` 0..4, TR em 5..7; em parte dos nós não é a
+  de +0x6C do nó) e chama `FUN_80029588(mesh, buffer, nó + 0x2C, ...)`, que transforma com a matriz do GTE (o terceiro
+  argumento nem é lido) e escreve **um pacote por primitiva no buffer do nó** (+0xA8, tamanho em +0xA4), na ordem das
+  listas de `rig.GAME_LIST_ORDER`, tamanho fixo por lista: F/G pela GOURAUD, T se a lista tem textura; as listas com
+  decalque (8, 9, 12, 13, 15, 28, 29) dão dois pacotes, base sem textura e o com textura. Primitiva cortada não entra na
+  OT, mas o lugar dela no buffer fica.
+- **Geometria do código do overlay** (chão, vigas, fundos, painéis): pacotes montados pelo próprio overlay, com os
+  vértices de `FUN_8001F278(SVECTOR* v, long* sxy, long* sz, int n)` (o chão do 234 é uma grade de 105 vértices),
+  `RotTransPers`, `RotTransPers3`, `RotTransPers4` da libgte ou de RTPT/RTPS em linha no overlay (233, 236 e 238 usam
+  mais RTPT em linha e RotTransSV).
+- **Envio da OT**: o laço principal (`main`) chama `DrawOTagEnv(ot, env)` (0x800486AC) quando a OT do quadro está pronta
+  (30 Hz) e espera o `DrawSync` chamando `rand()`; então o tempo que a GPU emulada leva para andar a OT muda o sorteio
+  (peças com movimento aleatório, como a gaiola do 234, divergem entre duas variantes depois de um savestate).
+- **Texturas animadas**: alguns palcos trocam CLUT ou imagem na VRAM durante a partida (luzes do disco, 8 chaves no 235).
