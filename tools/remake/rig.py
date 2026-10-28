@@ -36,6 +36,7 @@ class Rig:
     layers: list            # [(tex, clut)] de cada camada
     order: np.ndarray | None = None  # (F,) ordem de inserção na OT do jogo (nó, lista na ordem de FUN_80029588, prim)
     zpair: np.ndarray | None = None  # (F, 2) vértices cujo Z dá o slot da OT no jogo: (z0 + z1) >> 3
+    pcorner: np.ndarray | None = None  # (F, 3) vértice da primitiva (0..3, v0..v3 do arquivo) de cada canto
 
 
 # Ordem em que FUN_80029588 percorre as 32 listas (contagens em 0xAC.. na ordem das chamadas)
@@ -48,7 +49,7 @@ def build_rig(nodes: list[Node], skip: set[int] = frozenset(), two_sided: bool =
     owner, local = [], []
     slots: dict[int, int] = {}
     tris, fnode, nrm, base, over, uv, layer, mode = [], [], [], [], [], [], [], []
-    order, zpair = [], []
+    order, zpair, pcorner = [], [], []
     gn, gno, gc = [], [], []
     for nd in nodes:
         if nd.mesh is not None:
@@ -89,6 +90,7 @@ def build_rig(nodes: list[Node], skip: set[int] = frozenset(), two_sided: bool =
                 tris.append(vid)
                 fnode.append(nd.index)
                 order.append((nd.index, GAME_LIST_ORDER.index(p.lst), pi))
+                pcorner.append(list(c))
                 # slot da OT: z(v0) + z(v1) nos triângulos, z(v0) + z(v2) nos quads (FUN_80036230 / FUN_80036874)
                 zpair.append((ids[p.verts[0]], ids[p.verts[1 if len(p.verts) == 3 else 2]]))
 
@@ -116,7 +118,7 @@ def build_rig(nodes: list[Node], skip: set[int] = frozenset(), two_sided: bool =
     return Rig(np.array(owner), np.array(local, float), np.array(tris), np.array(fnode),
                np.array(nrm), gn, np.array(gno), np.array(base, np.float32), np.array(over, np.float32),
                np.array(uv, np.float32), np.array(layer), np.array(mode), list(layers),
-               np.array(order), np.array(zpair))
+               np.array(order), np.array(zpair), np.array(pcorner))
 
 
 def pose_positions(rig: Rig, nodes: list[Node], pose=None):

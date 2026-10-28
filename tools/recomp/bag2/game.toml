@@ -41,7 +41,9 @@ discovery = "whole-image"
 # remake do HEAT pula para desenhar a sombra macia dele.
 # Fase 4 (remake dos outros personagens): entrada de FUN_80029588, que monta um osso; os personagens que não são do
 # tipo 0 são desenhados por funções do overlay deles, que chamam esta por osso.
-mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588"]
+# Fase 6 (geometria do palco): entrada de DrawOTagEnv (libgpu, 0x800486AC), que o laço principal chama com a OT do
+# quadro pronta; o plugin bag2.stage_remake troca ali as sequências de pacotes dos nós do palco pelo desenho de host.
+mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588", "0x800486AC"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"

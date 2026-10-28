@@ -6,7 +6,8 @@ relata, a partir das linhas por segundo do log (PSX_FRAME_REPORT_MS=1000): fps m
 abaixo de 59,5, emu_busy médio e máximo; e dos contadores do plugin: pacotes por quadro e tempo da CPU.
 `audio_stats` antes/depois de cada janela mostra se o áudio passou fome (underruns), que é o que se
 ouviria como engasgo da música.
-Variante: args do heat_mode e, depois de ";", args do stage_post (remake do palco, fase 3).
+Variante: args do heat_mode e, depois de ";", args do stage_post (remake do palco, fase 3) e, depois de outro ";", args
+do stage_geo (geometria do palco pelo caminho novo, fase 6: "0" desliga, "1" liga).
 Uso: python tools/remake/game_perf.py [rótulo] [variantes separadas por |] [segundos] [game.toml]
      ex.: python tools/remake/game_perf.py base "0|1" 40 game.toml
           python tools/remake/game_perf.py palcoA "1 4 0.6 0.25 258;0|1 4 0.6 0.25 2;1 0" 60
@@ -38,21 +39,25 @@ def main():
     try:
         s.enter_match()
         for v in variants:
-            hv, _, sv = v.partition(';')
+            hv, sv, gv = (v.split(';') + ['', ''])[:3]
             s.cmd({'cmd': 'mod_cmd', 'name': 'heat_mode', 'args': hv})
             if sv:
                 s.cmd({'cmd': 'mod_cmd', 'name': 'stage_post', 'args': sv})
+            if gv:
+                s.cmd({'cmd': 'mod_cmd', 'name': 'stage_geo', 'args': gv})
             time.sleep(2)
             n0 = len(log_lines(s))
             c0 = {c['name']: c['count'] for c in s.cmd({'cmd': 'mod_counters'})['counters']}
             a0 = s.cmd({'cmd': 'audio_stats'})
             s.cmd({'cmd': 'mod_cmd', 'name': 'heat_stats', 'args': ''})   # zera a janela da thread de render
             s.cmd({'cmd': 'mod_cmd', 'name': 'stage_stats', 'args': ''})
+            s.cmd({'cmd': 'mod_cmd', 'name': 'stage_geo', 'args': 'sz'})
             time.sleep(secs)
             c1 = {c['name']: c['count'] for c in s.cmd({'cmd': 'mod_counters'})['counters']}
             a1 = s.cmd({'cmd': 'audio_stats'})
             rt = s.cmd({'cmd': 'mod_cmd', 'name': 'heat_stats', 'args': ''}).get('reply', '')
             st = s.cmd({'cmd': 'mod_cmd', 'name': 'stage_stats', 'args': ''}).get('reply', '')
+            gs = s.cmd({'cmd': 'mod_cmd', 'name': 'stage_geo', 'args': 's'}).get('reply', '')
             lines = log_lines(s)[n0:]
             fps = [float(re.search(r' fps=([\d.]+)', l).group(1)) for l in lines]
             busy = [float(re.search(r'emu_busy=([\d.]+)', l).group(1)) for l in lines]
@@ -74,6 +79,7 @@ def main():
             print(f'   desenho de host: marcadores/quadro {d.get("bag2_heat.markers", 0) / fr:.1f} | {rt}', flush=True)
             print(f'   palco: marcadores {d.get("bag2_stage.markers", 0)} sombra no chão {d.get("bag2_heat.floor_marks", 0)} '
                   f'sombra do jogo pulada {d.get("bag2_heat.shadow_skipped", 0)} | {st}', flush=True)
+            print(f'   geometria do palco: {gs}', flush=True)
     finally:
         s.stop()
 

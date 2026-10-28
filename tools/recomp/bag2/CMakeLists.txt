@@ -61,7 +61,8 @@ target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/bag2_heat.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_post.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_asset.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_pose.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_gl.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_gl.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/remake/rmk_stage.c")
 
 foreach(_cfg game.toml settings.toml)
     add_custom_command(TARGET psx-runtime POST_BUILD

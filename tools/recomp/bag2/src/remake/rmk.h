@@ -196,7 +196,87 @@ void rmk_post_blit(RmkPost* p, uint32_t src, RmkRect rs, uint32_t dst, RmkRect r
 float rmk_post_envelope(float beat, float bar);
 const char* rmk_post_error(const RmkPost* p);
 
+/* ---- palco (rmk_stage.c, fase 6) ---------------------------------------------------------------- */
+/* O palco é um modelo no formato dos personagens (objetos rígidos, um "osso" por nó com mesh) com o asset HTR7 de
+ * sempre (malha, camadas HD; tools/remake/export_stage.py) e uma tabela .stg: cada primitiva de cada nó na ordem do
+ * buffer de pacotes do jogo (nó +0xA8, um ou dois pacotes por primitiva) e as faces do asset que ela vira. O
+ * adaptador troca, na OT do quadro, cada sequência de pacotes dos nós por um pedido de desenho com os pacotes vivos
+ * (cor, UV, CLUT e página de cada vértice, como o jogo os montou); o desenho segue a ordem de pintor deles, sem
+ * profundidade, com luz por pixel (mapa de normal, especular, oclusão ambiente) e a sombra dos dançarinos. */
+#define RMK_STAGE_TAB_MAGIC 0x31475453u     /* "STG1" */
+typedef struct { uint32_t mesh_off, buf_bytes, n_prims, prim0; } RmkStageNode;
+#pragma pack(push, 1)
+typedef struct {
+    uint16_t words;                  /* palavras do(s) pacote(s) da primitiva no buffer do nó, com as tags */
+    uint8_t n_pk, n_faces;           /* pacotes (2 = decalque: base sem textura + textura) e faces do asset (0..2) */
+    uint32_t face0;                  /* primeira face (as n_faces seguidas) */
+    uint8_t corner[2][3];            /* slot do vértice no pacote (0..3) de cada canto de cada face */
+    uint8_t pad[2];
+} RmkStagePrim;
+typedef struct { uint16_t tpage, clut; uint8_t layer, pad[3]; } RmkStageKey;   /* textura + CLUT do jogo -> camada */
+#pragma pack(pop)
+typedef struct {
+    uint32_t version, container, n_nodes, n_layers, n_keys, model_bytes;
+    uint32_t ov_hash, model_hash;    /* FNV-1a dos 512 primeiros bytes do overlay e dos 256 primeiros do modelo */
+    RmkStageNode nodes[RMK_MAX_NODES];
+    uint32_t n_prims;
+    RmkStagePrim* prims;
+    RmkStageKey* keys;
+} RmkStage;
+int rmk_stage_load(RmkStage* s, const char* path);   /* 1 = ok */
+void rmk_stage_free(RmkStage* s);
+uint32_t rmk_fnv1a(const uint8_t* p, uint32_t n);
+
+/* Pacote vivo de uma primitiva (o que o jogo pôs na OT): cores de cada slot do pacote base, cores e UV do pacote com
+ * textura (decalque: os dois; senão o mesmo), camada HD da página + CLUT (0xFF = a da face no asset). */
+#pragma pack(push, 1)
+typedef struct {
+    uint16_t prim;                   /* índice global (RmkStage.prims) */
+    uint8_t flags;                   /* RMK_SPKT_* */
+    uint8_t layer;
+    uint8_t col[4][3], tcol[4][3], uv[4][2];
+} RmkStagePkt;                       /* 36 bytes */
+#pragma pack(pop)
+#define RMK_SPKT_TEX 1u              /* tem textura */
+#define RMK_SPKT_SEMI 2u             /* semitransparente; modo de mistura do PS1 nos bits 4..5 */
+#define RMK_SPKT_BLEND(f) (((f) >> 4) & 3u)
+#define RMK_STAGE_FRAME_MAGIC 0x46475453u   /* "STGF" */
+#define RMK_STAGE_RUN_MAGIC 0x52475453u     /* "STGR" */
+typedef struct {
+    uint32_t magic, serial, flags, n_bones;
+    float ofx, ofy, h, pad0;         /* projeção do GTE */
+    float relight, detail, spec, ao; /* pesos: reiluminação, relevo do mapa de normal, especular, oclusão ambiente */
+    float shadow, pulse, expo, rough;   /* sombra dos dançarinos, pulso da música (0..1), exposição, rugosidade */
+    float ldir[3][3], lcol[3][3], bk[3];   /* luzes do palco (GTE, câmera), como as dos dançarinos */
+    float pad1;
+    RmkBone bones[RMK_MAX_NODES];    /* MATRIX câmera x nó de cada nó com mesh */
+} RmkStageFrame;
+typedef struct { uint32_t magic, serial, n, has_frame; } RmkStageRun;   /* + RmkStageFrame (has_frame) + n pacotes */
+#define RMK_SFLAG_NO_RELIGHT 1u      /* só a cor do jogo com a textura HD (comparação) */
+#define RMK_SFLAG_NO_NMAP 2u
+#define RMK_SFLAG_NO_SHADOW 4u
+#define RMK_SFLAG_NO_LIGHTS 8u       /* sem luzes do palco no quadro (ninguém em cena): sem reiluminação */
+#define RMK_SFLAG_NODE_COLORS 256u   /* depuração: cada nó de uma cor, sem textura nem luz */
+/* Sombra de um dançarino para o palco: mapa de profundidade ortográfico (textura GL) e o espaço dele (câmera). */
+typedef struct { uint32_t tex; float u[3], v[3], d[3], c[4]; } RmkShadowView;
+typedef struct RmkStageGL RmkStageGL;
+RmkStageGL* rmk_stage_gl_create(RmkGetProc get_proc, int gles);
+/* Recursos aos poucos (uma camada por chamada), como rmk_gl_prepare. 1 = pronto. */
+int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a);
+/* Quadro novo: posições dos vértices pelas matrizes dos nós e normais (uma vez por quadro). */
+void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* fr);
+/* Uma sequência de pacotes do jogo, na ordem dele. `key` identifica a sequência no quadro: o espelho da tela larga
+ * repete a mesma sem montar de novo. Mesmo contrato de estado GL que rmk_gl_draw (unidades 8..10, 14 e 15). */
+void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, const RmkStagePkt* pk, uint32_t n,
+                       uint32_t key, const RmkTarget* t, const RmkShadowView* sh, int n_sh);
+const char* rmk_stage_gl_error(const RmkStageGL* g);
+uint64_t rmk_stage_gl_bytes(const RmkStageGL* g);
+void rmk_stage_gl_destroy(RmkStageGL* g);
+
 RmkGL* rmk_gl_create(RmkGetProc get_proc, int gles);
+/* Sombra do personagem para o palco (fase 6): o mapa da sombra no chão se foi feito para o último quadro dele, senão
+ * a sombra própria (luz principal). 0 = nenhum ainda. */
+int rmk_gl_shadow_view(const RmkGL* g, RmkShadowView* out);
 /* Cria os recursos aos poucos (uma camada de textura por chamada). Contexto GL corrente. 1 = pronto; depois disso o
  * desenho não lê mais as camadas nem os mapas de normal do asset (quem chama pode liberar a cópia de CPU). */
 int rmk_gl_prepare(RmkGL* g, const RmkAsset* a);

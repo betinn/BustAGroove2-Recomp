@@ -117,6 +117,7 @@ typedef struct {
     volatile int rt_ready, rt_failed, rt_freed;
     volatile uint32_t rt_prepares;
     volatile uint64_t gl_bytes;      /* memória de GPU do contexto (rmk_gl_bytes) */
+    volatile double rt_drawn_us;     /* último desenho (thread de render): os mapas de sombra dele valem para o palco */
     float* full_pos;                 /* posições no vetor completo do asset */
 } Chr;
 static Chr s_ch[MAX_CHARS];
@@ -1120,7 +1121,37 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     else rmk_gl_draw(c->gl, a, fr, c->full_pos, &rt);
     gt_end(gt);
     s_rt_draws++;
-    s_rt_us += now_us() - t0;
+    c->rt_drawn_us = now_us();
+    s_rt_us += c->rt_drawn_us - t0;
+}
+
+/* Fase 6 (src/bag2_stage.c, geometria do palco): as luzes do palco do dançarino desenhado por último (thread do jogo;
+ * as mesmas da luz dele, GTE, no espaço da câmera) e os mapas de sombra dos dançarinos desenhados há pouco (thread de
+ * render), para a luz e a sombra no cenário. */
+int bag2_heat_stage_lights(float ldir[3][3], float lcol[3][3], float bk[3]) {
+    const uint16_t fc = psx_mod_read_half(GAME_FRAME);
+    const Inst* best = NULL;
+    for (int i = 0; i < MAX_INST; i++) {
+        const Inst* in = &s_inst[i];
+        if (in->ch < 0 || (uint16_t)(fc - in->seen_fc) > 30u) continue;
+        if (!best || (int16_t)(in->seen_fc - best->seen_fc) > 0) best = in;
+    }
+    if (!best) return 0;
+    memcpy(ldir, best->stage.ldir, sizeof best->stage.ldir);
+    memcpy(lcol, best->stage.lcol, sizeof best->stage.lcol);
+    memcpy(bk, best->stage.bk, sizeof best->stage.bk);
+    return 1;
+}
+
+int bag2_heat_shadow_views(RmkShadowView* out, int max) {
+    const double now = now_us();
+    int n = 0;
+    for (int i = 0; i < s_nch && n < max; i++) {
+        Chr* c = &s_ch[i];
+        if (c->state != 2 || !c->rt_ready || !c->gl || now - c->rt_drawn_us > 150e3) continue;
+        if (rmk_gl_shadow_view(c->gl, &out[n])) n++;
+    }
+    return n;
 }
 
 /* VBlank (thread do jogo): 4 vezes por segundo decide quem descarrega (keep_loaded) e termina as descargas que a
