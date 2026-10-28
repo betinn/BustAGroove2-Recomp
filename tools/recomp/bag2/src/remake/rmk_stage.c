@@ -90,16 +90,16 @@ struct RmkStageGL {
     int gles, step, ready, failed, has_nmap;
     GLuint_ prog, vao, tri_vbo, inst_vbo, tex, nmap, geo[GEO_RING], smp_shadow;
     int geo_w, geo_h, ring;
-    uint32_t serial, have_frame, n_inst_cap, inst_used, run_key, run_first, run_n;
+    uint32_t serial, have_frame, n_inst_cap, inst_used, run_key, run_first, run_n, n_free;
     float* pos;                      /* posições no espaço da câmera (3 floats por vértice) */
     float* staging;
     SInst* inst;
     uint8_t* seg;                    /* por instância da sequência: grupo de mistura (0 opaco, 1..4 modo semi + 1) */
     float ofx, ofy, h, expo, rough;
     float ldir[3][3], lcol[3][3], bk[3];
-    float relight, detail, spec, ao, shadow, pulse;
+    float relight, detail, spec, ao, shadow, pulse, floor_on, floor_n[3];
     uint32_t flags;
-    GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_tex, u_nmap, u_nmap_on, u_semi, u_ldir, u_lcol, u_bk, u_w, u_w2;
+    GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_tex, u_nmap, u_nmap_on, u_semi, u_ldir, u_lcol, u_bk, u_w, u_w2, u_floor;
     GLint_ u_sh[2], u_su[1], u_sv[1], u_sd[1], u_sc[1], u_nsh;
     uint64_t bytes;
     char err[512];
@@ -155,6 +155,7 @@ static const char* FS =
     "uniform vec3 u_su[2], u_sv[2], u_sd[2];\n"
     "uniform vec4 u_sc[2];\n"
     "uniform int u_nsh;\n"
+    "uniform vec4 u_floor;  /* normal do chão (câmera) e 1 = a sombra macia no chão já sai (o chão fica sem esta) */\n"
     "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao;\n"
     "flat in int v_layer; flat in int v_mode;\n"
     "layout(location = 0) out vec4 frag;\n"
@@ -182,15 +183,18 @@ static const char* FS =
     "void main() {\n"
     "  vec3 base = clamp(v_base, 0.0, 1.0);\n"
     "  int md = v_mode & 3;\n"
-    "  float tex_a = 0.0;\n"
+    "  float tex_a = 0.0, cover = 1.0;\n"
     "  bool stp = (v_mode & 256) != 0;\n"
     "  vec2 gx = dFdx(v_uv), gy = dFdy(v_uv);\n"
     "  if (md > 0 && v_layer >= 0) {\n"
     "    vec4 t = textureGrad(u_tex, vec3(v_uv, float(v_layer)), gx, gy);\n"
     "    float st = textureGrad(u_nmap, vec3(v_uv, float(v_layer)), gx, gy).a;\n"
     "    stp = stp && st > 0.5;\n"
-    "    if (md == 2) { if (t.a < 0.5) discard; base = t.rgb * v_over; tex_a = 1.0; }\n"
-    "    else { base = mix(base, t.rgb * v_over, t.a); tex_a = t.a; }\n"
+    "    /* alfa = campo suave de cobertura (borda em 0,5): borda com antisserrilhado, misturada na ordem de pintor */\n"
+    "    float fw = max(fwidth(t.a), 1e-3) * 0.75;\n"
+    "    float cv = smoothstep(0.5 - fw, 0.5 + fw, t.a);\n"
+    "    if (md == 2) { if (cv < 0.004) discard; base = t.rgb * v_over; tex_a = 1.0; cover = cv; }\n"
+    "    else { base = mix(base, t.rgb * v_over, cv); tex_a = cv; }\n"
     "  }\n"
     "  if (u_semi >= 0 && stp != (u_semi == 1)) discard;\n"
     "  vec3 alb = pow(clamp(base, 0.0, 1.0), vec3(2.2));\n"
@@ -218,11 +222,15 @@ static const char* FS =
     "  float sh = 1.0;\n"
     "  if (u_nsh > 0) sh *= shadow_of(u_sh0, u_su[0], u_sv[0], u_sd[0], u_sc[0]);\n"
     "  if (u_nsh > 1) sh *= shadow_of(u_sh1, u_su[1], u_sv[1], u_sd[1], u_sc[1]);\n"
+    "  if (u_floor.w > 0.5 && dot(n0, u_floor.xyz) > 0.85) sh = 1.0;\n"
     "  sh = mix(1.0, sh, u_w2.x);\n"
     "  float ao = mix(1.0, v_ao, u_w.w);\n"
-    "  vec3 c = alb * macro * detail * ao * sh + sp * u_w.z * (1.0 + u_w2.y) * sh * ao;\n"
+    "  /* o especular segue a luz que o jogo pôs na cor do vértice (face escurecida pela névoa ou sombra pintada não brilha) */\n"
+    "  vec3 vc = md == 0 ? v_base : v_over;\n"
+    "  float lit = clamp(dot(vc, vec3(0.299, 0.587, 0.114)) * 1.6, 0.0, 1.0);\n"
+    "  vec3 c = alb * macro * detail * ao * sh + sp * u_w.z * (1.0 + u_w2.y) * sh * ao * lit * lit;\n"
     "  c *= u_w2.z;\n"
-    "  frag = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2)), 0.0);   /* alfa = bit 15 do PS1 desligado */\n"
+    "  frag = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2)), cover);   /* alfa: cobertura da borda (não é escrito) */\n"
     "}\n";
 
 const char* rmk_stage_gl_error(const RmkStageGL* g) { return g ? g->err : "sem contexto"; }
@@ -311,7 +319,7 @@ static int build(RmkStageGL* g, const RmkAsset* a) {
     }
 #define U(name) g->name = g->GetUniformLocation(g->prog, #name)
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_semi); U(u_bk); U(u_w); U(u_w2);
-    U(u_nsh);
+    U(u_nsh); U(u_floor);
 #undef U
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
@@ -327,7 +335,8 @@ static int build(RmkStageGL* g, const RmkAsset* a) {
     g->inst = (SInst*)calloc(g->n_inst_cap, sizeof(SInst));
     g->seg = (uint8_t*)calloc(g->n_inst_cap, 1);
     g->pos = (float*)calloc(3u * a->n_verts, sizeof(float));
-    const int texels = 2 * (int)a->n_verts;
+    g->n_inst_cap += 2u * RMK_STAGE_MAX_FREE;
+    const int texels = 2 * (int)(a->n_verts + RMK_STAGE_MAX_FREE);   /* asset + vértices livres do quadro */
     g->geo_w = texels < 1024 ? texels : 1024;
     g->geo_h = (texels + g->geo_w - 1) / g->geo_w;
     g->staging = (float*)calloc((size_t)g->geo_w * g->geo_h * 4u, sizeof(float));
@@ -434,11 +443,35 @@ int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a) {
     return g->ready;
 }
 
-void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* fr) {
+void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* fr, const RmkStageFree* fv,
+                        const uint8_t* face_n, const float* free_pos) {
     if (!g || !g->ready || (g->have_frame && fr->serial == g->serial)) return;
     const int nb = fr->n_bones < (uint32_t)a->n_bones ? (int)fr->n_bones : a->n_bones;
     rmk_skin(a, fr->bones, nb, 1u, g->pos);
     rmk_pack_geometry(a, g->pos, 1u, g->staging);
+    /* vértices livres depois dos do asset: posição, AO 1 e a normal da face (cada face tem os seus vértices) */
+    g->n_free = 0;
+    if (fv && face_n && free_pos && fv->n_free_verts <= RMK_STAGE_MAX_FREE) {
+        uint32_t v = 0;
+        for (uint32_t f = 0; f < fv->n_free_faces; f++) {
+            const uint32_t nv = face_n[f] == 4 ? 4u : 3u;
+            if (v + nv > fv->n_free_verts) break;
+            const float* p0 = &free_pos[3 * v];
+            const float* p1 = p0 + 3;
+            const float* p2 = p0 + 6;
+            const float e1[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]}, e2[3] = {p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]};
+            float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+            const float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (l > 1e-12f) { n[0] /= l; n[1] /= l; n[2] /= l; } else { n[0] = 0.0f; n[1] = 0.0f; n[2] = -1.0f; }
+            for (uint32_t k = 0; k < nv; k++, v++) {
+                float* o = &g->staging[8u * (a->n_verts + v)];
+                memcpy(o, &free_pos[3 * v], 12);
+                o[3] = 1.0f;
+                o[4] = n[0]; o[5] = n[1]; o[6] = n[2]; o[7] = 0.0f;
+            }
+        }
+        g->n_free = v;
+    }
     g->ring = (g->ring + 1) % GEO_RING;
     g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
     g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
@@ -451,6 +484,8 @@ void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* f
     memcpy(g->bk, fr->bk, sizeof g->bk);
     g->relight = fr->relight; g->detail = fr->detail; g->spec = fr->spec; g->ao = fr->ao;
     g->shadow = fr->shadow; g->pulse = fr->pulse; g->flags = fr->flags;
+    g->floor_on = fr->floor_on;
+    memcpy(g->floor_n, fr->floor_n, sizeof g->floor_n);
     if (fr->flags & (RMK_SFLAG_NO_RELIGHT | RMK_SFLAG_NO_LIGHTS | RMK_SFLAG_NODE_COLORS)) { g->relight = 0.0f; g->detail = 0.0f; g->spec = 0.0f; }
     if (fr->flags & RMK_SFLAG_NODE_COLORS) { g->ao = 0.0f; g->shadow = 0.0f; }
     if (fr->flags & RMK_SFLAG_NO_RELIGHT) g->ao = 0.0f;
@@ -473,6 +508,31 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
     const uint32_t room = g->n_inst_cap - g->inst_used;
     for (uint32_t i = 0; i < n; i++) {
         const RmkStagePkt* p = &pk[i];
+        if (p->prim & RMK_SPKT_FREE) {   /* face livre: os vértices do quadro na ordem dos slots do pacote */
+            const uint32_t b = p->prim & 0x7FFFu, nv = (p->flags & RMK_SPKT_QUAD) ? 4u : 3u;
+            static const uint8_t tri[2][3] = {{0, 1, 2}, {1, 3, 2}};
+            if (b + nv > g->n_free) continue;
+            const int tex = (p->flags & RMK_SPKT_TEX) != 0;
+            const int layer = tex && p->layer != 0xFFu && p->layer < a->n_layers ? p->layer : -1;
+            const int semi = (p->flags & RMK_SPKT_SEMI) != 0;
+            for (uint32_t k = 0; k < nv - 2u && m < room; k++) {
+                SInst* o = &out[m];
+                for (int c = 0; c < 3; c++) {
+                    const int sl = tri[k][c];
+                    o->vi[c] = (uint16_t)(a->n_verts + b + (uint32_t)sl);
+                    o->uv[2 * c] = p->uv[sl][0]; o->uv[2 * c + 1] = p->uv[sl][1];
+                    for (int ch = 0; ch < 3; ch++) { o->base[c][ch] = p->col[sl][ch]; o->over[c][ch] = p->tcol[sl][ch]; }
+                    if (g->flags & RMK_SFLAG_NODE_COLORS) { o->base[c][0] = 255; o->base[c][1] = 255; o->base[c][2] = 40; }
+                    o->base[c][3] = o->over[c][3] = 255;
+                }
+                const int nc = (g->flags & RMK_SFLAG_NODE_COLORS) != 0;
+                o->layer = (float)(nc ? -1 : layer);
+                o->mode = (float)(nc || layer < 0 ? 0u : (2u | (semi ? 256u : 0u)));
+                sg[m] = (uint8_t)(semi && !nc ? 1u + RMK_SPKT_BLEND(p->flags) : 0u);
+                m++;
+            }
+            continue;
+        }
         if (p->prim >= s->n_prims) continue;
         const RmkStagePrim* pr = &s->prims[p->prim];
         for (uint32_t k = 0; k < pr->n_faces && m < room; k++) {
@@ -511,6 +571,15 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
         }
     }
     return m;
+}
+
+/* Faces opacas: a cobertura da borda (alfa do fragmento) mistura com o que já está desenhado; o alfa do FBO (bit 15 do
+ * PS1) não é escrito. Por dentro a cobertura é 1 e o resultado é o mesmo de sem mistura. */
+static void opaque_blend(RmkStageGL* g) {
+    g->Enable(R_BLEND);
+    g->BlendEquation(0x8006 /* GL_FUNC_ADD */);
+    g->BlendFunc(0x0302 /* GL_SRC_ALPHA */, 0x0303 /* GL_ONE_MINUS_SRC_ALPHA */);
+    g->ColorMask(1, 1, 1, 0);
 }
 
 static void set_blend(RmkStageGL* g, unsigned mode) {
@@ -578,6 +647,7 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
     g->Uniform3f(g->u_bk, g->bk[0], g->bk[1], g->bk[2]);
     g->Uniform4f(g->u_w, g->relight, g->detail, g->spec, g->ao);
     g->Uniform4f(g->u_w2, g->shadow, g->pulse, g->expo, g->rough);
+    g->Uniform4f(g->u_floor, g->floor_n[0], g->floor_n[1], g->floor_n[2], g->floor_on);
     int ns = g->shadow > 0.0f ? (n_sh < 2 ? n_sh : 2) : 0;
     for (int i = 0; i < 2; i++) {
         g->ActiveTexture(R_TEXTURE0 + 14 + i);
@@ -606,13 +676,11 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
         while (j < g->run_n && sg[j] == sg[i]) j++;
         inst_attribs(g, g->run_first + i);
         if (!sg[i]) {
-            g->Disable(R_BLEND);
-            g->ColorMask(1, 1, 1, 1);
+            opaque_blend(g);
             g->Uniform1i(g->u_semi, -1);
             g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
         } else {
-            g->Disable(R_BLEND);
-            g->ColorMask(1, 1, 1, 1);
+            opaque_blend(g);
             g->Uniform1i(g->u_semi, 0);
             g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
             set_blend(g, sg[i] - 1u);

@@ -226,14 +226,17 @@ int rmk_asset_load(RmkAsset* a, const char* path) {
     }
     const uint32_t nb = a->version >= 7 ? (uint32_t)a->n_bones : a->n_nodes;   /* v7: ossos próprios dos grupos */
     for (uint32_t i = 0; ok && i < a->n_verts; i++) ok = a->verts[i].owner < nb;
-    /* alfa só de cobertura; o STP (alfa intermediário do arquivo) num bit por texel */
+    /* alfa só de cobertura; o STP (alfa intermediário do arquivo) num bit por texel. Palco (fase 6, índice >= 100): o
+     * alfa é um campo suave de cobertura (borda em 128, export_stage.smooth_alpha) com o STP no bit baixo */
     const size_t texels = (size_t)a->tex_size * a->tex_size;
+    const int stage = a->char_index >= 100u;
     for (uint32_t l = 0; ok && l < a->n_layers; l++) {
         uint8_t* px = a->layers + layer_bytes * l;
         uint8_t* st = a->stp + texels / 8u * l;
         for (size_t i = 0; i < texels; i++) {
             const uint8_t al = px[4 * i + 3];
-            if (al > 64 && al < 200) { st[i >> 3] |= (uint8_t)(1u << (i & 7)); px[4 * i + 3] = 255; }
+            if (stage) { if ((al & 1u) && al > 8u) st[i >> 3] |= (uint8_t)(1u << (i & 7)); }
+            else if (al > 64 && al < 200) { st[i >> 3] |= (uint8_t)(1u << (i & 7)); px[4 * i + 3] = 255; }
         }
     }
     fclose(f);

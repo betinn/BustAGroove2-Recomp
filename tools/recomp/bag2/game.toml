@@ -43,7 +43,10 @@ discovery = "whole-image"
 # tipo 0 são desenhados por funções do overlay deles, que chamam esta por osso.
 # Fase 6 (geometria do palco): entrada de DrawOTagEnv (libgpu, 0x800486AC), que o laço principal chama com a OT do
 # quadro pronta; o plugin bag2.stage_remake troca ali as sequências de pacotes dos nós do palco pelo desenho de host.
-mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588", "0x800486AC"]
+# E as funções do executável que transformam vértices para a geometria do código do overlay do palco (chão, fundo):
+# FUN_8001F278 (n vértices) e RotTransPers / RotTransPers3 / RotTransPers4 da libgte (0x800460AC, 0x800460DC,
+# 0x8004619C); o plugin guarda posição e tela de cada vértice e reconhece os pacotes que os usam.
+mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588", "0x800486AC", "0x8001F278", "0x800460AC", "0x800460DC", "0x8004619C"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"

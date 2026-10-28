@@ -137,6 +137,7 @@ typedef struct {
     float* pos;                      /* pose do último quadro (vetor completo) */
     RmkFrame floor_fr;               /* último quadro (modo 1/carga), para a sombra no chão sair só quando o jogo */
     uint32_t floor_fc;               /* desenharia a dele (FUN_8002A46C), com a pose mais recente */
+    uint32_t floor_mark_fc;          /* quadro do último marcador da sombra nova no chão (fase 6: o palco não repete) */
     int floor_valid;
     struct { float n[3], p[3], l[3]; int ok; float hip, foot; } ground;   /* chão e direção da sombra do jogo */
     struct { float ldir[3][3], lcol[3][3], bk[3]; } stage;               /* luzes do palco (GTE) */
@@ -1128,6 +1129,24 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
 /* Fase 6 (src/bag2_stage.c, geometria do palco): as luzes do palco do dançarino desenhado por último (thread do jogo;
  * as mesmas da luz dele, GTE, no espaço da câmera) e os mapas de sombra dos dançarinos desenhados há pouco (thread de
  * render), para a luz e a sombra no cenário. */
+/* Plano do chão (normal para cima, câmera) do dançarino desenhado por último e se a sombra nova no chão dele saiu há
+ * pouco (o palco não escurece o chão de novo com o mapa de sombra). 0 = sem chão lido. */
+int bag2_heat_ground(float n[3], int* floor_shadow) {
+    const uint16_t fc = psx_mod_read_half(GAME_FRAME);
+    const Inst* best = NULL;
+    int fs = 0;
+    for (int i = 0; i < MAX_INST; i++) {
+        const Inst* in = &s_inst[i];
+        if (in->ch < 0 || !in->ground.ok || (uint16_t)(fc - in->seen_fc) > 30u) continue;
+        if ((uint16_t)(fc - in->floor_mark_fc) <= 4u) fs = 1;
+        if (!best || (int16_t)(in->seen_fc - best->seen_fc) > 0) best = in;
+    }
+    if (!best) return 0;
+    memcpy(n, best->ground.n, sizeof best->ground.n);
+    *floor_shadow = fs;
+    return 1;
+}
+
 int bag2_heat_stage_lights(float ldir[3][3], float lcol[3][3], float bk[3]) {
     const uint16_t fc = psx_mod_read_half(GAME_FRAME);
     const Inst* best = NULL;
@@ -1821,8 +1840,10 @@ static int heat_shadow_filter(struct CPUState* cpu, uint32_t address) {
         psx_mod_counter_add(fc == in->floor_fc ? "bag2_heat.floor_same_frame" : "bag2_heat.floor_prev_frame", 1);
         RmkFrame fr = in->floor_fr;
         fr.flags |= RMK_FLAG_FLOOR;
-        if (emit_marker(SHADOW_SLOT, (uint16_t)(in->ch << HD_CHAR_SHIFT), s_ch[in->ch].full, &fr, in->pos))
+        if (emit_marker(SHADOW_SLOT, (uint16_t)(in->ch << HD_CHAR_SHIFT), s_ch[in->ch].full, &fr, in->pos)) {
             psx_mod_counter_add("bag2_heat.floor_marks", 1);
+            in->floor_mark_fc = fc;
+        }
         return 1;
     }
     return 0;

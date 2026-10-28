@@ -239,6 +239,10 @@ typedef struct {
 #pragma pack(pop)
 #define RMK_SPKT_TEX 1u              /* tem textura */
 #define RMK_SPKT_SEMI 2u             /* semitransparente; modo de mistura do PS1 nos bits 4..5 */
+#define RMK_SPKT_QUAD 4u             /* face livre de 4 vértices (os 4 slots do pacote) */
+#define RMK_SPKT_FREE 0x8000u        /* prim com este bit: face livre (geometria do código do overlay, não do modelo),
+                                        vértices em RmkStageFrame (prim & 0x7FFF = o primeiro, na ordem dos slots) */
+#define RMK_STAGE_MAX_FREE 3600u     /* vértices livres por quadro (o quadro cabe num desenho de host de 64 KB) */
 #define RMK_SPKT_BLEND(f) (((f) >> 4) & 3u)
 #define RMK_STAGE_FRAME_MAGIC 0x46475453u   /* "STGF" */
 #define RMK_STAGE_RUN_MAGIC 0x52475453u     /* "STGR" */
@@ -248,10 +252,15 @@ typedef struct {
     float relight, detail, spec, ao; /* pesos: reiluminação, relevo do mapa de normal, especular, oclusão ambiente */
     float shadow, pulse, expo, rough;   /* sombra dos dançarinos, pulso da música (0..1), exposição, rugosidade */
     float ldir[3][3], lcol[3][3], bk[3];   /* luzes do palco (GTE, câmera), como as dos dançarinos */
-    float pad1;
+    float floor_on;                  /* 1: a sombra macia no chão dos dançarinos já sai (o chão não recebe a do mapa) */
+    float floor_n[3], pad1;          /* normal do chão (para cima, câmera) */
     RmkBone bones[RMK_MAX_NODES];    /* MATRIX câmera x nó de cada nó com mesh */
 } RmkStageFrame;
 typedef struct { uint32_t magic, serial, n, has_frame; } RmkStageRun;   /* + RmkStageFrame (has_frame) + n pacotes */
+/* RmkStageFrame é seguido de n_free_faces bytes (3 ou 4: vértices de cada face livre, na ordem; completados até um
+ * múltiplo de 4) e de float pos[3 * n_free_verts] (câmera do GTE): a geometria do código do overlay (chão, fundo,
+ * peças especiais) que o adaptador reconheceu pelos vértices transformados (fase 6). */
+typedef struct { uint32_t n_free_faces, n_free_verts; } RmkStageFree;
 #define RMK_SFLAG_NO_RELIGHT 1u      /* só a cor do jogo com a textura HD (comparação) */
 #define RMK_SFLAG_NO_NMAP 2u
 #define RMK_SFLAG_NO_SHADOW 4u
@@ -264,7 +273,8 @@ RmkStageGL* rmk_stage_gl_create(RmkGetProc get_proc, int gles);
 /* Recursos aos poucos (uma camada por chamada), como rmk_gl_prepare. 1 = pronto. */
 int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a);
 /* Quadro novo: posições dos vértices pelas matrizes dos nós e normais (uma vez por quadro). */
-void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* fr);
+void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* fr, const RmkStageFree* fv,
+                        const uint8_t* face_n, const float* free_pos);
 /* Uma sequência de pacotes do jogo, na ordem dele. `key` identifica a sequência no quadro: o espelho da tela larga
  * repete a mesma sem montar de novo. Mesmo contrato de estado GL que rmk_gl_draw (unidades 8..10, 14 e 15). */
 void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, const RmkStagePkt* pk, uint32_t n,

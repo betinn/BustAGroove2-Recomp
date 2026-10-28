@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(HERE, '..'))
 import bag2model as bm  # noqa: E402
 from rig import GAME_LIST_ORDER, build_rig, pose_positions, smooth_normals  # noqa: E402
 from heat_remake import DISC, OUT, hd_layers, ps1_layers  # noqa: E402
-from export_char import SEMI, canonical_corners, stp_layers  # noqa: E402
+from export_char import SEMI, STP_ALPHA, canonical_corners, stp_layers  # noqa: E402
 
 BAG2 = os.path.join(HERE, '..', 'recomp', 'bag2')
 STAGES = range(231, 246)
@@ -139,6 +139,22 @@ def export(c: int, outs_dir: list[str]):
     rig = build_rig(nodes, set(), two_sided=True, dedup=False)
     layers = ps1_layers(rig, tims)
     hd = hd_layers(stp_layers(rig, tims, layers), os.path.join(OUT, 'palcos', f'palco{c}', 'textures'))
+    # camada de cada (tpage, clut) que o jogo usa: posição de cada TIM na VRAM
+    keys = []
+    for li_, (tex, clut) in enumerate(rig.layers):
+        x, y, cx, cy, bpp = tim_vram(tim_raw[tex])
+        tp = (x // 64) | ((y // 256) << 4) | ({4: 0, 8: 1, 16: 2}[bpp] << 7)
+        cw = (cx // 16) | ((cy + clut) << 6) if cx >= 0 else 0
+        keys.append((tp, cw, li_))
+    # e as texturas da geometria do código do overlay (chão, fundo) que o jogo usou e o modelo não
+    # (tools/remake/stage_extra_keys.json, de stage_keys.py): página montada da VRAM com os TIMs do palco
+    ex_keys, ex_imgs = extra_layers(c, tims, tim_raw, {(a & 0x19F, b) for a, b, _ in keys})
+    if ex_imgs:
+        tag = f'{fnv(repr(ex_keys).encode()):08x}'
+        hd += hd_layers(ex_imgs, os.path.join(OUT, 'palcos', f'palco{c}', f'textures_extra_{tag}'))
+        keys += [(a, b, len(rig.layers) + i) for i, (a, b) in enumerate(ex_keys)]
+        layers = layers + ex_imgs
+    assert len(hd) <= 64, f'{c}: {len(hd)} camadas'
     rig.mode = rig.mode | stage_semi(rig, nodes)
     # faces na ordem do buffer de pacotes: (nó, lista na ordem do jogo, primitiva)
     perm = np.lexsort(rig.order.T[::-1])
@@ -183,13 +199,6 @@ def export(c: int, outs_dir: list[str]):
         node_rows.append((offs[n], 4 * words, len(rows), first_prim))
         first_prim += len(rows)
         prims += rows
-    # camada de cada (tpage, clut) que o jogo usa: posição de cada TIM na VRAM
-    keys = []
-    for li_, (tex, clut) in enumerate(rig.layers):
-        x, y, cx, cy, bpp = tim_vram(tim_raw[tex])
-        tp = (x // 64) | ((y // 256) << 4) | ({4: 0, 8: 1, 16: 2}[bpp] << 7)
-        cw = (cx // 16) | ((cy + clut) << 6) if cx >= 0 else 0
-        keys.append((tp, cw, li_))
     # ---- asset HTR7
     buf = bytearray(b'HTR7')
     buf += struct.pack('<10I', 7, len(mesh_nodes), len(owner), len(rig.tris), len(hd), size, len(owner), 0, 0, 100 + c)
@@ -208,8 +217,8 @@ def export(c: int, outs_dir: list[str]):
         buf += bytes(int(v) for v in np.clip(rig.base[f], 0, 255).ravel())
         buf += bytes(int(v) for v in np.clip(rig.over[f], 0, 255).ravel())
         buf += bytes([0])
-    for img in hd:
-        buf += np.ascontiguousarray(img, np.uint8).tobytes()
+    for img, ps1 in zip(hd, layers):   # alfa suave (borda com antisserrilhado no shader) + STP no bit baixo
+        buf += np.ascontiguousarray(smooth_alpha(img, ps1), np.uint8).tobytes()
     # ---- tabelas
     stg = bytearray(b'STG1')
     stg += struct.pack('<6I', 1, c, len(mesh_nodes), len(hd), len(keys), len(model))
@@ -228,8 +237,80 @@ def export(c: int, outs_dir: list[str]):
         with open(os.path.join(d, f'palco{c}.stg'), 'wb') as fh:
             fh.write(stg)
     print(f'palco {c}: {len(buf) / 1e6:.1f} MB, {len(mesh_nodes)} nós, {len(owner)} vértices ({len(rig.owner)} antes dos '
-          f'vincos), {len(rig.tris)} faces ({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas, '
+          f'vincos), {len(rig.tris)} faces ({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas '
+          f'({len(ex_imgs)} do código do overlay), '
           f'{len(prims)} primitivas, chaves {[(hex(a), hex(b)) for a, b, _ in keys]}', flush=True)
+
+
+EXTRA_KEYS = os.path.join(HERE, 'stage_extra_keys.json')
+
+
+def smooth_alpha(hd, ps1):
+    """Alfa do palco como campo suave: a máscara de cobertura da camada original (256) ampliada por bicúbica para o
+    tamanho HD; a borda fica no meio (128) e o shader a desenha com antisserrilhado, em curva em vez da escada do xBR
+    (vigas, grades, folhagem). O STP (semitransparência do PS1) vai no bit baixo do alfa; o carregador do núcleo lê
+    assim os assets de palco (índice >= 100). O RGB do Real-ESRGAN já vem dilatado por baixo da borda."""
+    from PIL import Image
+    S = hd.shape[0]
+    cov = Image.fromarray(((ps1[..., 3] > 0) * 255).astype(np.uint8)).resize((S, S), Image.BICUBIC)
+    a = np.asarray(cov).astype(np.int32)
+    stp = np.asarray(Image.fromarray(((ps1[..., 3] == STP_ALPHA) * 255).astype(np.uint8)).resize((S, S), Image.NEAREST)) > 0
+    out = hd.copy()
+    out[..., 3] = ((a & 0xFE) | stp).astype(np.uint8)
+    return out
+
+
+def extra_layers(c, tims, tim_raw, have):
+    """Camadas das texturas que só a geometria do código do overlay usa: para cada (tpage, clut) de stage_extra_keys.json
+    que o modelo não cobre, a página 256 texels de largura da VRAM montada com os TIMs do palco que caem nela e a CLUT
+    achada no bloco de CLUT de algum TIM do palco. Texturas de fora do palco (HUD, efeitos) ficam de fora. Devolve
+    (chaves, imagens RGBA 256x256 com o STP no alfa)."""
+    import json
+    if not os.path.exists(EXTRA_KEYS):
+        return [], []
+    want = json.load(open(EXTRA_KEYS, encoding='utf-8')).get(str(c), [])
+    info = [(t,) + tim_vram(r) for t, r in zip(tims, tim_raw)]
+    out_k, out_i = [], []
+    for tp, cw, _n in sorted(want, key=lambda k: -k[2]):
+        tp &= 0x19F
+        if (tp, cw) in have or (tp, cw) in out_k:
+            continue
+        bpp = {0: 4, 1: 8}.get((tp >> 7) & 3)
+        if bpp is None:
+            continue
+        tpx = 16 // bpp
+        tx, ty, hw = (tp & 0xF) * 64, ((tp >> 4) & 1) * 256, 256 // tpx
+        idx = np.zeros((256, 256), np.int32)
+        cov = np.zeros((256, 256), bool)
+        for tim, x, y, _cx, _cy, tb in info:
+            if tb != bpp:
+                continue
+            x0, x1 = max(x, tx), min(x + tim.w // tpx, tx + hw)
+            y0, y1 = max(y, ty), min(y + tim.h, ty + 256)
+            if x0 >= x1 or y0 >= y1:
+                continue
+            idx[y0 - ty:y1 - ty, (x0 - tx) * tpx:(x1 - tx) * tpx] = tim.idx[y0 - y:y1 - y, (x0 - x) * tpx:(x1 - x) * tpx]
+            cov[y0 - ty:y1 - ty, (x0 - tx) * tpx:(x1 - tx) * tpx] = True
+        cx, cy = (cw & 0x3F) * 16, (cw >> 6) & 0x1FF
+        pal = None
+        for tim, _x, _y, tcx, tcy, _tb in info:
+            if tim.clut is None or tcx < 0:
+                continue
+            ch, cn = tim.clut.shape
+            if tcy <= cy < tcy + ch and tcx <= cx < tcx + cn:
+                n = 16 if bpp == 4 else 256
+                pal = np.pad(tim.clut[cy - tcy][cx - tcx:cx - tcx + n], (0, n))[:n]
+                break
+        if pal is None or not cov.any():
+            continue
+        v = pal[np.clip(idx, 0, len(pal) - 1)].astype(np.int64)
+        img = bm.c16_to_rgba(v)
+        img[~cov] = 0
+        stp = ((v >> 15) & 1).astype(bool) & (v != 0) & cov
+        img[..., 3][stp] = STP_ALPHA
+        out_k.append((tp, cw))
+        out_i.append(img)
+    return out_k, out_i
 
 
 def stage_semi(rig, nodes):
