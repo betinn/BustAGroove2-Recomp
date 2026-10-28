@@ -28,7 +28,7 @@ def instances(s):
     txt = s.cmd({'cmd': 'mod_cmd', 'name': 'heat_chars', 'args': ''}).get('reply', '')
     out = []
     for part in txt.split('||'):
-        m = re.search(r'jogo: (\S+) raiz=\w+ ha=(\d+) .*bbox=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)', part)
+        m = re.search(r'jogo: (.+?) raiz=\w+ ha=(\d+) .*bbox=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)', part)
         if m and int(m.group(2)) < 8:
             out.append((m.group(1), [float(m.group(k)) for k in range(3, 7)]))
     return out
@@ -83,7 +83,7 @@ def main():
                 x = 0
                 for c in cs[r * cols:(r + 1) * cols]:
                     grid.paste(c, (x, r * hgt)); x += c.size[0]
-            out = os.path.join(LOGS, f'{tag}_{name.replace("&", "").replace("*", "_alt")}.png')
+            out = os.path.join(LOGS, f'{tag}_{name.replace("&", "").replace(" ", "_").replace("*", "_alt")}.png')
             grid.save(out)
             print(out, grid.size, flush=True)
         print(s.fps())

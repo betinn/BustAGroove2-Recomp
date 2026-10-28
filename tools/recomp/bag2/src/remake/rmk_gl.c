@@ -165,7 +165,13 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, BlendEquation, (GLenum_ m)) \
     X(void, DrawArrays, (GLenum_ m, GLint_ f, GLsizei_ n)) \
     X(void, GenSamplers, (GLsizei_ n, GLuint_* s)) \
-    X(void, SamplerParameteri, (GLuint_ s, GLenum_ p, GLint_ v))
+    X(void, SamplerParameteri, (GLuint_ s, GLenum_ p, GLint_ v)) \
+    X(void, DeleteProgram, (GLuint_ p)) \
+    X(void, DeleteBuffers, (GLsizei_ n, const GLuint_* b)) \
+    X(void, DeleteTextures, (GLsizei_ n, const GLuint_* t)) \
+    X(void, DeleteVertexArrays, (GLsizei_ n, const GLuint_* a)) \
+    X(void, DeleteFramebuffers, (GLsizei_ n, const GLuint_* f)) \
+    X(void, DeleteSamplers, (GLsizei_ n, const GLuint_* s))
 
 #define GEO_RING 8                   /* texturas de geometria em rodízio (vários desenhos por quadro) */
 #define SHADOW_SIZE 1024             /* mapa de sombra próprio (só o personagem) */
@@ -205,6 +211,7 @@ struct RmkGL {
     GLint_ u_stage, u_ldir, u_lcol, u_bk;
     GLint_ u_lu, u_lv, u_ld, u_lc, u_spass, u_shadow, u_shadow_on, u_key;
     GLint_ u_nrm, u_rm_rect, u_rm_off, u_semi;
+    uint64_t bytes;                  /* memória de GPU alocada (estimativa pelos tamanhos pedidos, com mipmaps) */
     char err[512];
 };
 
@@ -375,6 +382,33 @@ static const char* FS_BODY =
     "}\n";
 
 const char* rmk_gl_error(const RmkGL* g) { return g ? g->err : "sem contexto"; }
+
+uint64_t rmk_gl_bytes(const RmkGL* g) { return g ? g->bytes : 0u; }
+
+/* Apaga os objetos GL (nome 0 é ignorado pelo GL) e a memória de CPU do contexto. Nada fica ligado ao framework: as
+ * texturas do remake só ocupam as unidades 8 a 12, e apagar uma textura ou VAO ligado só o desliga. */
+void rmk_gl_destroy(RmkGL* g) {
+    if (!g) return;
+    if (g->DeleteTextures) {
+        const GLuint_ tx[5] = {g->tex, g->nmap, g->shadow_tex, g->floor_tex, 0};
+        g->DeleteTextures(4, tx);
+        g->DeleteTextures(GEO_RING, g->geo);
+        const GLuint_ bf[3] = {g->grid_vbo, g->grid_ibo, g->inst_vbo};
+        g->DeleteBuffers(3, bf);
+        const GLuint_ va[2] = {g->vao, g->floor_vao};
+        g->DeleteVertexArrays(2, va);
+        const GLuint_ fb[2] = {g->shadow_fbo, g->floor_fbo};
+        g->DeleteFramebuffers(2, fb);
+        g->DeleteSamplers(2, g->floor_smp);
+        if (g->prog) g->DeleteProgram(g->prog);
+        if (g->floor_prog) g->DeleteProgram(g->floor_prog);
+    }
+    free(g->staging);
+    free(g->inst);
+    free(g->inst_order);
+    free(g->slot);
+    free(g);
+}
 
 RmkGL* rmk_gl_create(RmkGetProc get_proc, int gles) {
     RmkGL* g = (RmkGL*)calloc(1, sizeof *g);
@@ -569,6 +603,11 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     const GLenum_ none = 0;
     g->DrawBuffers(1, &none);
     g->ReadBuffer(0);
+    /* camadas e mapas de normal com a cadeia de mipmaps (4/3), geometria em rodízio, instâncias, sombra própria */
+    const uint64_t layer = (uint64_t)a->tex_size * a->tex_size * 4u * (a->n_layers ? a->n_layers : 1u);
+    g->bytes += layer * 4u / 3u + (uint64_t)ns * ns * 4u * (a->n_layers ? a->n_layers : 1u) * 4u / 3u +
+                (uint64_t)GEO_RING * g->geo_w * g->geo_h * 16u + 2u * sizeof(Inst) * a->n_tris +
+                (uint64_t)SHADOW_SIZE * SHADOW_SIZE * 4u;
     const int fbo_ok = g->CheckFramebufferStatus(R_FRAMEBUFFER) == R_FRAMEBUFFER_COMPLETE;
     g->BindFramebuffer(R_FRAMEBUFFER, 0);   /* só no preparo, fora do desenho do jogo: quem chama religa o seu */
     if (!fbo_ok) { snprintf(g->err, sizeof g->err, "mapa de sombra: FBO incompleto"); return 0; }
@@ -815,6 +854,7 @@ static int build_floor(RmkGL* g) {
     g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_COMPARE_MODE, R_COMPARE_REF_TO_TEXTURE);
     g->SamplerParameteri(g->floor_smp[1], R_TEXTURE_COMPARE_FUNC, R_LEQUAL);
     g->GenFramebuffers(1, &g->floor_fbo);
+    g->bytes += (uint64_t)SHADOW_SIZE * SHADOW_SIZE * 4u;
     g->BindFramebuffer(R_FRAMEBUFFER, g->floor_fbo);
     g->FramebufferTexture2D(R_FRAMEBUFFER, R_DEPTH_ATTACHMENT, R_TEXTURE_2D, g->floor_tex, 0);
     const GLenum_ none = 0;

@@ -1,11 +1,12 @@
-/* Carga do asset do remake, formato v6 (tools/remake/export_char.py; little-endian; o v4 e o v5 também são lidos):
- *   char[4] "HTR6"; u32 versão (6), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages,
+/* Carga do asset do remake, formato v7 (tools/remake/export_char.py; little-endian; v4..v6 também são lidos):
+ *   char[4] "HTR7"; u32 versão (7), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages,
  *               índice do personagem; char nome[16]
  *               (v5: "HTR5", versão 5, sem índice nem nome; v4: "HTR4", versão 4, sem n_pages)
  *   por nó:      u16 nverts (0 = sem mesh), u8 páginas das faces originais (v6; pad antes), u8 1 = nó desenhado
  *                (v6: os primeiros n_drawn, na ordem da árvore; pad antes), u32 base_index (MeshHeader+0x98)
- *   por grupo (1..n_groups): u8 posição na árvore, u8 pad, u16 nverts e u32 base_index do mesh do jogo
- *                desse gesto, u32 primeiro vértice, u32 nº de vértices (exclusivos do grupo, contíguos)
+ *   por grupo (1..n_groups): u8 posição na árvore (v7: 255 = peça sem posição), u8 pad, u16 nverts e u32
+ *                base_index do mesh do jogo desse gesto, u32 primeiro vértice, u32 nº de vértices (exclusivos do grupo,
+ *                contíguos; v7: com o osso próprio n_drawn + g - 1, os do v6 com o da posição)
  *   por página (v5): s16 x, y na VRAM (x em halfwords, -1 = desconhecida), u16 largura, altura (texels),
  *                u8 bits por texel, u8 pad[3]; v6: + u32 FNV-1a de 64 palavras da imagem do TIM e u32 FNV-1a da
  *                CLUT inteira
@@ -128,8 +129,8 @@ int rmk_asset_build_normals(RmkAsset* a, float strength) {
 static int read_tables(RmkAsset* a, FILE* f) {
     char magic[4];
     uint32_t hdr[10] = {0};
-    int ok = fread(magic, 1, 4, f) == 4 && !memcmp(magic, "HTR", 3) && magic[3] >= '4' && magic[3] <= '6';
-    const int ver = ok ? magic[3] - '0' : 0, nh = ver == 6 ? 10 : ver == 5 ? 9 : 8;
+    int ok = fread(magic, 1, 4, f) == 4 && !memcmp(magic, "HTR", 3) && magic[3] >= '4' && magic[3] <= '7';
+    const int ver = ok ? magic[3] - '0' : 0, nh = ver >= 6 ? 10 : ver == 5 ? 9 : 8;
     ok = ok && fread(hdr, 4, (size_t)nh, f) == (size_t)nh && hdr[0] == (uint32_t)ver;
     if (ok) {
         a->version = (uint32_t)ver;
@@ -162,8 +163,11 @@ static int read_tables(RmkAsset* a, FILE* f) {
         ok = fread(&pos, 1, 1, f) == 1 && fread(&pad, 1, 1, f) == 1 && fread(&nv, 2, 1, f) == 1 && fread(w, 4, 3, f) == 3;
         RmkGroup* gr = &a->groups[g];
         gr->tree_pos = pos; gr->sig_nverts = nv; gr->sig_base = w[0]; gr->v0 = w[1]; gr->nv = w[2];
-        ok = ok && gr->v0 >= a->n_body && gr->v0 + gr->nv <= a->n_verts && pos < RMK_MAX_NODES;
+        ok = ok && gr->v0 >= a->n_body && gr->v0 + gr->nv <= a->n_verts &&
+             (pos < RMK_MAX_NODES || (ver >= 7 && pos == RMK_NO_POS));
     }
+    a->n_bones = ver >= 7 ? a->n_drawn + (int)a->n_groups : a->n_drawn;
+    ok = ok && a->n_bones <= RMK_MAX_NODES;
     for (uint32_t p = 0; ok && p < a->n_pages; p++) {
         int16_t xy[2];
         uint16_t wh[2];
@@ -220,7 +224,8 @@ int rmk_asset_load(RmkAsset* a, const char* path) {
         }
         if (ok && !t->group) for (int k = 0; k < 3; k++) ok &= t->v[k] < a->n_body;
     }
-    for (uint32_t i = 0; ok && i < a->n_verts; i++) ok = a->verts[i].owner < a->n_nodes;
+    const uint32_t nb = a->version >= 7 ? (uint32_t)a->n_bones : a->n_nodes;   /* v7: ossos próprios dos grupos */
+    for (uint32_t i = 0; ok && i < a->n_verts; i++) ok = a->verts[i].owner < nb;
     /* alfa só de cobertura; o STP (alfa intermediário do arquivo) num bit por texel */
     const size_t texels = (size_t)a->tex_size * a->tex_size;
     for (uint32_t l = 0; ok && l < a->n_layers; l++) {

@@ -10,8 +10,8 @@ números, testes) ficam em `notes/remake-visual.md`. Toda sessão que avançar u
 ## Objetivo
 Salto visual grande no jogo em si (palco + jogadores), sem artista humano, mantendo 60 fps estáveis com
 folga e sem engasgo de áudio, com a mesma jogabilidade. Nada de mudança que quase não se nota. A abertura em
-vídeo fica para depois (fase 6). Primeiro no exe de PC; o port para o Android (Polygonia) vem depois e o PC
-já é construído pensando nele (fase 5).
+vídeo fica para depois (fase 7). Primeiro no exe de PC; o port para o Android (Polygonia) vem depois e o PC
+já é construído pensando nele (fase 6).
 
 ## Estado
 | Fase | O que | Estado |
@@ -21,10 +21,20 @@ já é construído pensando nele (fase 5).
 | 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, sombra, luz do palco, IA 3D) | **feito** (2026-10-27, commits 5e51099..); IA 3D testada offline e descartada |
 | 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **feito** (2026-10-27): pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco avaliada e adiada; render +0/+1 depois do patch do desenho de host |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | **feito** (2026-10-28): rota do 2 jogadores, COMET e os dois figurinos de 15 personagens; 3 recusados (outro esqueleto) |
-| 5 | Port para o Polygonia (Android) | pendente |
-| 6 | Abertura em vídeo ampliada por IA | futuro |
+| 5 | Memória do elenco: só quem está em cena fica carregado; lacunas da fase 4 conferidas | **feito** (2026-10-28): descarga, os 18 conferidos, asset v7 |
+| 6 | Port para o Polygonia (Android) | pendente |
+| 7 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 4, 2026-10-28)
+## Onde estamos (fim da fase 5, 2026-10-28)
+- Só quem está em cena fica carregado: numa sessão de 5 partidas a GPU dedicada fica em 1,06–1,22 GB nas partidas e
+  0,77–0,99 GB nos menus (0 personagens carregados); sem a descarga chegava a 2,1 GB e subia a cada personagem novo.
+- Os 18 personagens nos dois figurinos conferidos no jogo (partidas espelhadas do 2 jogadores, liberados só na RAM):
+  0 quadros caindo no original em todos; ROBO-Z (cabeça), SUSHI BOY (mão) e CHICHI&SALLY (nó que some) corrigidos;
+  PANDER com o figurino certo; CAPOEIRA não carrega mais à toa.
+- Desempenho: 59,9 fps em todos os segundos e 0 underruns; HEAT × COMET com a render +12/+9 (fase 4: +6/+6; causa não
+  achada no plugin), KITTY-N × HIRO −1/+2.
+
+## Onde estávamos (fim da fase 4, 2026-10-28)
 - Testes pelo **modo 2 jogadores** (`game_session.py` `to_match_2p`, `BAG2_MATCH`): os dois personagens e o palco
   escolhidos. A/B do ritmo na mesma música fechado (`notes/recomp.md` §13): vblank 564480 deriva +3,48 quadros por
   20 s, o 566121 do hardware +0,27.
@@ -189,7 +199,30 @@ Plano original:
 - Medir com `game_perf.py` numa partida inteira com os dois remakes reais.
 - Depois os outros personagens (paleta do jogador 2 em `88 + 2k`; semitransparência ainda não implementada).
 
-## Fase 5 — Port para o Polygonia (Android)
+## Fase 5 — Memória do elenco e lacunas da fase 4 (feita em 2026-10-28)
+Pedido do usuário (2026-10-28): deixar carregados todos os personagens, mesmo sem uso, não serve; e nada pode ficar
+sem conferir.
+- Carregar só quem entra na partida (nenhuma carga por impressão digital falsa: o CAPOEIRA carregava em toda
+  partida).
+- Descarregar quem saiu de cena: recursos GL (thread de render) e cópia de CPU, inclusive a do HEAT; voltar a carregar
+  sozinho na próxima partida em que ele aparecer. Pausa não descarrega.
+- Medir a memória (GPU dedicada do processo, privada, o que o plugin pediu) numa sessão com várias partidas, com e sem
+  a descarga; nenhuma perda de fps nem underrun.
+- Conferir as lacunas da fase 4: personagens bloqueados no cartão (liberados só na RAM), os três recusados, mãos
+  alternativas sem posição, expressão do rosto de todos, figurino alternativo do CAPOEIRA, underruns do boot, build
+  normal numa partida de verdade.
+
+**Resultado** (técnica e números em `notes/remake-visual.md`, "Fase 5 no jogo"):
+- Descarga: estado 3 nos assets, decisão no vblank (`keep_loaded`), GL apagado pela thread de render num marcador
+  (inclusive nos menus, por um marcador vazio no fim da OT), cópia de CPU solta depois; volta sozinha na próxima
+  partida. Pausa não descarrega.
+- CAPOEIRA: impressão digital de imagem uniforme batia com o vídeo de abertura e o palco; só conta `LoadImage` na área
+  dos dançarinos com amostra não uniforme.
+- Elenco: os 18 liberados só na RAM; CHICHI&SALLY, COLUMBO e SUSHI BOY exportados (não eram outro esqueleto);
+  reconhecimento pelo mesh de cada nó e asset v7 (osso próprio por grupo, peças sem posição); ROBO-Z (cabeça) e SUSHI
+  BOY (mão) com posição observada; figurino do PANDER corrigido.
+
+## Fase 6 — Port para o Polygonia (Android)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.
 - Hook: detectar no CPU emulado a entrada de `0x80029D4C` e ler as matrizes da RAM.
 - Desenho: adaptador para o renderizador do DuckStation (Vulkan e OpenGL ES), reaproveitando o núcleo
@@ -197,7 +230,7 @@ O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins
 - Assets gerados no PC a partir do disco do usuário e copiados para o celular; nada do jogo no APK nem no
   repositório público. Medir no aparelho. Estimativa: 4 a 8 sessões depois do PC estável.
 
-## Fase 6 — Abertura (futuro)
+## Fase 7 — Abertura (futuro)
 Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo no runtime.
 
 ## Aprendizados que valem para todas as fases (resumo; detalhes em `notes/remake-visual.md`)
@@ -219,6 +252,12 @@ Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo n
   `0x80060E30`/`0x80060E38`. Cada personagem tem dois figurinos (87/123 + 2k e 159/195 + 2k); o 2P de uma partida
   espelhada usa o alternativo. O buffer de pacotes do nó (+0xA8) não tem todas as primitivas (decalques saem de
   outro lugar): para saber o que o jogo desenha, `gpu_frame_dump` com o original ligado.
+- Elenco (fase 5): reconhecer cada nó da árvore pelo mesh (nº de vértices + índice-base do MeshHeader), não pela
+  posição: o jogo troca mãos e cabeça religando nós, pendura peças nas mãos e tira nós da árvore. Juntas sem mesh no
+  meio da árvore não entram (só nós de tipo 1). Os TIMs dos dançarinos vão para x ≥ 704, y ≥ 256 na VRAM; impressão
+  digital de amostra uniforme bate com qualquer coisa. Nos menus a OT do jogo é a mesma da partida (marcador de host
+  funciona fora da partida); no vídeo de abertura não. Os 18 personagens se liberam só na RAM (CodeBreaker, 8 bytes em
+  `0x8004F667`); o jogo grava o cartão depois das partidas (guardar e devolver).
 - PSXRecomp: ativação de plugin roda antes do renderizador (ler arquivos ali; recursos GL só depois, aos
   poucos, por marcadores de preparo); `render_thread` + qualquer `GL_RT_SYNC` por primitiva derruba o fps;
   trocar textura fecha o lote do GL. Desenho de host (patch 3): marcador GP0 00h "HDR" na arena, payload por

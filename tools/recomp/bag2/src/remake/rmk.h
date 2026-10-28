@@ -40,8 +40,11 @@ typedef struct {
 
 /* Gesto de mão: o jogo troca o mesh inteiro da mão (o nó ligado na posição `tree_pos` da árvore muda),
  * reconhecido na RAM pela assinatura do MeshHeader desse nó. Os vértices exclusivos do grupo são
- * contíguos: [v0, v0 + nv), depois dos n_body do corpo. */
+ * contíguos: [v0, v0 + nv), depois dos n_body do corpo. v7 (fase 5): os vértices exclusivos do grupo g usam o osso
+ * próprio n_drawn + g - 1 (a matriz do nó do jogo que leva aquele mesh, onde quer que ele esteja na árvore), e
+ * tree_pos = RMK_NO_POS marca uma peça sem posição (objeto que o jogo pendura numa mão: um nó a mais na árvore). */
 typedef struct { uint32_t tree_pos, sig_nverts, sig_base, v0, nv; } RmkGroup;
+#define RMK_NO_POS 255u
 
 /* Página de textura (um TIM do personagem): onde o jogo a põe na VRAM (vx em halfwords, -1 = desconhecida),
  * tamanho em texels e bits por texel. A expressão do rosto é cópia de VRAM dentro de uma página (MoveImage). */
@@ -58,6 +61,7 @@ typedef struct {
     int mesh_nodes;                  /* nós com mesh, os primeiros na ordem da árvore */
     int n_drawn;                     /* deles, os desenhados (posições da árvore); o resto são mãos alternativas */
     uint32_t n_body, n_groups;       /* vértices do corpo (sempre ativos); grupos 1..n_groups */
+    int n_bones;                     /* matrizes do esqueleto: n_drawn (v6) ou n_drawn + n_groups (v7) */
     RmkGroup groups[RMK_MAX_GROUPS];
     uint32_t n_pages;                /* asset v5; 0 no v4 (sem expressão do rosto) */
     RmkPage pages[RMK_MAX_PAGES];
@@ -204,5 +208,10 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
  * Quem chama liga o pedido na ordem do jogo no lugar da sombra original. Mesmo estado GL que rmk_gl_draw. */
 void rmk_gl_draw_floor(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* pos, const RmkTarget* t);
 const char* rmk_gl_error(const RmkGL* g);   /* último erro de compilação/recurso ("" se nenhum) */
+/* Memória de GPU que o contexto pediu (bytes, estimativa pelos tamanhos das texturas e buffers, com mipmaps). */
+uint64_t rmk_gl_bytes(const RmkGL* g);
+/* Apaga todos os objetos GL do contexto e o próprio contexto (personagem que saiu de cena). Contexto GL corrente, a
+ * mesma thread que criou; depois disso `g` não vale mais. */
+void rmk_gl_destroy(RmkGL* g);
 
 #endif

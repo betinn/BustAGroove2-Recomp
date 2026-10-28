@@ -44,7 +44,7 @@ def main():
 
     for pair in pairs:
         p1, p2, st = (pair.split(',') + ['0'])[:3]
-        tag = f'tour_{p1}_{p2}_{st}'.replace('&', '').replace('*', '')
+        tag = f'tour_{p1}_{p2}_{st}'.replace('&', '').replace('*', '').replace(' ', '_')
         s = Session(label=tag)
         s.start()
         try:
@@ -95,7 +95,7 @@ def main():
                 x = 0
                 for c in cs:
                     grid.paste(c, (x, 0)); x += c.size[0]
-                f = os.path.join(LOGS, f'{tag}_{name.replace("&", "").replace("*", "_alt")}.png')
+                f = os.path.join(LOGS, f'{tag}_{name.replace("&", "").replace(" ", "_").replace("*", "_alt")}.png')
                 grid.save(f)
                 log('   captura', f)
             log('  ', s.fps())

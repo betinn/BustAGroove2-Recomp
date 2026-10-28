@@ -15,13 +15,14 @@ Uso: python tools/remake/export_char.py NOME[*] [saída ...]
      <nome>_alt.bin; vários personagens têm o mesmo modelo nos dois figurinos e só a textura muda.
 O arquivo é derivado do disco do usuário: fica fora do git (pastas build*/ são ignoradas).
 
-Formato v6 (little-endian; lido por src/remake/rmk_asset.c, que lê também o v4/v5):
-    char[4] "HTR6"; u32 versão (6), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages,
+Formato v7 (little-endian; lido por src/remake/rmk_asset.c, que lê também o v4..v6):
+    char[4] "HTR7"; u32 versão (7), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages,
                 índice do personagem (bag2model.CHARS); char nome[16]
     por nó:     u16 nverts (0 = sem mesh), u8 páginas usadas pelas faces originais do nó (bit p = TIM p), u8 1 = nó
                 desenhado (posição na árvore; 0 = mão alternativa ou sem mesh), u32 base_index (MeshHeader+0x98)
-    por grupo (1..n_groups): u8 posição na árvore, u8 pad, u16 nverts e u32 base_index do mesh do jogo desse
-                grupo, u32 primeiro vértice, u32 nº de vértices exclusivos
+    por grupo (1..n_groups): u8 posição na árvore (255 = peça sem posição), u8 pad, u16 nverts e u32 base_index
+                do mesh do jogo desse grupo, u32 primeiro vértice, u32 nº de vértices exclusivos (v7: com o osso
+                próprio n_drawn + g - 1 no dono do vértice; o v6 usava o osso da posição)
     por página: s16 x, y na VRAM (-1 = achar no jogo), u16 largura, altura (texels), u8 bits por texel, u8 pad[3],
                 u32 FNV-1a de 64 palavras espalhadas pela imagem do TIM (o plugin reconhece o LoadImage dele e carrega
                 o asset durante o carregamento da partida), u32 FNV-1a da CLUT inteira do TIM (os dois figurinos de
@@ -59,7 +60,14 @@ STP_ALPHA = 143                # alfa do texel com STP (o mesmo valor do pacote 
 # (tools/remake/char_tree.py, HEAT x COMET no palco do HEAT: 21 e 26 na mão esquerda, 23 na direita) e, para as que
 # não apareceram, o lado pelo sinal de z do centro da malha (esquerda +z, como os nós 17 e 20).
 # Nó do arquivo -> posição (= nó padrão) que ele substitui.
-ALT_POS: dict[str, dict[int, int]] = {'COMET': {21: 17, 22: 17, 26: 17, 23: 20, 24: 20, 25: 20}}
+ALT_POS: dict[str, dict[int, int]] = {'COMET': {21: 17, 22: 17, 26: 17, 23: 20, 24: 20, 25: 20},
+                                      # fase 5 (chars_check.py, 2 jogadores): o ROBO-Z troca a cabeça (13) pelo nó 24
+                                      'ROBO-Z GOLD': {24: 13}, 'ROBO-Z GOLD*': {24: 13},
+                                      # e o SUSHI BOY a mão 14 pelo nó 20
+                                      'SUSHI BOY': {20: 14}, 'SUSHI BOY*': {20: 14}}
+# Nós desenhados que o jogo tira da árvore em parte dos quadros (chars_check.py): viram grupo da própria posição; sem
+# ele o resto do personagem continua com remake.
+OPTIONAL: dict[str, list[int]] = {'CHICHI&SALLY': [4], 'CHICHI&SALLY*': [4]}
 
 
 def slug(name: str) -> str:
@@ -106,16 +114,22 @@ def drawn_and_alts(name, nodes):
     return drawn, alts, pos, unresolved
 
 
-def original_groups(rig, nodes, pos):
+def original_groups(rig, nodes, pos, loose=(), optional=()):
     """Grupos das mãos com as malhas originais: em cada posição com alternativas, o nó padrão e cada alternativa
-    viram um grupo; os vértices das alternativas passam a ser do osso da posição. Devolve (rig, grupos)."""
+    viram um grupo; os vértices das alternativas passam a ser do osso da posição (na pose de descanso, para a oclusão
+    ambiente; no arquivo v7 cada grupo tem o osso próprio). `loose`: nós com mesh fora da árvore sem posição (peças que
+    o jogo pendura numa mão, v7): um grupo cada, sem posição (None). `optional`: nós desenhados que o jogo às vezes
+    tira da árvore (OPTIONAL): grupo da própria posição. Devolve (rig, grupos)."""
     import copy
     r = copy.copy(rig)
     groups, gid = {}, {}
-    for p in sorted(set(pos.values())):
+    for p in sorted(set(pos.values()) | set(optional)):
         for n in [p] + sorted(j for j in pos if pos[j] == p):
             gid[n] = len(gid) + 1
             groups[gid[n]] = (p, n, len(nodes[n].mesh.verts), nodes[n].mesh.base_index)
+    for n in sorted(loose):
+        gid[n] = len(gid) + 1
+        groups[gid[n]] = (None, n, len(nodes[n].mesh.verts), nodes[n].mesh.base_index)
     r.owner, r.gnowner = rig.owner.copy(), rig.gnowner.copy()
     for j, p in pos.items():
         r.owner[r.owner == j] = p
@@ -220,9 +234,8 @@ def export(name: str, outs: list[str]):
     nodes, anims, tims, _ = load_character(DISC, k, alt)
     label = name + ('*' if alt else '')
     drawn, alts, pos, unresolved = drawn_and_alts(label, nodes)
-    gaps = sorted(set(range(drawn[-1])) - set(drawn))
-    if len(gaps) >= 4:   # outro esqueleto intercalado (CHICHI&SALLY, COLUMBO, SUSHI BOY): o plugin só conhece uma árvore
-        raise SystemExit(f'{label}: {len(gaps)} nós fora da árvore no meio da lista ({gaps}): outro esqueleto; não suportado')
+    # Nós sem mesh no meio da árvore (juntas: CHICHI&SALLY, COLUMBO, SUSHI BOY) não entram na árvore do jogo (o plugin
+    # coleta só os nós de tipo 1, com mesh); a fase 4 recusava esses três achando que era outro esqueleto.
     # sem deduplicar: o modelo tem camadas coplanares (decalques) que só ficam certas na ordem do jogo
     base_rig = build_rig(nodes, set(), two_sided=True, dedup=False)
     layers = ps1_layers(base_rig, tims)
@@ -236,14 +249,13 @@ def export(name: str, outs: list[str]):
         rig = E.attach_nose(E.attach_ears(rig))
         combos = [[1 + i, 1 + len(H.LEFT_NODES) + i] for i in range(len(H.GESTURES))]
     else:
-        rig, groups = original_groups(base_rig, nodes, pos)
-        if unresolved:   # alternativa sem posição conhecida: fica de fora (o jogo cai no original nesse quadro)
-            keep = ~np.isin(base_rig.fnode, unresolved)
-            for f in FACE_FIELDS:
-                setattr(rig, f, getattr(rig, f)[keep])
+        # mesh fora da árvore sem posição (peça que o jogo pendura numa mão, ou troca ainda não vista): grupo com osso
+        # próprio (v7); o plugin reconhece o nó pelo mesh onde quer que ele apareça na árvore
+        rig, groups = original_groups(base_rig, nodes, pos, unresolved, OPTIONAL.get(label, []))
         by_pos = {}
         for g, (p, n, _, _) in sorted(groups.items()):
-            by_pos.setdefault(p, []).append(g)
+            if p is not None:
+                by_pos.setdefault(p, []).append(g)
         combos = [[gs[min(i, len(gs) - 1)] for gs in by_pos.values()] for i in range(max(map(len, by_pos.values()), default=1))]
     detail.mark_flat(rig, head)
     semi = face_semi(rig, nodes)
@@ -258,12 +270,13 @@ def export(name: str, outs: list[str]):
     rig.owner, rig.local = rig.owner[vperm], rig.local[vperm]
     rig.tris, rig.zpair = remap[rig.tris], remap[rig.zpair]
     assert (rig.tris >= 0).all() and (rig.zpair >= 0).all()
-    assert np.isin(rig.owner, drawn).all(), 'vértice com dono fora da árvore desenhada'
+    assert np.isin(rig.owner, drawn + list(unresolved)).all(), 'vértice com dono fora da árvore desenhada'
     # oclusão ambiente na pose de descanso, por vértice (na GPU, como nos renders offline): o corpo com o primeiro
     # grupo de cada mão; cada combinação de grupos com o corpo
     from render import Renderer
     rd = Renderer(layers, hd)
     p, _ = pose_positions(rig, nodes)
+    p_rest = p
     ao = np.ones(len(p))
     for i, combo in enumerate(combos or [[]]):
         m = np.isin(rig.hand, [0] + combo)
@@ -273,6 +286,11 @@ def export(name: str, outs: list[str]):
             ao[vs] = a[vs]
         for g in combo:
             v0, n = ranges[g]
+            ao[v0:v0 + n] = a[v0:v0 + n]
+    for g, (gp, *_) in groups.items():   # peças sem posição: a oclusão delas com o corpo, sem mexer na do corpo
+        if gp is None:
+            v0, n = ranges[g]
+            a = rd.ambient_occlusion(p_rest, rig.tris[np.isin(rig.hand, [0, g])])
             ao[v0:v0 + n] = a[v0:v0 + n]
     canonical_corners(rig)
     size = hd[0].shape[0]
@@ -284,11 +302,14 @@ def export(name: str, outs: list[str]):
     # do índice no arquivo para a posição na árvore (o que o jogo percorre): dono dos vértices, grupos, tabela de nós
     # (os desenhados primeiro, na ordem da árvore)
     pos_of = {f: i for i, f in enumerate(drawn)}
-    owner_pos = np.array([pos_of[int(o)] for o in rig.owner])
+    owner_pos = np.array([pos_of.get(int(o), 0) for o in rig.owner])
+    for g, (v0, n) in ranges.items():   # v7: os vértices exclusivos do grupo g usam o osso próprio n_drawn + g - 1
+        owner_pos[v0:v0 + n] = len(drawn) + g - 1
+    assert owner_pos.max() < 64
     node_order = drawn + [nd.index for nd in nodes if nd.index not in pos_of]
     import faces
-    buf = bytearray(b'HTR6')
-    buf += struct.pack('<10I', 6, len(nodes), len(rig.owner), len(rig.tris), len(hd), size, n_body, n_groups, len(tims), k)
+    buf = bytearray(b'HTR7')
+    buf += struct.pack('<10I', 7, len(nodes), len(rig.owner), len(rig.tris), len(hd), size, n_body, n_groups, len(tims), k)
     buf += label.encode('ascii')[:15].ljust(16, b'\0')
     for i in node_order:
         nd = nodes[i]
@@ -297,7 +318,7 @@ def export(name: str, outs: list[str]):
     for g in range(1, n_groups + 1):
         gp, node, nv, base = groups[g]
         v0, n = ranges[g]
-        buf += struct.pack('<BBHIII', pos_of[gp], 0, nv, base, v0, n)
+        buf += struct.pack('<BBHIII', pos_of[gp] if gp is not None else 255, 0, nv, base, v0, n)
     for t, tim in enumerate(tims):
         vx, vy = faces.PAGE_VRAM.get(t, (-1, -1)) if name == 'HEAT' and not alt else (-1, -1)
         buf += struct.pack('<hhHHB3xII', vx, vy, tim.w, tim.h, tim.bpp, tim_hash(tim), clut_hash(tim))
@@ -322,7 +343,7 @@ def export(name: str, outs: list[str]):
     print(f'{label}: {len(buf) / 1e6:.1f} MB, {len(rig.owner)} vértices ({n_body} do corpo), {len(rig.tris)} faces '
           f'({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas, nós desenhados {len(drawn)}, cabeça {head}, '
           f'grupos ' + ', '.join(f'{g}: pos {groups[g][0]} nó {groups[g][1]} {ranges[g][1]} v' for g in groups) +
-          (f'; alternativas sem posição (fora): {unresolved}' if unresolved else '') +
+          (f'; peças sem posição (osso próprio): {unresolved}' if unresolved else '') +
           f'; páginas por nó {[int(node_pages[i]) for i in drawn]}' +
           (f'; fora da árvore no meio: {sorted(set(range(drawn[-1])) - set(drawn))}' if drawn[-1] >= len(drawn) else '') +
           f' -> {outs}')

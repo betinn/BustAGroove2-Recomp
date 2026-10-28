@@ -40,7 +40,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-28, fim da fase 4 do remake)
+## Estado (2026-10-28, fase 5 do remake: memória do elenco e lacunas da fase 4)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - **Ritmo da música** (`notes/recomp.md` §13): o framework emula o vblank NTSC a 60,000 Hz e o som derivava do
@@ -85,22 +85,26 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3, 7, ou 4 com flags da cópia para A/B),
   `game_hands.py` (gestos forçados), `game_face.py` (expressão, original x remake no mesmo quadro), comandos
   `heat_mode`, `heat_light`, `heat_force`, `heat_stats`, `heat_face`, `heat_floor`.
-- **Remake do elenco** (fase 4; `notes/remake-visual.md` "Fase 4 no jogo"): só o HEAT é desenhado por
-  `FUN_80029D4C`; os outros, por funções do overlay de cada um que chamam `FUN_80029588` por osso (gancho de filtro
-  novo nessa entrada, em `mod_function_entry_funcs`). O mesmo plugin `src/bag2_heat.c` (nome e comandos `heat_*`
-  mantidos) carrega um asset por personagem e figurino, `mods/remake/<nome>.bin` e `<nome>_alt.bin` (v6, fora do
-  git), de `tools/remake/export_char.py NOME[*]` ou `export_all.py` (`export_heat.py` virou atalho). Na ativação só
-  as tabelas; a malha e as texturas são lidas numa thread quando o `LoadImage` traz um TIM do personagem (impressão
-  digital de 64 palavras), GL aos poucos, cópia de CPU solta depois. Personagem reconhecido pela assinatura dos
-  ossos (posição na árvore ≠ índice no arquivo em alguns); páginas na VRAM de cada jogador lidas dos pacotes do
-  próprio personagem; expressão do rosto em coordenadas da VRAM; semitransparência (passo 3 do núcleo e decalque
-  semi no shader). Cada personagem tem dois figurinos (87/123 + 2k e 159/195 + 2k; o 2P da partida espelhada usa o
-  alternativo); quando o modelo é o mesmo, decide o TIM que está na página. 15 personagens nos dois figurinos;
-  CHICHI&SALLY, COLUMBO e SUSHI BOY recusados (outro esqueleto na lista de nós). Medido HEAT × COMET (60 s, 2
-  sessões): 59,9 fps, 0 underruns, jogo −10/−6 e render +6/+6 pontos contra a base (só o HEAT, flag 2048). Testes:
-  `chars_tour.py` (pares do 2 jogadores: árvore, capturas original × remake, `heat_chars`), `game_chars.py` (A/B
-  no mesmo quadro por personagem), `char_tree.py` (qual nó o jogo liga em cada posição); comando `heat_chars`;
-  flags novas do `heat_mode`: 1024 semi opaco, 2048 só o HEAT.
+- **Remake do elenco** (fases 4 e 5; `notes/remake-visual.md` "Fase 4 no jogo" e "Fase 5 no jogo"): só o HEAT é
+  desenhado por `FUN_80029D4C`; os outros, por funções do overlay de cada um que chamam `FUN_80029588` por osso (gancho
+  de filtro nessa entrada, em `mod_function_entry_funcs`). O plugin `src/bag2_heat.c` (nome e comandos `heat_*`
+  mantidos) usa um asset por personagem e figurino, `mods/remake/<nome>.bin` e `<nome>_alt.bin` (**v7**, fora do git),
+  de `tools/remake/export_char.py NOME[*]` ou `export_all.py`; os 18 personagens nos dois figurinos (36 assets). Na
+  ativação só as tabelas; a malha e as texturas são lidas numa thread quando o `LoadImage` traz um TIM do personagem
+  na área dos dançarinos (x ≥ 704, y ≥ 256; impressão digital de 64 palavras, amostra não uniforme), GL aos poucos,
+  cópia de CPU solta depois. **Fase 5: só quem está em cena fica carregado** (`keep_loaded`, vblank 4×/s): sem desenho
+  há 3 s, fora de uma partida em pausa e sem esperar a partida começar, o asset descarrega (GL apagado pela thread de
+  render num marcador, também nos menus por um marcador vazio no fim da OT; depois a cópia de CPU) e volta sozinho na
+  próxima partida. Cada nó do jogo é reconhecido pelo mesh (não pela posição): posições do corpo, grupos de mão e
+  peças com osso próprio (v7); `ALT_POS` (trocas observadas: COMET, ROBO-Z cabeça, SUSHI BOY mão) e `OPTIONAL`
+  (CHICHI&SALLY nó 4) no exportador; `tools/remake/hand_table.py` lê as trocas de mão do overlay. Assinatura da raiz:
+  nó 0 + 2º nó com mesh. Figurino: dois assets gêmeos (mesmo modelo) decididos pela CLUT ou TIM que pertence a um só.
+  Páginas na VRAM de cada jogador pelos pacotes do próprio personagem; expressão do rosto em coordenadas da VRAM;
+  semitransparência. Conferido no 2 jogadores, os 18 em partidas espelhadas (`chars_check.py`): 0 quadros caindo no
+  original. Testes: `chars_check.py` (sessão com várias partidas: árvore, `match_fail`, capturas original × remake do
+  corpo e do rosto), `mem_check.py` (memória com e sem descarga), `savestate_check.py`, `char_tree.py`, `game_chars.py`;
+  comandos `heat_chars` (carregados agora), `heat_mem` (histórico), `heat_hits`, `heat_evict 0|1`; flags do
+  `heat_mode`: 1024 semi opaco, 2048 só o HEAT.
 - **Remake do palco** (fase 3; `notes/remake-visual.md` "Fase 3 no jogo", formato em `notes/formats.md`
   "Palco em partida"): plugin `src/bag2_stage.c` (pacote `bag2.remake.stage`, gancho na entrada de `FUN_8002BEB4`)
   liga um pedido de desenho de host no slot 96 da OT (depois da cena, antes da OT do HUD pendurada no slot 95) e o
@@ -128,11 +132,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 
 ## Próximo passo
-- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita (a IA
-  imagem→3D ficou só offline, pior que o remake atual; a expressão do rosto do original agora chega ao remake).
-  Fase 3 feita (pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco adiada com dados; render
-  dentro do orçamento depois do patch do desenho de host). Fase 4 feita (os dois jogadores e o elenco; o que falta
-  está em `notes/remake-visual.md`, "Limites da fase 4"). Próxima: fase 5 (Polygonia) ou os buracos da fase 4.
+- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fases 0–4 feitas (HEAT,
+  palco, os dois jogadores e o elenco); fase 5 (memória do elenco, os 18 conferidos) feita. Próxima: fase 6
+  (Polygonia), ou o que ficou em `notes/remake-visual.md`, "Limites e o que não deu (fase 5)".
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
@@ -146,7 +148,13 @@ testes. Os scripts de `tools/remake/` entram pelo 2 jogadores (`game_session.py`
 do palco do 1P; `BAG2_MATCH=1p` volta à rota antiga). O pad 2 fica ligado por `set_input` persistente na porta 2
 (um `press` na porta 2 expira e o jogo pausa com "CONTROLLER REMOVED"); um toque de 6 quadros anda uma casa na grade
 (15 andam duas). Grade do cartão do usuário (10 liberados): linha 0 HEAT, COMET; linha 1 SHORTY, STRIKE, TSUTOMU,
-CAPOEIRA; linha 2 BI-O, HIRO, KITTY-N, KELLY. `s.who()` confere os personagens pela assinatura do nó 0.
+CAPOEIRA; linha 2 BI-O, HIRO, KITTY-N, KELLY. `s.who()` confere os personagens pela assinatura do nó 0 e do 2º nó com
+mesh. Os 8 bloqueados no cartão: `BAG2_UNLOCK=1` escreve o "Unlock All Characters" do CodeBreaker (8 bytes = 1 em
+`0x8004F667`) só na RAM antes do menu, e a sessão guarda e devolve os cartões (`tools/recomp/bag2/saves/card*.mcd`; o
+jogo grava o cartão depois das partidas); a grade ganha a linha 3 COLUMBO, ROBO-Z GOLD, PANDER, SUSHI BOY e a linha 4
+McLOAD, CHICHI&SALLY, MICHAEL DOI, HUSTLE KONG (ícones "?", selecionáveis). Várias partidas numa sessão: `quit_match()`
+(pausa, QUIT: menu principal com o cursor em "1player game") e `menu_to_match_2p(p1, p2, palco)`; na pausa os
+dançarinos não são desenhados.
 
 ## Testes com captura de tela
 `PrintWindow` e `CopyFromScreen` voltam preto na janela GL sem borda. Funciona: captura de tela do app

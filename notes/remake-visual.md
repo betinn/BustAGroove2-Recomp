@@ -1,4 +1,4 @@
-# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco 2026-10-28)
+# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco e a memória 2026-10-28)
 
 Pergunta: dá para modernizar o visual dos personagens **sem artista humano**, partindo das malhas
 originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animação? Feito só com o HEAT
@@ -15,6 +15,8 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
    macia do HEAT no chão (seção "Fase 3 no jogo").
 6. **No jogo, fase 4** (os dois jogadores e o elenco): o mesmo pipeline para os outros personagens e os dois
    figurinos de cada um, com semitransparência (seção "Fase 4 no jogo").
+7. **No jogo, fase 5** (memória do elenco): só quem está em cena fica carregado; os 18 personagens conferidos no jogo,
+   reconhecimento de cada nó pelo mesh e asset v7 (seção "Fase 5 no jogo").
 
 ## Como reproduzir
 ```
@@ -777,6 +779,194 @@ HEAT na rota nova), `tour_*` (o elenco).
 - `game_face.py`, `game_hands.py` e `game_sidebyside.py` continuam do HEAT; `game_chars.py`/`chars_tour.py` cobrem
   os outros.
 
+## Fase 5 no jogo: memória do elenco e as lacunas da fase 4 (2026-10-28)
+Pedido do usuário: personagem sem uso não fica carregado, e nada fica sem conferir. Todos os testes no 2 jogadores,
+com os 18 personagens liberados só na RAM (`BAG2_UNLOCK=1`, ver `CLAUDE.md`).
+
+### Só quem está em cena fica carregado (`src/bag2_heat.c`; núcleo: `rmk_gl_destroy`, `rmk_gl_bytes`)
+- Estados do asset: 0 só tabelas, 1 carregando, 2 carregado, **3 descarregando**, -1 falhou. Quatro vezes por segundo
+  (callback de vblank, thread do jogo) `keep_loaded` decide: fica quem foi desenhado há menos de 3 s; ou quem tem os
+  TIMs na VRAM e ainda está numa partida (pausa: os dançarinos não são desenhados, mas o estado do jogador continua e
+  a árvore ainda é a dele); ou quem foi carregado para a partida que vai começar e ainda não apareceu (até 60 s). O
+  resto descarrega.
+- Descarga: os personagens da partida com aquele asset saem da tabela; a thread de render apaga os recursos GL no
+  próximo marcador (`rt_collect`: texturas das camadas e dos mapas de normal, geometria em rodízio, buffers, VAOs,
+  FBOs e texturas de sombra, samplers, programas) e avisa (`rt_freed`); a thread do jogo solta a cópia de CPU. Os
+  marcadores de desenho que ainda estavam na fila passam antes (mesma thread, na ordem). Fora da partida ninguém liga
+  marcadores: o vblank liga um marcador vazio (`HD_FLAG_FREE`) no fim da OT do quadro, só quando o contador de
+  quadros do jogo anda (no vídeo de abertura a OT não é usada). Nos menus e na seleção a OT é a mesma da partida
+  (`0x8006EE88` alterna entre `0x80062E48` e `0x80068E48`).
+- A volta é sozinha: o `LoadImage` dos TIMs do personagem na tela de carregamento (ou o primeiro desenho) carrega de
+  novo, numa thread (0,15–1,2 s), e o GL é refeito pelos marcadores de preparo.
+- O HEAT normal também solta a cópia de CPU das camadas; o caminho por pacotes da fase 0 (flag 4, modo 7), que precisa
+  dela, descarrega e carrega de novo mantendo a cópia (`keep_cpu`).
+- Presença na VRAM: tabela de TIMs e CLUTs de personagem com o retângulo; um `LoadImage` que cobre 1/4 de uma entrada
+  a tira (a seleção de personagem põe retratos em cima das páginas dos dançarinos). Depois do QUIT o ponteiro do
+  estado do 2P continua velho: a partida só conta se a árvore apontada ainda for a do personagem.
+- Comandos novos: `heat_evict 0|1` (0 = nada descarrega, o comportamento da fase 4, para A/B na mesma build),
+  `heat_hits` (os últimos `LoadImage` que bateram com um TIM de asset), e no `heat_chars` o total (`carregados`,
+  `gpu_mb` pedido pelo plugin, `cpu_mb`, `gl_apagados`) e, por asset, `cargas`, `descargas`, `ocioso_s`, `vram`.
+
+### Memória medida (`tools/remake/mem_check.py`, `logs/remake/jogo/mem_0.txt` e `mem_1.txt`)
+Uma sessão por variante, as mesmas 5 partidas do 2 jogadores em sequência (HEAT × COMET, KITTY-N × HIRO no Sushi
+Planet, SHORTY × STRIKE, BI-O × BI-O, TSUTOMU × KELLY), QUIT entre elas; memória dedicada da GPU do processo (contador
+do Windows "GPU Process Memory"), privada do processo e o que o plugin pediu ao GL (`gpu_mb`).
+
+| ponto | sem descarga (`heat_evict 0`, como na fase 4) | com descarga (fase 5) |
+|---|---|---|
+| abertura | 465 MB GPU, 2,8 GB privada | 465 MB, 2,8 GB |
+| 1ª partida (HEAT × COMET) | 1078 MB, plugin 306 MB, 2 carregados | 1130 MB, plugin 306 MB, 2 |
+| menu depois do QUIT | 1078 MB, 2 carregados | **766 MB, 0 carregados** |
+| 3ª partida (SHORTY × STRIKE) | 1601 MB, plugin 778 MB, 6 carregados | 1098 MB, plugin 220 MB, 2 |
+| 5ª partida (TSUTOMU × KELLY) | **2123 MB**, plugin 1281 MB, 10 carregados, 4,6 GB privada | **1062 MB**, plugin 230 MB, 2, 3,6 GB |
+| menu no fim | 2123 MB | 897 MB, 0 carregados |
+
+Sem a descarga a memória sobe a cada personagem novo (o elenco inteiro passaria de 3 GB de GPU); com ela fica no
+que a partida usa, e no menu o plugin não tem nada. A descarga leva 1–2 marcadores (menos de 0,1 s) depois de decidida;
+a carga de volta acontece na tela de carregamento (1,0–1,2 s numa thread), sem efeito na partida.
+
+### Desempenho (fase 5)
+Build-debug, pacote HD, `game_perf.py`, 60 s por janela, palco do HEAT, HEAT × COMET; base = só o HEAT com remake
+(flag 2048), tudo = os dois. Quatro sessões (A–D), a ordem trocada de uma para a outra:
+
+| sessão | 1ª janela | 2ª janela |
+|---|---|---|
+| A | base: 59,9 fps (mín. 59,9), jogo 40 %, render 33 % | tudo: 59,9 (59,9), jogo 31 %, render 44 % (máx. 51) |
+| B | tudo: 59,9 (59,9), jogo 33 %, render 41 % (máx. 53) | base: 59,9 (59,9), jogo 39 %, render 32 % |
+| C | base: 59,9 (59,9), jogo 40 %, render 32 % | tudo: 59,9 (59,9), jogo 31 %, render 44 % (máx. 53) |
+| D | tudo: 59,9 (59,9), jogo 33 %, render 41 % (máx. 50) | base: 59,9 (59,9), jogo 39 %, render 32 % |
+
+0 underruns em todas, nenhum segundo abaixo de 59,5. Jogo −9/−6 pontos contra a base. Render **+12/+9** (na fase 4,
+mesmo par: +6/+6, com a base nos mesmos 32–33 %). A CPU do plugin na thread de render caiu (88 µs por desenho de host
+com os dois, 123 µs na base; na fase 4, 95 e 135), e o desenho na GPU é o mesmo da fase 4 (mesmo shader, mesmas faces;
+o v7 só muda os donos dos vértices, na CPU). Os carimbos de GPU (`stage_gpu.py`) dão 1,1 ms por desenho de corpo com
+os dois contra 0,3 ms só com o HEAT, mas o carimbo do pós-efeito também sobe (0,8 → 1,8 ms) sem depender do COMET: a
+GPU está perto de cheia (cena 15,6 de 16,7 ms) e os carimbos pegam fila.
+
+Segundo par, KITTY-N × HIRO no Sushi Planet (base = os dois originais), sessões E e F: base 59,9 fps (mín. 58,9: um
+segundo abaixo de 59,5, na janela **original**), jogo 53 %, render 38 %; tudo 59,9 (59,9), jogo 32 %, render 37 % | tudo
+59,9 (59,9), jogo 35 %, render 30 %; base 59,9 (59,7), jogo 48 %, render 28 %. Render −1/+2 (fase 4: +6/+2), jogo
+−21/−13. Ou seja, a render não subiu de forma geral: o aumento é do par HEAT × COMET (3–6 pontos acima da fase 4), sem
+causa achada no plugin (CPU por desenho menor, mesmo desenho na GPU). Fica registrado: +12 numa das ordens passa do
+critério de +10 da fase 4; fps e áudio sem nenhuma perda.
+
+### Savestate com descarga (`tools/remake/savestate_check.py`, `savestate.txt`)
+Salvar e carregar um estado na partida: o remake continua (as páginas são achadas de novo, nenhum quadro original).
+Salvar na partida, sair (QUIT: os dois descarregam), carregar o estado no menu: a partida volta com os assets
+descarregados, o primeiro desenho pede a carga (`load_draw`) e o remake volta em **2,6 s** (o original aparece nesse
+intervalo). A Rewind do framework (desligada por padrão no `settings.toml`) não foi testada: usa o mesmo caminho de
+restauração do savestate.
+
+### Underruns do boot (fase 4: 699 nos primeiros 70 s de duas sessões)
+Não reproduz: 4 sessões de `tools/remake/boot_audio.py` (amostra o `audio_stats` a cada 0,2 s do lançamento até 80 s,
+inclusive uma logo depois de um link novo do exe) e o próprio `audio_buffer_check.py 90` com o `game_buf90.toml` da
+fase 4: 0 underruns em todas, da abertura ao fim. O enchimento mínimo de ~17,6 ms aparece igual na primeira amostra (o
+buffer ainda enchendo logo depois do lançamento), na fase 4 e agora. O script da fase 4 só separava "boot" (0–70 s)
+como um bloco, então não dá para dizer em que segundo aqueles 699 caíram; sem conseguir repetir, fica registrado
+como não reproduzido (o `boot_audio.py` marca o segundo de cada underrun, se voltar a acontecer).
+
+### CAPOEIRA carregado em toda partida (corrigido)
+A impressão digital da página 0 do CAPOEIRA (64 palavras amostradas) é a de uma imagem uniforme: batia com tiras
+24 × 240 do vídeo de abertura (área do framebuffer, ~1300 vezes no boot) e com uma textura do palco em `512,0`
+(`heat_hits`). Agora só conta como TIM de personagem o `LoadImage` na área dos dançarinos (x ≥ 704, y ≥ 256) com a
+amostra não uniforme; e uma CLUT sozinha não carrega nada (só se a imagem do personagem também estiver na VRAM).
+
+### Os três "recusados" e os bloqueados
+- CHICHI&SALLY, COLUMBO e SUSHI BOY não tinham outro esqueleto: eram juntas **sem mesh** no meio da árvore (o jogo só
+  coleta nós de tipo 1). A recusa saiu do exportador. Mas o reconhecimento da raiz (fase 4) conferia o 2º osso pelo
+  filho imediato do nó 0, que neles é a junta sem mesh: o CHICHI&SALLY nunca era reconhecido. Agora a assinatura é o
+  nó 0 e o **2º nó com mesh na ordem da árvore** (plugin, `in_match` e `game_session.who()`).
+- CHICHI&SALLY tira o nó 4 (26 vértices, filho da raiz) da árvore em ~85 % dos quadros: virou grupo opcional
+  (`OPTIONAL` no exportador); posição de grupo sem nenhum grupo ativo é aceita.
+
+### Mãos, peças e trocas: identidade pelo mesh (asset v7)
+- `tools/remake/hand_table.py` lê, no overlay de cada personagem (DBI_ no container de texturas, carregado em
+  `0x801CC510` no 1P), as trocas do script da dança: `sw` em `+0x98` do nó com o índice do antebraço e o da mão vindos
+  de uma tabela que a inicialização do overlay preenche (no bss, um bloco por figurino), seguindo pelo fluxo de
+  registradores qual byte vira o endereço e qual o valor. Confirma as posições do COMET (`ALT_POS` da fase 4), do
+  HEAT e do KELLY, e mostra que o STRIKE **pendura peças** (nós 26, 27 e 28) como filhas das mãos: um nó a mais na
+  árvore. HIRO, BI-O, PANDER, HUSTLE KONG e COLUMBO não têm troca no overlay (o exe tem dezenas de `sw +0x98`
+  genéricos).
+- No jogo (`chars_check.py`): o ROBO-Z GOLD troca a **cabeça** (posição 13) pelo nó 24 (38 % dos quadros caíam no
+  original), o SUSHI BOY a mão 14 pelo nó 20 (14 %). Entraram no `ALT_POS`.
+- Plugin: cada nó coletado é reconhecido pelo mesh (nº de vértices e índice-base do MeshHeader, únicos no modelo), não
+  pela posição na lista: posição do corpo (a do índice, senão a primeira livre com o mesmo mesh) ou grupo. Asset
+  **v7**: os vértices exclusivos de cada grupo usam um osso próprio (`n_drawn + g - 1`, a matriz do nó do jogo que leva
+  aquele mesh, onde quer que esteja), e grupo sem posição (255) é peça. Assim mão alternativa, mão com peça e peça
+  solta saem com remake; só um mesh que o asset não tem (ou uma posição do corpo faltando) cai no original.
+- Mesh fora da árvore sem posição conhecida vira peça com osso próprio (antes saía do asset): STRIKE 26–28, TSUTOMU
+  24–25, ROBO-Z 20–23, SUSHI BOY 18–19.
+
+### Figurino do PANDER (corrigido)
+A página 0 do PANDER é igual nos dois figurinos (imagem e CLUT). A "prova pela CLUT" da fase 4 achava o normal e
+trocava o 2P da partida espelhada para ele, embora o reconhecimento já os separasse (as mãos dos dois figurinos têm
+meshes diferentes); o PANDER* carregava, nunca era desenhado e descarregava. Agora gêmeos são só árvores idênticas
+mesh a mesh (e grupos), e a prova (a CLUT que os pacotes usam, ou o TIM nas páginas) só vale quando pertence a um
+figurino só.
+
+### O elenco inteiro no jogo (`tools/remake/chars_check.py`, `logs/remake/jogo/check.txt`)
+Uma sessão, 18 partidas espelhadas do 2 jogadores (X contra X: o 1P no figurino normal, o 2P no alternativo), 40 s de
+árvore por partida (qual nó o jogo liga em cada posição, a cada 0,1 s), assets v7, 18 personagens liberados na RAM.
+Em **todas**: os dois personagens reconhecidos (`who()`), desenhados pelo remake em todos os quadros (~2400 desenhos
+em 40 s, 30 por segundo por personagem; o CAPOEIRA, 4800, são dois dançarinos por jogador) e **`match_fail` 0**
+(nenhum quadro caiu no original), 59,9 fps.
+
+| personagem | figurinos | trocas vistas na árvore | antes desta fase |
+|---|---|---|---|
+| HEAT | normal + alternativo (modelos próprios) | mãos de gesto (16/20, 19/22; 15/19, 18/21 no alternativo) | ok |
+| COMET | normal + alternativo | mão do alternativo 18 ↔ 30 | ok |
+| KITTY-N, HIRO, SHORTY | normal + alternativo (modelos próprios) | nenhuma | ok |
+| BI-O, MICHAEL DOI, COLUMBO, McLOAD | mesmo modelo, a textura ou a CLUT decide | nenhuma (posição ≠ índice no McLOAD e no COLUMBO) | MICHAEL DOI e McLOAD não testados; COLUMBO recusado |
+| STRIKE | normal + alternativo | mãos alternativas do STRIKE* (15/21, 18/22) | mãos 26–28 fora do asset |
+| TSUTOMU | mesmo modelo, CLUT decide | mãos 18/26, 21/27 | mãos 24–25 fora do asset |
+| CAPOEIRA | mesmo modelo | nenhuma | alternativo não testado; carregado em toda partida |
+| KELLY | normal + alternativo | mão 23/29 | ok |
+| PANDER | figurinos com mãos diferentes | nenhuma | 2P desenhado com o figurino errado |
+| ROBO-Z GOLD | mesmo modelo | **cabeça 13/24** (37 % do tempo) | 38 % dos quadros no original |
+| HUSTLE KONG | mesmo modelo, a textura decide | mãos 15/19, 18/20, 18/22 | não testado |
+| CHICHI&SALLY | mesmo modelo | **nó 4 some** (85 % do tempo) | recusado; nunca reconhecido |
+| SUSHI BOY | mesmo modelo | **mão 14/20** (14 %) | recusado; 14 % no original |
+
+### Expressão do rosto do elenco (`chars_check.py`, recortes `check_*_rosto_*.png`)
+- Pela VRAM (`MoveImage`, casas convertidas para as páginas de cada um): recorte original × remake no mesmo quadro a
+  cada troca. Batem COMET e COMET*, HEAT e HEAT*, KELLY e KELLY*, KITTY-N, McLOAD e McLOAD*, STRIKE e STRIKE*,
+  SUSHI BOY*. HEAT de novo pelo `game_face.py` (`rosto5_*.png`): 8 estados (dentes cerrados, olhos semicerrados e
+  fechados, um olho só) iguais ao original.
+- Os outros (HIRO, SHORTY, TSUTOMU, BI-O, PANDER, CHICHI&SALLY, COLUMBO, MICHAEL DOI, CAPOEIRA, HUSTLE KONG) não trocaram
+  nada pela VRAM nas danças vistas; recorte periódico (a cada 5 s, `BAG2_FACE_EVERY=5`): rosto do remake igual ao do
+  original em todos os recortes (nenhuma expressão por outro caminho que o remake perca).
+- CHICHI&SALLY: as duas criaturas de cada jogador são o mesmo mesh (nó 0, 182 vértices); no modo 1 as duas saem com
+  remake. Os nós 15–21 do vetor do jogo são de tipo 4 (efeitos, não mesh).
+
+### Build normal (`build/`, sem servidor TCP)
+Recompilada com o código final; assets v7 nas duas pastas. O computer-use não foi autorizado nesta sessão, então
+nenhuma partida foi jogada nela pelo teclado; o que dá para ver de fora: com o jogo parado no título, a demonstração
+automática roda partidas e a memória dedicada da GPU do processo faz o mesmo ciclo da build-debug (811 MB no título,
+1036–1061 MB na demonstração, 853 MB depois dela, 1120 MB na seguinte): os dançarinos do remake carregam e descarregam.
+Log sem erro do plugin, pacote HD ligado (477 substituições). Cartão do usuário intacto.
+
+### O que mudou nas lacunas da fase 4
+- Não testados (PANDER, ROBO-Z GOLD, HUSTLE KONG, McLOAD, MICHAEL DOI e os alternativos; CAPOEIRA*): testados, todos.
+- Recusados (CHICHI&SALLY, COLUMBO, SUSHI BOY): exportados e testados.
+- Mãos alternativas sem posição (STRIKE, TSUTOMU, ROBO-Z): no asset como peças com osso próprio; as trocas vistas no
+  jogo (ROBO-Z cabeça, SUSHI BOY mão, mãos do STRIKE* e do TSUTOMU) saem com remake.
+- Memória: descarga (acima). CAPOEIRA espúrio: corrigido. Build normal e expressão do rosto: abaixo.
+
+### Limites e o que não deu (fase 5)
+- Trocas raras: a conferência viu as danças das partidas espelhadas sem comando dos jogadores (a pontuação não sobe,
+  os golpes especiais e ataques não acontecem). Uma troca nunca vista com um mesh que o asset não tem cai no original
+  naquele quadro (`bag2_heat.match_fail` conta); as peças do STRIKE (26–28) e as do TSUTOMU, ROBO-Z e SUSHI BOY estão
+  no asset, mas não apareceram nessas danças. O modo "dance view" (menu principal, dois toques para baixo; os
+  dançarinos dele liberados na RAM em `0x8004F66F..0x8004F680`) abre com o personagem parado: a coreografia sai de uma
+  rota programada casa a casa pelo pad, o que não fiz às cegas. No modo, HEAT e STRIKE desenhados pelo remake, 0
+  falhas.
+- CAPOEIRA e ROBO-Z: os TIMs do figurino alternativo são iguais aos do normal no disco (índices e CLUT); o 2P sai com
+  o asset normal e a imagem é a mesma.
+- Rewind do framework não testada (desligada por padrão; mesmo caminho do savestate, que foi testado).
+- Build normal: só a demonstração automática (sem partida jogada pelo teclado; computer-use não autorizado).
+- Desempenho do par HEAT × COMET: render +12/+9 contra +6/+6 na fase 4 (ver "Desempenho (fase 5)"); causa não achada.
+- Telas de resultado do 1 jogador não conferidas (o 2 jogadores volta direto à seleção).
+
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos
 (`FUN_80029C6C`: filho em +0x94, irmão em +0x98; +0x6C = MATRIX câmera×osso já pronta para o GTE, +0x8C =
@@ -884,9 +1074,10 @@ diagnóstico).
   nesses quadros.)
 - (Resolvido na fase 4: o "HEAT jogador 2 com outra paleta" era o figurino alternativo, 159/195 + 2k, que o 2P usa
   na partida espelhada; virou asset próprio, `heat_alt.bin`.)
-- O hook também pega o HEAT de outras telas que usam `FUN_80029D4C` (seleção, resultado); não conferido.
-- Só testado na build-debug (dirigida por TCP). A build normal (`build/`) compila com o mesmo código e o
-  `heat.bin` v3 está nas duas; não joguei uma partida nela.
+- O hook também pega o HEAT de outras telas que usam `FUN_80029D4C`: no "dance view" ele sai com remake (fase 5);
+  as telas de resultado do 1 jogador não foram conferidas.
+- A build normal (`build/`) compila com o mesmo código e os assets estão nas duas; na fase 5 a demonstração automática
+  dela carregou e descarregou os dançarinos (memória da GPU), mas nenhuma partida foi jogada nela pelo teclado.
 
 ## Plano
 Plano completo, fases e estado: `notes/remake-plano.md` (decidido em 2026-10-26).

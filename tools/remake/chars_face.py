@@ -24,7 +24,7 @@ def insts(s):
     txt = s.cmd({'cmd': 'mod_cmd', 'name': 'heat_chars', 'args': ''}).get('reply', '')
     out = []
     for part in txt.split('||'):
-        m = re.search(r'jogo: (\S+) raiz=\w+ ha=(\d+) .*paginas=(\w+).*bbox=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+) casas=(\d+)', part)
+        m = re.search(r'jogo: (.+?) raiz=\w+ ha=(\d+) .*paginas=(\w+).*bbox=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+) casas=(\d+)', part)
         if m and int(m.group(2)) < 8:
             out.append((m.group(1), m.group(3), [float(m.group(k)) for k in range(4, 8)], int(m.group(8))))
     return out
@@ -59,7 +59,7 @@ def main():
                     im = Image.open(p).convert('RGB')
                     crop = im.crop((int(max(0, x0 - w) * 9), int(max(0, y0 - 4) * 9), int(min(512, x1) * 9),
                                     int(min(240, y0 + hgt) * 9)))
-                    f = os.path.join(LOGS, f'face_{name.replace("*", "_alt")}_{len([k for k in seen if k[0] == name])}.png')
+                    f = os.path.join(LOGS, f'face_{name.replace("&", "").replace(" ", "_").replace("*", "_alt")}_{len([k for k in seen if k[0] == name])}.png')
                     crop.save(f)
                     seen[key] = f
                     print(f'{name}: páginas {pages}, casas {nc} -> {f}', flush=True)
