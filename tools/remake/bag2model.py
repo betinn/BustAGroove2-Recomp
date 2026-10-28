@@ -135,6 +135,7 @@ class Prim:
     tex: int | None = None
     clut: int = 0
     semi: bool = False
+    semi_bits: int = 0               # byte de textura >> 5 (0 = opaco)
     overlay: 'Prim | None' = None
 
 
@@ -203,10 +204,10 @@ def _parse_mesh(b: bytes, p: int):
                 t = b[q + texo]
                 tex, semi, cl = t & 0x1F, (t >> 5) != 0, b[q + cluto]
                 if over is None:
-                    pr.tex, pr.semi, pr.clut = tex, semi, cl
+                    pr.tex, pr.semi, pr.clut, pr.semi_bits = tex, semi, cl, t >> 5
                 else:
                     ouv, onat = over
-                    ov = Prim(li, vs, uv=rd_uv(ouv), tex=tex, semi=semi, clut=cl)
+                    ov = Prim(li, vs, uv=rd_uv(ouv), tex=tex, semi=semi, clut=cl, semi_bits=t >> 5)
                     ov.normals = ([struct.unpack_from('<H', b, q + onat + i * 2)[0] for i in range(nv_)]
                                   if onat is not None else pr.normals)
                     ov.colors = pr.colors
@@ -373,9 +374,10 @@ def node_matrices(nodes: list[Node], pose=None) -> list[np.ndarray]:
     return out
 
 
-def load_character(bin_path: str, k: int):
-    mc = read_container(bin_path, 123 + 2 * k)
-    tc = read_container(bin_path, 87 + 2 * k)
+def load_character(bin_path: str, k: int, alt: bool = False):
+    """alt=True: figurino alternativo (modelo 195 + 2k, texturas 159 + 2k), o do jogador 2 numa partida espelhada."""
+    mc = read_container(bin_path, (195 if alt else 123) + 2 * k)
+    tc = read_container(bin_path, (159 if alt else 87) + 2 * k)
     nodes = parse_model(mc[0])
     anims = [parse_anim(c) if c else None for c in split_anims(mc[1])] if len(mc) > 1 else []
     tims = [parse_tim(c) for c in tc if c[:4] == b'\x10\x00\x00\x00']

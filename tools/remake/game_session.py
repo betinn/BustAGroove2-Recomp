@@ -46,7 +46,10 @@ CHAR_SIG = {(43, 52): 'BI-O', (33, 33): 'CAPOEIRA', (43, 82): 'COMET', (56, 90):
             (49, 82): 'KELLY', (49, 106): 'KITTY-N', (37, 43): 'PANDER', (45, 45): 'ROBO-Z GOLD',
             (35, 47): 'SHORTY', (115, 139): 'STRIKE', (51, 68): 'TSUTOMU', (182, 297): 'CHICHI&SALLY',
             (54, 54): 'COLUMBO', (39, 38): 'HUSTLE KONG', (44, 84): 'McLOAD', (80, 109): 'MICHAEL DOI',
-            (50, 114): 'SUSHI BOY'}
+            (50, 114): 'SUSHI BOY',
+            # figurino alternativo (o do jogador 2 numa partida espelhada), quando o modelo muda
+            (67, 141): 'COMET*', (35, 50): 'HEAT*', (76, 187): 'HIRO*', (36, 58): 'KELLY*', (49, 103): 'KITTY-N*',
+            (53, 53): 'SHORTY*', (110, 77): 'STRIKE*'}
 PLAYER_STATE = (0x80060E30, 0x80060E38)
 
 

@@ -1,15 +1,19 @@
-/* Carga do asset do remake, formato v5 (tools/remake/export_heat.py; little-endian; o v4 também é lido):
- *   char[4] "HTR5"; u32 versão (5), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages
- *               (o v4 é "HTR4", versão 4, sem n_pages)
- *   por nó:      u16 nverts (0 = sem mesh), u16 pad, u32 base_index (MeshHeader+0x98)
+/* Carga do asset do remake, formato v6 (tools/remake/export_char.py; little-endian; o v4 e o v5 também são lidos):
+ *   char[4] "HTR6"; u32 versão (6), n_nodes, n_verts, n_tris, n_layers, tex_size, n_body, n_groups, n_pages,
+ *               índice do personagem; char nome[16]
+ *               (v5: "HTR5", versão 5, sem índice nem nome; v4: "HTR4", versão 4, sem n_pages)
+ *   por nó:      u16 nverts (0 = sem mesh), u8 páginas das faces originais (v6; pad antes), u8 1 = nó desenhado
+ *                (v6: os primeiros n_drawn, na ordem da árvore; pad antes), u32 base_index (MeshHeader+0x98)
  *   por grupo (1..n_groups): u8 posição na árvore, u8 pad, u16 nverts e u32 base_index do mesh do jogo
  *                desse gesto, u32 primeiro vértice, u32 nº de vértices (exclusivos do grupo, contíguos)
  *   por página (v5): s16 x, y na VRAM (x em halfwords, -1 = desconhecida), u16 largura, altura (texels),
- *                u8 bits por texel, u8 pad[3]
+ *                u8 bits por texel, u8 pad[3]; v6: + u32 FNV-1a dos 256 primeiros bytes da imagem do TIM
  *   por camada (v5): u8 página (0xFF = nenhuma)
  *   por vértice: RmkVert (8 bytes); os n_body primeiros são do corpo
  *   por face:    RmkTri (37 bytes), na ordem em que o jogo liga as primitivas na OT
- *   por camada:  tex_size x tex_size RGBA8 (Real-ESRGAN 4x, alfa 0 = transparente) */
+ *   por camada:  tex_size x tex_size RGBA8 (Real-ESRGAN 4x, alfa 0 = transparente, 143 = cor com STP, 255 = opaco)
+ * Na carga o alfa vira só cobertura (STP -> 255) e o STP vai para um bit por texel (a->stp); o mapa de normal leva
+ * o STP no alfa para o shader (semitransparência das faces RMK_MODE_SEMI). */
 #include "rmk.h"
 
 #include <math.h>
@@ -21,6 +25,7 @@ void rmk_asset_free(RmkAsset* a) {
     free(a->verts);
     free(a->tris);
     free(a->layers);
+    free(a->stp);
     free(a->nmaps);
     memset(a, 0, sizeof *a);
 }
@@ -99,6 +104,7 @@ int rmk_asset_build_normals(RmkAsset* a, float strength) {
         }
         for (size_t i = 0; i < n; i++) if (!px[4 * i + 3]) h[i] = 0.0f;
         uint8_t* o = a->nmaps + n * 4u * l;
+        const uint8_t* stp = a->stp ? a->stp + n / 8u * l : NULL;
         for (int y = 0; y < S; y++)
             for (int x = 0; x < S; x++) {
                 const size_t i = (size_t)y * S + x;
@@ -110,36 +116,44 @@ int rmk_asset_build_normals(RmkAsset* a, float strength) {
                 o[4 * i] = (uint8_t)(nx * 127.5f + 127.5f);
                 o[4 * i + 1] = (uint8_t)(ny * 127.5f + 127.5f);
                 o[4 * i + 2] = (uint8_t)(nz * 127.5f + 127.5f);
-                o[4 * i + 3] = px[4 * i + 3];
+                o[4 * i + 3] = stp && ((stp[i >> 3] >> (i & 7)) & 1u) ? 255 : 0;   /* STP */
             }
     }
     free(h); free(c); free(tmp);
     return 1;
 }
 
-int rmk_asset_load(RmkAsset* a, const char* path) {
-    memset(a, 0, sizeof *a);
-    FILE* f = fopen(path, "rb");
-    if (!f) return 0;
+/* Cabeçalho e tabelas; deixa `f` no começo dos vértices. */
+static int read_tables(RmkAsset* a, FILE* f) {
     char magic[4];
-    uint32_t hdr[9] = {0};
-    int ok = fread(magic, 1, 4, f) == 4 && (!memcmp(magic, "HTR4", 4) || !memcmp(magic, "HTR5", 4));
-    const int v5 = ok && magic[3] == '5';
-    ok = ok && fread(hdr, 4, v5 ? 9 : 8, f) == (size_t)(v5 ? 9 : 8) && hdr[0] == (v5 ? 5u : 4u);
+    uint32_t hdr[10] = {0};
+    int ok = fread(magic, 1, 4, f) == 4 && !memcmp(magic, "HTR", 3) && magic[3] >= '4' && magic[3] <= '6';
+    const int ver = ok ? magic[3] - '0' : 0, nh = ver == 6 ? 10 : ver == 5 ? 9 : 8;
+    ok = ok && fread(hdr, 4, (size_t)nh, f) == (size_t)nh && hdr[0] == (uint32_t)ver;
     if (ok) {
+        a->version = (uint32_t)ver;
         a->n_nodes = hdr[1]; a->n_verts = hdr[2]; a->n_tris = hdr[3]; a->n_layers = hdr[4]; a->tex_size = hdr[5];
-        a->n_body = hdr[6]; a->n_groups = hdr[7]; a->n_pages = hdr[8];
-        ok = a->n_nodes <= RMK_MAX_NODES && a->n_verts && a->n_verts < 65536 && a->n_tris && a->n_layers <= RMK_MAX_LAYERS &&
+        a->n_body = hdr[6]; a->n_groups = hdr[7]; a->n_pages = ver >= 5 ? hdr[8] : 0;
+        a->char_index = ver >= 6 ? hdr[9] : 3u;   /* v4/v5: só existia o HEAT */
+        if (ver >= 6) ok = fread(a->name, 1, 16, f) == 16;
+        else memcpy(a->name, "HEAT", 5);
+        a->name[15] = 0;
+        ok = ok && a->n_nodes <= RMK_MAX_NODES && a->n_verts && a->n_verts < 65536 && a->n_tris &&
+             a->n_layers <= RMK_MAX_LAYERS &&
              (a->tex_size == 256 || a->tex_size == 512 || a->tex_size == 1024 || a->tex_size == 2048) &&
              a->n_body <= a->n_verts && a->n_groups < RMK_MAX_GROUPS && a->n_pages <= RMK_MAX_PAGES;
     }
     for (uint32_t i = 0; ok && i < a->n_nodes; i++) {
-        uint16_t nv, pad;
+        uint16_t nv;
+        uint8_t pg[2];
         uint32_t base;
-        ok = fread(&nv, 2, 1, f) == 1 && fread(&pad, 2, 1, f) == 1 && fread(&base, 4, 1, f) == 1;
+        ok = fread(&nv, 2, 1, f) == 1 && fread(pg, 1, 2, f) == 2 && fread(&base, 4, 1, f) == 1;
         a->node_nverts[i] = nv;
+        a->node_pages[i] = ver >= 6 ? pg[0] : 0;
         a->node_base[i] = base;
+        if (ver >= 6 && pg[1]) a->n_drawn = i + 1;
     }
+    if (ver < 6) a->n_drawn = 20;   /* v4/v5: só o HEAT, nós 0..19 desenhados */
     for (uint32_t g = 1; ok && g <= a->n_groups; g++) {
         uint8_t pos, pad;
         uint16_t nv;
@@ -153,21 +167,42 @@ int rmk_asset_load(RmkAsset* a, const char* path) {
         int16_t xy[2];
         uint16_t wh[2];
         uint8_t bpp_pad[4];
-        ok = fread(xy, 2, 2, f) == 2 && fread(wh, 2, 2, f) == 2 && fread(bpp_pad, 1, 4, f) == 4;
+        uint32_t hash = 0;
+        ok = fread(xy, 2, 2, f) == 2 && fread(wh, 2, 2, f) == 2 && fread(bpp_pad, 1, 4, f) == 4 &&
+             (ver < 6 || fread(&hash, 4, 1, f) == 1);
         RmkPage* g = &a->pages[p];
-        g->vx = xy[0]; g->vy = xy[1]; g->w = wh[0]; g->h = wh[1]; g->bpp = bpp_pad[0];
+        g->vx = xy[0]; g->vy = xy[1]; g->w = wh[0]; g->h = wh[1]; g->bpp = bpp_pad[0]; g->hash = hash;
         ok = ok && (g->bpp == 4 || g->bpp == 8 || g->bpp == 16) && g->w && g->h;
     }
     memset(a->layer_page, RMK_NO_PAGE, sizeof a->layer_page);
-    if (ok && v5) ok = fread(a->layer_page, 1, a->n_layers, f) == a->n_layers;
+    if (ok && ver >= 5) ok = fread(a->layer_page, 1, a->n_layers, f) == a->n_layers;
     for (uint32_t l = 0; ok && l < a->n_layers; l++) ok = a->layer_page[l] == RMK_NO_PAGE || a->layer_page[l] < a->n_pages;
     while (ok && a->mesh_nodes < (int)a->n_nodes && a->node_nverts[a->mesh_nodes]) a->mesh_nodes++;
+    return ok;
+}
+
+int rmk_asset_peek(RmkAsset* a, const char* path) {
+    memset(a, 0, sizeof *a);
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    const int ok = read_tables(a, f);
+    fclose(f);
+    if (!ok) memset(a, 0, sizeof *a);
+    return ok;
+}
+
+int rmk_asset_load(RmkAsset* a, const char* path) {
+    memset(a, 0, sizeof *a);
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    int ok = read_tables(a, f);
     const size_t layer_bytes = (size_t)a->tex_size * a->tex_size * 4u;
     if (ok) {
         a->verts = (RmkVert*)malloc(sizeof(RmkVert) * a->n_verts);
         a->tris = (RmkTri*)malloc(sizeof(RmkTri) * a->n_tris);
         a->layers = a->n_layers ? (uint8_t*)malloc(layer_bytes * a->n_layers) : NULL;
-        ok = a->verts && a->tris && (a->layers || !a->n_layers) &&
+        a->stp = a->n_layers ? (uint8_t*)calloc(layer_bytes / 32u, a->n_layers) : NULL;
+        ok = a->verts && a->tris && (a->layers || !a->n_layers) && (a->stp || !a->n_layers) &&
              fread(a->verts, sizeof(RmkVert), a->n_verts, f) == a->n_verts &&
              fread(a->tris, sizeof(RmkTri), a->n_tris, f) == a->n_tris &&
              (!a->n_layers || fread(a->layers, layer_bytes, a->n_layers, f) == a->n_layers);
@@ -184,6 +219,16 @@ int rmk_asset_load(RmkAsset* a, const char* path) {
         if (ok && !t->group) for (int k = 0; k < 3; k++) ok &= t->v[k] < a->n_body;
     }
     for (uint32_t i = 0; ok && i < a->n_verts; i++) ok = a->verts[i].owner < a->n_nodes;
+    /* alfa só de cobertura; o STP (alfa intermediário do arquivo) num bit por texel */
+    const size_t texels = (size_t)a->tex_size * a->tex_size;
+    for (uint32_t l = 0; ok && l < a->n_layers; l++) {
+        uint8_t* px = a->layers + layer_bytes * l;
+        uint8_t* st = a->stp + texels / 8u * l;
+        for (size_t i = 0; i < texels; i++) {
+            const uint8_t al = px[4 * i + 3];
+            if (al > 64 && al < 200) { st[i >> 3] |= (uint8_t)(1u << (i & 7)); px[4 * i + 3] = 255; }
+        }
+    }
     fclose(f);
     if (!ok) rmk_asset_free(a);
     return ok;

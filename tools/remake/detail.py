@@ -19,10 +19,10 @@ R_PRINT, R_INK, R_FOLD = 3, 2, 8      # raios das caixas (texels HD), cada uma a
 NO_NMAP = 4          # bit no modo da face: sem mapa de normal
 
 
-def mark_flat(rig):
+def mark_flat(rig, head=13):
     """Rosto (faces de cor com desenho por cima no osso da cabeça: olhos, boca, sobrancelhas, marcas) fica
-    sem mapa de normal: o estilo é pintado, e o traço entalhado parecia gravado."""
-    m = (rig.fnode == 13) & ((rig.mode & 3) == 1)
+    sem mapa de normal: o estilo é pintado, e o traço entalhado parecia gravado. head: nó da cabeça (13 no HEAT)."""
+    m = (rig.fnode == head) & ((rig.mode & 3) == 1)
     rig.mode = rig.mode.copy()
     rig.mode[m] |= NO_NMAP
     return int(m.sum())

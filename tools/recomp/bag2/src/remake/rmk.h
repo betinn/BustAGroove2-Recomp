@@ -2,9 +2,9 @@
  *
  * C99 puro, sem nada do PSXRecomp nem do SDL: o adaptador do PC (src/bag2_heat.c) usa isto hoje, e o do
  * Polygonia (DuckStation, fase 5) deve usar o mesmo. Três partes:
- *   - asset (rmk_asset.c): malha soldada, atributos por canto e camadas de textura HD, formato v5
- *     ("HTR5", tools/remake/export_heat.py), com grupos de faces por gesto das mãos (fase 2) e as páginas
- *     de textura na VRAM (expressão do rosto); lê também o v4;
+ *   - asset (rmk_asset.c): malha soldada, atributos por canto e camadas de textura HD, formato v6
+ *     ("HTR6", tools/remake/export_char.py, um por personagem), com grupos de faces por mão alternativa,
+ *     as páginas de textura (expressão do rosto) e as faces semitransparentes; lê também o v4 e o v5;
  *   - pose (rmk_pose.c): MATRIX câmera×osso do GTE -> posições de vértice no espaço da câmera, resumo do
  *     quadro (retângulo na tela, faixa de Z, slot da OT), normais por vértice;
  *   - GL (rmk_gl.c): desenho com shader próprio, no subconjunto comum de GL 3.3 core e GLES 3.0 (sem
@@ -27,13 +27,16 @@
 typedef struct { int16_t x, y, z; uint8_t owner, ao; } RmkVert;   /* espaço do nó dono; ao 255 = aberto */
 typedef struct {
     uint16_t v[3], zp[2];            /* vértices (ordem do NCLIP do jogo); zp: os dois do slot da OT */
-    uint8_t mode; int8_t layer;      /* modo 0 cor, 1 cor + textura por cima, 2 só textura; + 4 sem mapa de normal */
+    uint8_t mode; int8_t layer;      /* modo 0 cor, 1 cor + textura por cima, 2 só textura; + 4 sem mapa de normal;
+                                        + RMK_MODE_SEMI semitransparente (0,5 B + 0,5 F nos texels com STP) */
     uint8_t uv[3][2];                /* texels 0..255 da página original */
     uint8_t base[3][3];              /* cor do material 0..255 */
     uint8_t over[3][3];              /* modulação da textura 0..255 (128 = neutro) */
     uint8_t group;                   /* 0 corpo; g > 0 só com o gesto g ativo (máscara 1 << g) */
 } RmkTri;
 #pragma pack(pop)
+
+#define RMK_MODE_SEMI 16u
 
 /* Gesto de mão: o jogo troca o mesh inteiro da mão (o nó ligado na posição `tree_pos` da árvore muda),
  * reconhecido na RAM pela assinatura do MeshHeader desse nó. Os vértices exclusivos do grupo são
@@ -42,13 +45,17 @@ typedef struct { uint32_t tree_pos, sig_nverts, sig_base, v0, nv; } RmkGroup;
 
 /* Página de textura (um TIM do personagem): onde o jogo a põe na VRAM (vx em halfwords, -1 = desconhecida),
  * tamanho em texels e bits por texel. A expressão do rosto é cópia de VRAM dentro de uma página (MoveImage). */
-typedef struct { int16_t vx, vy; uint16_t w, h; uint8_t bpp; } RmkPage;
+typedef struct { int16_t vx, vy; uint16_t w, h; uint8_t bpp; uint32_t hash; } RmkPage;   /* hash: FNV-1a do TIM (v6) */
 
 typedef struct {
+    uint32_t version, char_index;    /* versão do arquivo; índice do personagem (tools/remake/bag2model.CHARS, v6) */
+    char name[16];
     uint32_t n_nodes, n_verts, n_tris, n_layers, tex_size;
     uint16_t node_nverts[RMK_MAX_NODES];   /* assinatura de cada osso na RAM (MeshHeader +0x94/+0x98) */
     uint32_t node_base[RMK_MAX_NODES];
+    uint8_t node_pages[RMK_MAX_NODES];     /* páginas usadas pelas faces originais do nó (bit p = TIM p; v6) */
     int mesh_nodes;                  /* nós com mesh, os primeiros na ordem da árvore */
+    int n_drawn;                     /* deles, os desenhados (posições da árvore); o resto são mãos alternativas */
     uint32_t n_body, n_groups;       /* vértices do corpo (sempre ativos); grupos 1..n_groups */
     RmkGroup groups[RMK_MAX_GROUPS];
     uint32_t n_pages;                /* asset v5; 0 no v4 (sem expressão do rosto) */
@@ -56,15 +63,20 @@ typedef struct {
     uint8_t layer_page[RMK_MAX_LAYERS];   /* página de cada camada (RMK_NO_PAGE = nenhuma) */
     RmkVert* verts;
     RmkTri* tris;
-    uint8_t* layers;                 /* n_layers x tex_size² RGBA8 (alfa 0 = transparente) */
-    uint8_t* nmaps;                  /* mapas de normal das camadas (rmk_asset_build_normals), ou NULL */
+    uint8_t* layers;                 /* n_layers x tex_size² RGBA8 (alfa 0 = transparente, 255 = opaco; o STP do
+                                        arquivo, alfa 143, vai para o alfa do mapa de normal na carga) */
+    uint8_t* stp;                    /* 1 bit por texel: cor com STP (semitransparente nas faces RMK_MODE_SEMI) */
+    uint8_t* nmaps;                  /* mapas de normal das camadas (rmk_asset_build_normals; alfa = STP), ou NULL */
 } RmkAsset;
 
 /* 1 = ok. Em erro, o asset fica zerado. */
 int rmk_asset_load(RmkAsset* a, const char* path);
+/* Só o cabeçalho e as tabelas (assinaturas dos ossos, grupos, páginas), sem malha nem texturas: para reconhecer o
+ * personagem antes de carregar o resto. 1 = ok. */
+int rmk_asset_peek(RmkAsset* a, const char* path);
 void rmk_asset_free(RmkAsset* a);
-/* Mapas de normal gerados das camadas (traço preto vira sulco). strength: inclinação por unidade de altura
- * por texel. 1 = ok. */
+/* Mapas de normal gerados das camadas (traço preto vira sulco), com o STP no alfa. strength: inclinação por
+ * unidade de altura por texel. 1 = ok. */
 int rmk_asset_build_normals(RmkAsset* a, float strength);
 
 /* ---- pose -------------------------------------------------------------------------------------- */
@@ -126,6 +138,7 @@ typedef struct {
 #define RMK_FLAG_FIXED_LIGHT 8u      /* luz fixa na câmera da fase 1 em vez das luzes do palco (comparação) */
 #define RMK_FLAG_NO_SHADOW 16u       /* sem sombra própria (comparação) */
 #define RMK_FLAG_FLOOR 32u           /* este pedido é a sombra no chão (rmk_gl_draw_floor), não o personagem */
+#define RMK_FLAG_NO_SEMI 64u         /* faces semitransparentes desenhadas opacas (comparação) */
 
 /* ---- GL ---------------------------------------------------------------------------------------- */
 typedef void* (*RmkGetProc)(const char* name);
@@ -179,7 +192,8 @@ float rmk_post_envelope(float beat, float bar);
 const char* rmk_post_error(const RmkPost* p);
 
 RmkGL* rmk_gl_create(RmkGetProc get_proc, int gles);
-/* Cria os recursos aos poucos (uma camada de textura por chamada). Contexto GL corrente. 1 = pronto. */
+/* Cria os recursos aos poucos (uma camada de textura por chamada). Contexto GL corrente. 1 = pronto; depois disso o
+ * desenho não lê mais as camadas nem os mapas de normal do asset (quem chama pode liberar a cópia de CPU). */
 int rmk_gl_prepare(RmkGL* g, const RmkAsset* a);
 /* Desenha um quadro (pos: vetor completo, n_verts do asset). O estado GL que o desenho muda fica documentado
  * em rmk_gl.c; quem chama restaura. */

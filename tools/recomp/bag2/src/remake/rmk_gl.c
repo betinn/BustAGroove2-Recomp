@@ -15,12 +15,17 @@
  * ordem de desenho do jogo (slot da OT (z0 + z1) >> 3 do mais longe ao mais perto, dentro do slot a face
  * exportada depois primeiro: a OT é reversa), com a profundidade puxada para a câmera por zbias (relativo
  * a z) e sem escrever profundidade. Dentro da tolerância a ordem de pintor decide; o que está claramente
- * atrás continua escondido.
+ * atrás continua escondido. (3) Faces semitransparentes (RMK_MODE_SEMI, fase 4): os texels com o bit STP do PS1
+ * (alfa do mapa de normal) saem dos passos 1 e 2 e são desenhados depois, na mesma ordem de pintor, com a mistura do
+ * jogo (0,5 B + 0,5 F) e sem escrever profundidade nem o alfa; os outros texels da face ficam opacos, como no PS1.
+ * Decalque semi (cor + textura): o que fica atrás dele no jogo é a cor base da própria face, então a mistura é feita
+ * no shader, sem passo extra.
  *
  * Estado GL que rmk_gl_draw muda (quem chama restaura): programa, VAO, buffer de vértices, unidade ativa e
  * texturas das unidades 8 a 11, framebuffer e viewport (religados aos de quem chama, RmkTarget.fbo/viewport),
  * deslocamento de polígono, recorte (caixa), teste/função/máscara de profundidade, cull/front face,
- * blend e stencil (desligados), máscara de cor. A profundidade do FBO é limpa só no retângulo do desenho. */
+ * blend (desligado; função, equação e cor da mistura mudam no passo 3) e stencil (desligado), máscara de cor. A
+ * profundidade do FBO é limpa só no retângulo do desenho. */
 #include "rmk.h"
 
 #include <math.h>
@@ -156,6 +161,8 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, VertexAttribPointer, (GLuint_ i, GLint_ n, GLenum_ t, GLboolean_ nm, GLsizei_ s, const void* p)) \
     X(void, BindSampler, (GLuint_ u, GLuint_ s)) \
     X(void, BlendFunc, (GLenum_ s, GLenum_ d)) \
+    X(void, BlendColor, (float r, float gg, float b, float a)) \
+    X(void, BlendEquation, (GLenum_ m)) \
     X(void, DrawArrays, (GLenum_ m, GLint_ f, GLsizei_ n)) \
     X(void, GenSamplers, (GLsizei_ n, GLuint_* s)) \
     X(void, SamplerParameteri, (GLuint_ s, GLenum_ p, GLint_ v))
@@ -178,25 +185,26 @@ struct RmkGL {
 #undef X
     void (RGLAPI* ClearDepthf)(float);
     void (RGLAPI* ClearDepth)(double);
-    int gles, step, ready, failed;
+    int gles, step, ready, failed, has_nmap;   /* has_nmap: mapas de normal na GPU (o asset pode soltar a cópia) */
     GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING], shadow_tex, shadow_fbo;
     float lbasis[3][3], lcenter[4];  /* espaço da luz da sombra do último quadro: u, v, direção; centro, 1/raio */
     int key;                         /* luz principal (a da sombra) do último quadro */
     int geo_w, geo_h, ring, have_serial, have_shadow, have_floor, floor_ok;
     uint32_t n_draw;                 /* faces ativas no último quadro (grupos do gesto) */
+    uint32_t n_semi;                 /* delas, semitransparentes: repetidas depois das n_draw (passo 3) */
     uint32_t last_serial, shadow_serial, floor_serial;   /* quadro da geometria, da sombra própria e do chão */
     GLuint_ floor_prog, floor_vao, floor_tex, floor_fbo, floor_smp[2];
     GLint_ f_ndc, f_proj, f_quad, f_depth, f_shadow, f_lu, f_lv, f_ld, f_lc, f_fl;
     float fbasis[3][3], fcenter[4], fquad[4][3];   /* sombra no chão: espaço ortográfico e quadrilátero (câmera) */
     float* staging;
     Inst* inst;                      /* por face, na ordem do asset */
-    Inst* inst_order;                /* reordenado por quadro (ordem de pintor do jogo) */
+    Inst* inst_order;                /* reordenado por quadro (ordem de pintor do jogo), mais as semi de novo */
     uint16_t* slot;                  /* slot da OT por face, por quadro */
     GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_depth, u_tex, u_nmap, u_nmap_on, u_misc, u_prepass;
     GLint_ u_key_dir, u_key_col, u_fill_dir, u_fill_col, u_rim_dir, u_rim_col, u_sky, u_ground;
     GLint_ u_stage, u_ldir, u_lcol, u_bk;
     GLint_ u_lu, u_lv, u_ld, u_lc, u_spass, u_shadow, u_shadow_on, u_key;
-    GLint_ u_nrm, u_rm_rect, u_rm_off;
+    GLint_ u_nrm, u_rm_rect, u_rm_off, u_semi;
     char err[512];
 };
 
@@ -267,6 +275,7 @@ static const char* FS_BODY =
     "uniform int u_stage;   /* 1: luzes do palco (GTE); 0: luz fixa na câmera da fase 1 */\n"
     "uniform vec3 u_ldir[3], u_lcol[3], u_bk;\n"
     "uniform int u_prepass; /* 1: só profundidade (o recorte por alfa vale igual) */\n"
+    "uniform int u_semi;    /* 0: passos opacos (texel com STP de face semi sai), 1: passo 3 (só ele), -1: sem semi */\n"
     "/* expressão do rosto: casa da página (x0, y0, x1, y1 em texels) e deslocamento até a variante que o jogo\n"
     "   copiou para ela (du, dv, página, meio texel HD para não sangrar a borda) */\n"
     "uniform int u_nrm;\n"
@@ -319,7 +328,16 @@ static const char* FS_BODY =
     "  if (md > 0 && v_layer >= 0 && u_misc.z > 0.5) {\n"
     "    vec4 t = textureGrad(u_tex, vec3(uv, float(v_layer)), gx, gy);\n"
     "    if (md == 2) { if (t.a < 0.5) discard; base = t.rgb * v_over; tex_a = 1.0; }\n"
-    "    else { base = mix(base, t.rgb * v_over, t.a); tex_a = t.a; }\n"
+    "    else {   /* decalque: com STP e semi (512), 0,5 cor base + 0,5 textura, como o GT3 semi do jogo sobre o G3 */\n"
+    "      float k = t.a;\n"
+    "      if ((v_mode & 512) != 0 && u_semi >= 0 && textureGrad(u_nmap, vec3(uv, float(v_layer)), gx, gy).a > 0.5) k *= 0.5;\n"
+    "      base = mix(base, t.rgb * v_over, k); tex_a = t.a;\n"
+    "    }\n"
+    "  }\n"
+    "  if (u_semi >= 0) {   /* semitransparência do PS1: só os texels com STP (sem textura: a face inteira) */\n"
+    "    bool stp = (v_mode & 256) != 0 && (md == 0 || v_layer < 0 || u_misc.z < 0.5 ||\n"
+    "               textureGrad(u_nmap, vec3(uv, float(v_layer)), gx, gy).a > 0.5);\n"
+    "    if (stp != (u_semi == 1)) discard;\n"
     "  }\n"
     "  if (u_prepass != 0) { frag = vec4(0.0); return; }\n"
     "  vec3 alb = pow(clamp(base, 0.0, 1.0), vec3(2.2));\n"
@@ -413,13 +431,28 @@ static int build_program(RmkGL* g) {
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_depth); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_misc); U(u_prepass);
     U(u_key_dir); U(u_key_col); U(u_fill_dir); U(u_fill_col); U(u_rim_dir); U(u_rim_col); U(u_sky); U(u_ground);
     U(u_stage); U(u_bk);
-    U(u_lu); U(u_lv); U(u_ld); U(u_lc); U(u_spass); U(u_shadow); U(u_shadow_on); U(u_key); U(u_nrm);
+    U(u_lu); U(u_lv); U(u_ld); U(u_lc); U(u_spass); U(u_shadow); U(u_shadow_on); U(u_key); U(u_nrm); U(u_semi);
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
     g->u_rm_rect = g->GetUniformLocation(g->prog, "u_rm_rect[0]");
     g->u_rm_off = g->GetUniformLocation(g->prog, "u_rm_off[0]");
 #undef U
     return 1;
+}
+
+/* Atributos por instância a partir da instância `first` do buffer (VAO e buffer de instâncias ligados). O passo 3
+ * desenha a faixa das semi assim (sem baseInstance, que o GL 3.3 e o GLES 3.0 não têm). */
+static void inst_attribs(RmkGL* g, uint32_t first) {
+    const GLsizei_ st = (GLsizei_)sizeof(Inst);
+    const size_t b = (size_t)first * sizeof(Inst);
+    g->VertexAttribIPointer(1, 3, R_UNSIGNED_SHORT, st, (const void*)(b + offsetof(Inst, vi)));
+    g->VertexAttribPointer(2, 4, R_FLOAT, 0, st, (const void*)(b + offsetof(Inst, uv)));
+    g->VertexAttribPointer(3, 2, R_FLOAT, 0, st, (const void*)(b + offsetof(Inst, uv) + 16));
+    for (int k = 0; k < 3; k++) {
+        g->VertexAttribPointer(4 + k, 4, R_UNSIGNED_BYTE, 1, st, (const void*)(b + offsetof(Inst, base) + 4 * k));
+        g->VertexAttribPointer(7 + k, 4, R_UNSIGNED_BYTE, 1, st, (const void*)(b + offsetof(Inst, over) + 4 * k));
+    }
+    g->VertexAttribPointer(10, 2, R_FLOAT, 0, st, (const void*)(b + offsetof(Inst, layer)));
 }
 
 /* Grade baricêntrica: ponto (i, j) = (1 - i/L - j/L, i/L, j/L); triângulos com a mesma orientação da face. */
@@ -444,7 +477,7 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
         }
     /* Uma instância por face; a ordem no buffer é a de pintor do jogo, refeita a cada quadro (order_faces). */
     Inst* inst = g->inst = (Inst*)calloc(a->n_tris, sizeof(Inst));
-    g->inst_order = (Inst*)calloc(a->n_tris, sizeof(Inst));
+    g->inst_order = (Inst*)calloc(2u * a->n_tris, sizeof(Inst));
     g->slot = (uint16_t*)calloc(a->n_tris, sizeof(uint16_t));
     if (!inst || !g->inst_order || !g->slot) return 0;
     for (uint32_t f = 0; f < a->n_tris; f++) {
@@ -459,7 +492,9 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
         o->layer = (float)t->layer;
         /* modo | página << 3: a página da camada (expressão do rosto); 31 = nenhuma, nunca casa com um remapeamento */
         const unsigned page = t->layer >= 0 && a->layer_page[t->layer] != RMK_NO_PAGE ? a->layer_page[t->layer] : 31u;
-        o->mode = (float)((t->mode & 7u) | page << 3);
+        /* semi: 256 = face no passo 3 (só textura ou cor); 512 = decalque semi (mistura com a cor base no shader) */
+        const unsigned semi = (t->mode & RMK_MODE_SEMI) ? ((t->mode & 3u) == 1u ? 512u : 256u) : 0u;
+        o->mode = (float)((t->mode & 7u) | page << 3 | semi);
     }
     g->GenVertexArrays(1, &g->vao);
     g->BindVertexArray(g->vao);
@@ -473,22 +508,9 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     g->BufferData(R_ELEMENT_ARRAY_BUFFER, sizeof idx, idx, R_STATIC_DRAW);
     g->GenBuffers(1, &g->inst_vbo);
     g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), inst, R_STREAM_DRAW);
-    const GLsizei_ st = (GLsizei_)sizeof(Inst);
-    g->EnableVertexAttribArray(1);
-    g->VertexAttribIPointer(1, 3, R_UNSIGNED_SHORT, st, (const void*)offsetof(Inst, vi));
-    g->EnableVertexAttribArray(2);
-    g->VertexAttribPointer(2, 4, R_FLOAT, 0, st, (const void*)offsetof(Inst, uv));
-    g->EnableVertexAttribArray(3);
-    g->VertexAttribPointer(3, 2, R_FLOAT, 0, st, (const void*)(offsetof(Inst, uv) + 16));
-    for (int k = 0; k < 3; k++) {
-        g->EnableVertexAttribArray(4 + k);
-        g->VertexAttribPointer(4 + k, 4, R_UNSIGNED_BYTE, 1, st, (const void*)(offsetof(Inst, base) + 4 * k));
-        g->EnableVertexAttribArray(7 + k);
-        g->VertexAttribPointer(7 + k, 4, R_UNSIGNED_BYTE, 1, st, (const void*)(offsetof(Inst, over) + 4 * k));
-    }
-    g->EnableVertexAttribArray(10);
-    g->VertexAttribPointer(10, 2, R_FLOAT, 0, st, (const void*)offsetof(Inst, layer));
+    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(2u * sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);
+    for (int i = 1; i <= 10; i++) g->EnableVertexAttribArray((GLuint_)i);
+    inst_attribs(g, 0);
     for (int i = 1; i <= 10; i++) g->VertexAttribDivisor((GLuint_)i, 1);
     g->BindVertexArray(0);
     g->BindBuffer(R_ARRAY_BUFFER, 0);
@@ -520,6 +542,7 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     /* mapas de normal (mesmo tamanho; se o asset não os tem, a textura fica 1x1 e o shader não lê) */
     g->GenTextures(1, &g->nmap);
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
+    g->has_nmap = a->nmaps != NULL;
     const GLsizei_ ns = a->nmaps ? (GLsizei_)a->tex_size : 1;
     g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, ns, ns, (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA,
                   R_UNSIGNED_BYTE, NULL);
@@ -621,6 +644,10 @@ static uint32_t order_faces(RmkGL* g, const RmkAsset* a, const float* pos, uint3
     for (int s = 0; s < SLOTS; s++) start[s + 1] += start[s];
     for (uint32_t k = a->n_tris; k-- > 0;)
         if (g->slot[k] != SLOT_OFF) g->inst_order[start[g->slot[k]]++] = g->inst[k];
+    /* as semitransparentes de novo depois das n, na mesma ordem (passo 3) */
+    g->n_semi = 0;
+    for (uint32_t k = 0; k < n; k++)
+        if ((int)g->inst_order[k].mode & 256) g->inst_order[n + g->n_semi++] = g->inst_order[k];
     return n;
 }
 
@@ -684,8 +711,8 @@ static void frame_setup(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const f
     g->n_draw = order_faces(g, a, pos, fr->groups | 1u);
     light_space(g, a, fr, pos);
     g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);   /* órfão */
-    g->BufferSubData(R_ARRAY_BUFFER, 0, (GLsizeiptr_)(sizeof(Inst) * g->n_draw), g->inst_order);
+    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(2u * sizeof(Inst) * a->n_tris), NULL, R_STREAM_DRAW);   /* órfão */
+    g->BufferSubData(R_ARRAY_BUFFER, 0, (GLsizeiptr_)(sizeof(Inst) * (g->n_draw + g->n_semi)), g->inst_order);
     g->last_serial = fr->serial;
     g->have_serial = 1;
 }
@@ -884,6 +911,10 @@ void rmk_gl_draw_floor(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const fl
         g->Uniform1i(g->u_geo_w, g->geo_w);
         g->Uniform4f(g->u_misc, 1.0f, 0.5f, (fr->flags & RMK_FLAG_NO_TEX) ? 0.0f : 1.0f, 0.0f);
         g->Uniform1i(g->u_nrm, 0);
+        g->Uniform1i(g->u_semi, (fr->flags & RMK_FLAG_NO_SEMI) ? -1 : 0);
+        g->ActiveTexture(R_TEXTURE0 + 10);
+        g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
+        g->Uniform1i(g->u_nmap, 10);
         g->Uniform3f(g->u_lu, g->fbasis[0][0], g->fbasis[0][1], g->fbasis[0][2]);
         g->Uniform3f(g->u_lv, g->fbasis[1][0], g->fbasis[1][1], g->fbasis[1][2]);
         g->Uniform3f(g->u_ld, g->fbasis[2][0], g->fbasis[2][1], g->fbasis[2][2]);
@@ -981,7 +1012,7 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform1i(g->u_geo, 8);
     g->Uniform1i(g->u_tex, 9);
     g->Uniform1i(g->u_nmap, 10);
-    g->Uniform1f(g->u_nmap_on, (a->nmaps && !(fr->flags & RMK_FLAG_NO_NMAP)) ? 1.0f : 0.0f);
+    g->Uniform1f(g->u_nmap_on, (g->has_nmap && !(fr->flags & RMK_FLAG_NO_NMAP)) ? 1.0f : 0.0f);
     g->Uniform1i(g->u_geo_w, g->geo_w);
     g->Uniform4f(g->u_ndc, t->ndc[0], t->ndc[1], t->ndc[2], t->ndc[3]);
     const int shadow = !(fr->flags & RMK_FLAG_NO_SHADOW);
@@ -994,6 +1025,8 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->BindTexture(R_TEXTURE_2D, g->shadow_tex);
     g->Uniform1i(g->u_shadow, 11);
     g->Uniform1f(g->u_shadow_on, shadow ? 1.0f : 0.0f);
+    const int semi = !(fr->flags & RMK_FLAG_NO_SEMI);
+    g->Uniform1i(g->u_semi, semi ? 0 : -1);
     g->Uniform4f(g->u_proj, fr->ofx, fr->ofy, fr->h, fr->shift_x);
     /* expressão do rosto: casas remapeadas (texels da página); a borda recua meio texel HD */
     {
@@ -1095,5 +1128,21 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     g->Uniform4f(g->u_depth, dA, dB, alpha, fr->zbias);
     g->Uniform1i(g->u_prepass, 0);
     g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_draw);
+    /* (3) texels com STP das faces semitransparentes: 0,5 B + 0,5 F (modo 0 do PS1), sem escrever o alfa */
+    if (semi && g->n_semi) {
+        g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
+        inst_attribs(g, g->n_draw);
+        g->Enable(R_BLEND);
+        g->BlendEquation(0x8006 /* GL_FUNC_ADD */);
+        g->BlendColor(0.5f, 0.5f, 0.5f, 0.5f);
+        g->BlendFunc(0x8001 /* GL_CONSTANT_COLOR */, 0x8001);
+        g->ColorMask(1, 1, 1, 0);
+        g->Uniform1i(g->u_semi, 1);
+        g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)g->n_semi);
+        inst_attribs(g, 0);
+        g->Disable(R_BLEND);
+        g->ColorMask(1, 1, 1, 1);
+        g->BindBuffer(R_ARRAY_BUFFER, 0);
+    }
     g->BindVertexArray(0);
 }

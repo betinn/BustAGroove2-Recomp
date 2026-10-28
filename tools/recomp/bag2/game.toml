@@ -39,7 +39,9 @@ discovery = "whole-image"
 # Remake do palco (src/bag2_stage.c): entrada de FUN_8002BEB4 (atualização de cada personagem, todo quadro de
 # partida), onde o plugin bag2.stage_remake liga o marcador do pós-efeito; FUN_8002A46C (sombra no chão), que o
 # remake do HEAT pula para desenhar a sombra macia dele.
-mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C"]
+# Fase 4 (remake dos outros personagens): entrada de FUN_80029588, que monta um osso; os personagens que não são do
+# tipo 0 são desenhados por funções do overlay deles, que chamam esta por osso.
+mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"
