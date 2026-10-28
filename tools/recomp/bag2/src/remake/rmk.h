@@ -45,7 +45,8 @@ typedef struct { uint32_t tree_pos, sig_nverts, sig_base, v0, nv; } RmkGroup;
 
 /* Página de textura (um TIM do personagem): onde o jogo a põe na VRAM (vx em halfwords, -1 = desconhecida),
  * tamanho em texels e bits por texel. A expressão do rosto é cópia de VRAM dentro de uma página (MoveImage). */
-typedef struct { int16_t vx, vy; uint16_t w, h; uint8_t bpp; uint32_t hash; } RmkPage;   /* hash: FNV-1a do TIM (v6) */
+typedef struct { int16_t vx, vy; uint16_t w, h; uint8_t bpp; uint32_t hash, clut_hash; } RmkPage;   /* v6: FNV-1a da
+                                                                       imagem do TIM (amostrada) e da CLUT inteira */
 
 typedef struct {
     uint32_t version, char_index;    /* versão do arquivo; índice do personagem (tools/remake/bag2model.CHARS, v6) */

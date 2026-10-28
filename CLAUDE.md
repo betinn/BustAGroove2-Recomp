@@ -40,7 +40,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-27, fim da fase 3 do remake)
+## Estado (2026-10-28, fim da fase 4 do remake)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - **Ritmo da música** (`notes/recomp.md` §13): o framework emula o vblank NTSC a 60,000 Hz e o som derivava do
@@ -76,8 +76,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   rosto: o jogo copia olhos/boca de um atlas da página do rosto com `MoveImage` na VRAM; hooks em
   MoveImage/LoadImage (também em `mod_function_entry_funcs`; mudar a lista = regenerar com `psxrecomp-game`)
   mandam as casas no quadro e o shader remapeia o UV (`tools/remake/faces.py`). Pacote
-  `mods/preloaded/packages/bag2.remake.heat`, asset v5 `mods/remake/heat.bin` (50 MB) gerado por
-  `tools/remake/export_heat.py` (fora do git). Exige o patch local `psxrecomp-host-draw.patch`. Caminho por
+  `mods/preloaded/packages/bag2.remake.heat`, asset v6 `mods/remake/heat.bin` (50 MB) gerado por
+  `tools/remake/export_char.py HEAT` (ou `export_heat.py`; fora do git). Exige o patch local `psxrecomp-host-draw.patch`. Caminho por
   pacotes da fase 0 = fallback (`heat_mode` flags bit 2). Geometria nova: enrolamento do jogo (normal para dentro).
   Medido (60 s por janela, fase 2): HEAT original jogo 46–53 %, render 16–50 %; remake 59,9 fps em todos os
   segundos, jogo 40–43 %, render 21–44 %; 4 HEATs (modo 6) 59,9, jogo 40 %, render 35 %; 0 underruns. Medir:
@@ -85,6 +85,22 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `tools/remake/game_session.py`, `game_sidebyside.py` (modo 3, 7, ou 4 com flags da cópia para A/B),
   `game_hands.py` (gestos forçados), `game_face.py` (expressão, original x remake no mesmo quadro), comandos
   `heat_mode`, `heat_light`, `heat_force`, `heat_stats`, `heat_face`, `heat_floor`.
+- **Remake do elenco** (fase 4; `notes/remake-visual.md` "Fase 4 no jogo"): só o HEAT é desenhado por
+  `FUN_80029D4C`; os outros, por funções do overlay de cada um que chamam `FUN_80029588` por osso (gancho de filtro
+  novo nessa entrada, em `mod_function_entry_funcs`). O mesmo plugin `src/bag2_heat.c` (nome e comandos `heat_*`
+  mantidos) carrega um asset por personagem e figurino, `mods/remake/<nome>.bin` e `<nome>_alt.bin` (v6, fora do
+  git), de `tools/remake/export_char.py NOME[*]` ou `export_all.py` (`export_heat.py` virou atalho). Na ativação só
+  as tabelas; a malha e as texturas são lidas numa thread quando o `LoadImage` traz um TIM do personagem (impressão
+  digital de 64 palavras), GL aos poucos, cópia de CPU solta depois. Personagem reconhecido pela assinatura dos
+  ossos (posição na árvore ≠ índice no arquivo em alguns); páginas na VRAM de cada jogador lidas dos pacotes do
+  próprio personagem; expressão do rosto em coordenadas da VRAM; semitransparência (passo 3 do núcleo e decalque
+  semi no shader). Cada personagem tem dois figurinos (87/123 + 2k e 159/195 + 2k; o 2P da partida espelhada usa o
+  alternativo); quando o modelo é o mesmo, decide o TIM que está na página. 15 personagens nos dois figurinos;
+  CHICHI&SALLY, COLUMBO e SUSHI BOY recusados (outro esqueleto na lista de nós). Medido HEAT × COMET (60 s, 2
+  sessões): 59,9 fps, 0 underruns, jogo −10/−6 e render +6/+6 pontos contra a base (só o HEAT, flag 2048). Testes:
+  `chars_tour.py` (pares do 2 jogadores: árvore, capturas original × remake, `heat_chars`), `game_chars.py` (A/B
+  no mesmo quadro por personagem), `char_tree.py` (qual nó o jogo liga em cada posição); comando `heat_chars`;
+  flags novas do `heat_mode`: 1024 semi opaco, 2048 só o HEAT.
 - **Remake do palco** (fase 3; `notes/remake-visual.md` "Fase 3 no jogo", formato em `notes/formats.md`
   "Palco em partida"): plugin `src/bag2_stage.c` (pacote `bag2.remake.stage`, gancho na entrada de `FUN_8002BEB4`)
   liga um pedido de desenho de host no slot 96 da OT (depois da cena, antes da OT do HUD pendurada no slot 95) e o
@@ -115,8 +131,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fase 2 feita (a IA
   imagem→3D ficou só offline, pior que o remake atual; a expressão do rosto do original agora chega ao remake).
   Fase 3 feita (pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco adiada com dados; render
-  dentro do orçamento depois do patch do desenho de host). Próxima: fase 4 (segundo jogador e os outros
-  personagens).
+  dentro do orçamento depois do patch do desenho de host). Fase 4 feita (os dois jogadores e o elenco; o que falta
+  está em `notes/remake-visual.md`, "Limites da fase 4"). Próxima: fase 5 (Polygonia) ou os buracos da fase 4.
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 

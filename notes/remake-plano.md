@@ -20,11 +20,24 @@ já é construído pensando nele (fase 5).
 | 1 | Atalho de render: malha direto no renderizador GL, shader moderno, núcleo portátil | **feito** (2026-10-27) |
 | 2 | Detalhe nos personagens (mãos, orelhas, nariz, mapas de normal, sombra, luz do palco, IA 3D) | **feito** (2026-10-27, commits 5e51099..); IA 3D testada offline e descartada |
 | 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **feito** (2026-10-27): pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco avaliada e adiada; render +0/+1 depois do patch do desenho de host |
-| 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | pendente |
+| 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | **feito** (2026-10-28): rota do 2 jogadores, COMET e os dois figurinos de 15 personagens; 3 recusados (outro esqueleto) |
 | 5 | Port para o Polygonia (Android) | pendente |
 | 6 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 3, 2026-10-27)
+## Onde estamos (fim da fase 4, 2026-10-28)
+- Testes pelo **modo 2 jogadores** (`game_session.py` `to_match_2p`, `BAG2_MATCH`): os dois personagens e o palco
+  escolhidos. A/B do ritmo na mesma música fechado (`notes/recomp.md` §13): vblank 564480 deriva +3,48 quadros por
+  20 s, o 566121 do hardware +0,27.
+- **Os outros personagens não passam por `FUN_80029D4C`**: o jogo chama uma função do overlay de cada um, que
+  percorre a árvore e chama `FUN_80029588` por osso; gancho novo nela. Plugin genérico (`src/bag2_heat.c`): um asset
+  por personagem e figurino (`tools/remake/export_char.py`, v6), carregado numa thread quando o jogo carrega o TIM
+  dele, páginas na VRAM de cada jogador achadas nos pacotes do próprio personagem, expressão do rosto em coordenadas
+  da VRAM, semitransparência do PS1 no núcleo. A "paleta do jogador 2" era o **figurino alternativo** (159/195 + 2k),
+  usado pelo 2P numa partida espelhada; virou asset próprio.
+- Medido HEAT × COMET com os dois remakes: 59,9 fps em todos os segundos, 0 underruns, jogo −10/−6 pontos e render
+  +6/+6 contra a base (só o HEAT). Detalhes, elenco e limites em `notes/remake-visual.md` ("Fase 4 no jogo").
+
+## Onde estávamos (fim da fase 3, 2026-10-27)
 - Palco: bloom multiescala com adaptação e graduação de cor aplicados no meio do quadro (pedido de desenho de host no
   slot 96 da OT, depois da cena e antes da OT do HUD), pulso no tempo da música (tick do jogo em `0x8005FBB4`,
   atraso do som de 4 quadros) no bloom, na exposição e na luz do HEAT, e sombra macia do HEAT no chão (PCSS) no
@@ -161,7 +174,17 @@ Plano original:
   chão, reflexo no piso se fizer sentido). Formato/container dos palcos ainda não mapeado.
 - Texturas HD dos palcos já existem (pacote v1.3.0); cobrir mais palcos com dumps se faltar.
 
-## Fase 4 — Dois jogadores e o resto do elenco
+## Fase 4 — Dois jogadores e o resto do elenco (feita em 2026-10-28)
+**Resultado** (técnica em `notes/remake-visual.md`, "Fase 4 no jogo"):
+- Peça 0: rota do 2 jogadores nos scripts (`enter_match`, `to_match_2p`, `who()`), A/B do ritmo na mesma música.
+- Peça 1: COMET pelo mesmo pipeline. Gancho em `FUN_80029588` (os overlays desenham os outros personagens), plugin
+  com vários assets e carga sob demanda, páginas por jogador, figurino alternativo, semitransparência (passo 3 e
+  decalque semi), mãos alternativas como grupos (pela solda ou observadas com `char_tree.py`).
+- Peça 2: HEAT × COMET medido (60 s, 2 sessões, ordem trocada): 59,9 fps, 0 underruns, jogo abaixo da base, render
+  +6.
+- Peça 3: o elenco (`export_all.py`, `chars_tour.py`): ver a tabela em `notes/remake-visual.md`.
+
+Plano original:
 - Segundo personagem pelo mesmo pipeline (exportador genérico por personagem; assinatura dos ossos).
 - Medir com `game_perf.py` numa partida inteira com os dois remakes reais.
 - Depois os outros personagens (paleta do jogador 2 em `88 + 2k`; semitransparência ainda não implementada).
@@ -189,8 +212,13 @@ Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo n
   `DAT_8006EE88 - 0x180`, entradas 95..4191, reversa (o último ligado sai primeiro); paridade do quadro em
   `0x8006EE90`. O modelo tem camadas coplanares (decalques): a ordem dentro do slot importa.
 - Expressão do rosto: troca de imagem na VRAM (MoveImage de um atlas na mesma página para as casas do rosto),
-  não de UV/CLUT; o remake segue pelos hooks em MoveImage/LoadImage (fase 4: os outros personagens devem fazer o
-  mesmo; a origem de cada página na VRAM hoje é constante medida do HEAT jogador 1).
+  não de UV/CLUT; o remake segue pelos hooks em MoveImage/LoadImage, com a tabela de casas em coordenadas da VRAM e a
+  origem de cada página achada nos pacotes de cada personagem (fase 4).
+- Desenho dos personagens (fase 4): só o HEAT passa por `FUN_80029D4C`; os outros, por funções do overlay de cada
+  um (1P em `0x801CC510..`, 2P em `0x801D3B64..`), que chamam `FUN_80029588` por osso. Estados dos jogadores em
+  `0x80060E30`/`0x80060E38`. Cada personagem tem dois figurinos (87/123 + 2k e 159/195 + 2k); o 2P de uma partida
+  espelhada usa o alternativo. O buffer de pacotes do nó (+0xA8) não tem todas as primitivas (decalques saem de
+  outro lugar): para saber o que o jogo desenha, `gpu_frame_dump` com o original ligado.
 - PSXRecomp: ativação de plugin roda antes do renderizador (ler arquivos ali; recursos GL só depois, aos
   poucos, por marcadores de preparo); `render_thread` + qualquer `GL_RT_SYNC` por primitiva derruba o fps;
   trocar textura fecha o lote do GL. Desenho de host (patch 3): marcador GP0 00h "HDR" na arena, payload por

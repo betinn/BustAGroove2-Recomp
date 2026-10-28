@@ -117,6 +117,8 @@ typedef struct {
     uint32_t seen_fc;                /* último quadro do jogo em que foi desenhado */
     int16_t page_vx[RMK_MAX_PAGES], page_vy[RMK_MAX_PAGES];   /* origem de cada página na VRAM (halfwords) */
     uint32_t pages_ok, pages_try_fc;
+    int16_t clut_x, clut_y;          /* uma CLUT que os pacotes do personagem usam (figurino; 0 = ainda não vista) */
+    int clut_ok;
     float* pos;                      /* pose do último quadro (vetor completo) */
     RmkFrame floor_fr;               /* último quadro (modo 1/carga), para a sombra no chão sair só quando o jogo */
     uint32_t floor_fc;               /* desenharia a dele (FUN_8002A46C), com a pose mais recente */
@@ -169,10 +171,12 @@ static uint32_t s_skip[MAX_NODES], s_n_skip;   /* nós da árvore com remake sen
 typedef struct { int16_t x0, y0, x1, y1, dx, dy; } VRemap;
 static VRemap s_vr[MAX_VREMAP];
 static uint32_t s_nvr;
-/* TIM de personagem carregado na VRAM (LoadImage com a impressão digital de uma página de asset): decide o figurino
- * quando os dois têm o mesmo modelo e só a textura muda */
+/* TIM e CLUT de personagem carregados na VRAM (LoadImage com a impressão digital de uma página de asset): decidem o
+ * figurino quando os dois têm o mesmo modelo e só a textura (ou só a CLUT) muda */
 static struct { int16_t x, y; int8_t ch, page; } s_vram_tim[16];
 static uint32_t s_n_vram_tim;
+static struct { int16_t x, y, w, h; int8_t ch; } s_vram_clut[16];
+static uint32_t s_n_vram_clut;
 /* LoadImage recentes (heat_chars): retângulo e impressão digital */
 static struct { int16_t x, y, w, h; uint32_t hash; int ch; } s_loads[16];
 static uint32_t s_nloads;
@@ -337,7 +341,16 @@ static int twins(int a, int b) {
 static int pick_costume(uint32_t root, int ch) {
     for (int i = 0; i < MAX_INST; i++) {
         const Inst* in = &s_inst[i];
-        if (in->ch < 0 || in->root != root || !in->pages_ok) continue;
+        if (in->ch < 0 || in->root != root) continue;
+        if (in->clut_ok)   /* a CLUT que o personagem usa veio de qual asset (dois figurinos com a mesma imagem) */
+            for (uint32_t k = 0; k < s_n_vram_clut && k < 16; k++) {
+                const int c2 = s_vram_clut[k].ch;
+                if (in->clut_x >= s_vram_clut[k].x && in->clut_x < s_vram_clut[k].x + s_vram_clut[k].w &&
+                    in->clut_y >= s_vram_clut[k].y && in->clut_y < s_vram_clut[k].y + s_vram_clut[k].h)
+                    if (c2 >= 0 && c2 != ch && twins(c2, ch) && s_ch[c2].t.pages[0].hash == s_ch[ch].t.pages[0].hash)
+                        return c2;
+            }
+        if (!in->pages_ok) break;
         for (uint32_t p = 0; p < RMK_MAX_PAGES; p++) {
             if (!((in->pages_ok >> p) & 1u)) continue;
             for (uint32_t k = 0; k < s_n_vram_tim && k < 16; k++)
@@ -356,11 +369,15 @@ static int match_tree(const uint32_t* nodes, int n, uint32_t* mask) {
     const uint32_t m0 = rd32(nodes[0] + 0x8C);
     if (!ram_ptr(m0)) return -1;
     const uint32_t nv0 = rd32(m0 + 0x94), b0 = rd32(m0 + 0x98);
+    int seen = 0;
     for (int i = 0; i < s_nch; i++) {
         const RmkAsset* t = &s_ch[i].t;
         if (t->node_nverts[0] != nv0 || t->node_base[0] != b0) continue;
+        seen = 1;
         if ((*mask = tree_groups(t, nodes, n)) != 0) return i;
     }
+    /* raiz conhecida, árvore não: mão (ou peça) que o asset não tem; o original aparece nesse quadro */
+    if (seen) psx_mod_counter_add("bag2_heat.match_fail", 1);
     return -1;
 }
 
@@ -483,6 +500,11 @@ static void find_pages(Inst* in, const RmkAsset* a, const uint32_t* nodes, int n
             const uint32_t ln = rd32(p) >> 24, cmd = rd32(p + 4) >> 24;
             if (cmd >= 0x20 && cmd < 0x40 && (cmd & 4)) {   /* polígono com textura: tpage no 2º par de UV */
                 const uint16_t t = (uint16_t)(rd32(p + ((cmd & 0x10) ? 24u : 20u)) >> 16) & 0x1FFu;
+                if (!in->clut_ok) {             /* CLUT no 1º par de UV */
+                    const uint32_t c = rd32(p + 12u) >> 16;
+                    in->clut_x = (int16_t)((c & 63u) * 16u); in->clut_y = (int16_t)((c >> 6) & 511u);
+                    in->clut_ok = 1;
+                }
                 int j = 0;
                 while (j < ntp[i] && tp[i][j] != t) j++;
                 if (j == ntp[i] && j < 4) tp[i][ntp[i]++] = t;
@@ -514,6 +536,24 @@ static void find_pages(Inst* in, const RmkAsset* a, const uint32_t* nodes, int n
             progress = 1;
         }
     }
+    /* Página que nenhum pacote do buffer do nó usa (os decalques do rosto saem de outro lugar): o TIM com a mesma
+     * impressão digital que o LoadImage pôs na VRAM; com dois (partida espelhada, figurinos de mesma imagem), o mais
+     * perto da página 0 deste personagem (as páginas de um jogador ficam juntas: 1P em 704..832, 2P em 832..960). */
+    if (in->pages_ok & 1u)
+        for (uint32_t p = 1; p < a->n_pages; p++) {
+            if ((in->pages_ok >> p) & 1u) continue;
+            int best = -1, bd = 1 << 30;
+            for (uint32_t k = 0; k < s_n_vram_tim && k < 16; k++) {
+                const int c = s_vram_tim[k].ch, pg = s_vram_tim[k].page;
+                if (c < 0 || s_ch[c].t.pages[pg].hash != a->pages[p].hash) continue;
+                const int d = abs(s_vram_tim[k].x - in->page_vx[0]) + abs(s_vram_tim[k].y - in->page_vy[0]);
+                if (d < bd) { bd = d; best = (int)k; }
+            }
+            if (best < 0) continue;
+            in->page_vx[p] = s_vram_tim[best].x; in->page_vy[p] = s_vram_tim[best].y;
+            in->pages_ok |= 1u << p;
+            psx_mod_counter_add("bag2_heat.pages_from_load", 1);
+        }
     psx_mod_counter_add("bag2_heat.pages_scan", 1);
 }
 
@@ -628,18 +668,43 @@ static void heat_move_image(struct CPUState* cpu, uint32_t address) {
     if (changed) remap_changed();
 }
 
-/* LoadImage: tira as casas cobertas e, se a imagem é um TIM de algum personagem com remake (impressão digital dos
- * 256 primeiros bytes), começa a carregar o asset dele (tela de carregamento da partida). */
+/* LoadImage: tira as casas cobertas e, se a imagem é um TIM de algum personagem com remake (impressão digital de 64
+ * palavras espalhadas pela imagem, tools/remake/export_char.tim_hash), começa a carregar o asset dele (tela de
+ * carregamento da partida). */
 static void heat_load_image(struct CPUState* cpu, uint32_t address) {
     (void)address;
     if (!s_nch) return;
     const uint32_t rect = cpu->gpr[4], data = cpu->gpr[5];
     const int x = rd16(rect), y = rd16(rect + 2), w = rd16(rect + 4), h = rd16(rect + 6);
     if (vremap_drop(x, y, w, h)) remap_changed();
-    if (w * h < 256 || !ram_ptr(data) || !ram_ptr(data + 256u)) return;
+    const uint32_t nb = (uint32_t)(w * h) * 2u;   /* bytes da imagem */
+    if ((w == 16 || w == 256) && h <= 32 && h > 0 && ram_ptr(data) && ram_ptr(data + nb - 1u)) {
+        /* CLUT (inteira) de um TIM de personagem: guarda onde ela está e carrega o asset */
+        uint32_t ch_ = 0x811C9DC5u;
+        for (uint32_t k = 0; k < nb / 4u; k++) {
+            const uint32_t v = rd32(data + 4u * k);
+            for (int b = 0; b < 4; b++) ch_ = (ch_ ^ ((v >> (8 * b)) & 0xFFu)) * 0x01000193u;
+        }
+        int hit = -1;
+        for (int i = 0; i < s_nch && hit < 0; i++)
+            for (uint32_t p = 0; p < s_ch[i].t.n_pages; p++)
+                if (s_ch[i].t.pages[p].clut_hash == ch_) { hit = i; break; }
+        if (hit >= 0) {
+            uint32_t k = 0;
+            while (k < s_n_vram_clut && k < 16 && (s_vram_clut[k].x != x || s_vram_clut[k].y != y)) k++;
+            if (k == 16) k = s_n_vram_clut++ % 16u;
+            else if (k == s_n_vram_clut) s_n_vram_clut++;
+            s_vram_clut[k].x = (int16_t)x; s_vram_clut[k].y = (int16_t)y;
+            s_vram_clut[k].w = (int16_t)w; s_vram_clut[k].h = (int16_t)h; s_vram_clut[k].ch = (int8_t)hit;
+            request_load(hit, "bag2_heat.load_clut");
+            psx_mod_counter_add("bag2_heat.clut_hits", 1);
+        }
+        return;
+    }
+    if (w * h < 256 || !ram_ptr(data) || !ram_ptr(data + nb - 1u)) return;
     uint32_t hsh = 0x811C9DC5u;
     for (uint32_t k = 0; k < 64; k++) {
-        const uint32_t v = rd32(data + 4u * k);
+        const uint32_t v = rd32(data + ((k * nb / 64u) & ~3u));
         for (int b = 0; b < 4; b++) hsh = (hsh ^ ((v >> (8 * b)) & 0xFFu)) * 0x01000193u;
     }
     int hit = -1, hit_p = 0;
@@ -1408,6 +1473,15 @@ static int node_filter(struct CPUState* cpu, uint32_t address) {
     if (s_nch && ram_ptr(mesh) && node != s_d4c_root) {
         const uint32_t nv = rd32(mesh + 0x94), base = rd32(mesh + 0x98);
         for (int i = 0; i < s_nch && !root; i++) root = s_ch[i].t.node_nverts[0] == nv && s_ch[i].t.node_base[0] == base;
+        if (root) {   /* o índice-base do nó 0 é sempre 0: confere também o 2º osso (filho, ou o irmão) */
+            uint32_t n1 = rd32(node + 0x94);
+            if (!ram_ptr(n1)) n1 = rd32(node + 0x98);
+            const uint32_t m1 = ram_ptr(n1) ? rd32(n1 + 0x8C) : 0;
+            const uint32_t b1 = ram_ptr(m1) ? rd32(m1 + 0x98) : 0xFFFFFFFFu;
+            root = 0;
+            for (int i = 0; i < s_nch && !root; i++)
+                root = s_ch[i].t.node_nverts[0] == nv && s_ch[i].t.node_base[1] == b1;
+        }
     }
     if (!root) {
         for (uint32_t i = 0; i < s_n_skip; i++)
@@ -1550,8 +1624,9 @@ static int heat_face_cmd(const char* args, char* reply, int cap) {
 static int heat_chars_cmd(const char* args, char* reply, int cap) {
     (void)args;
     int n = snprintf(reply, cap, "assets=%d", s_nch);
-    for (int i = 0; i < s_nch && n > 0 && n < cap; i++) {
+    for (int i = 0; i < s_nch && n > 0 && n < cap; i++) {   /* só os que começaram a carregar */
         const Chr* c = &s_ch[i];
+        if (!c->state) continue;
         n += snprintf(reply + n, cap - n, " | %s estado=%d carga_ms=%.0f gl=%d/%d preparos=%u", c->t.name, c->state, c->load_ms,
                       c->rt_ready, c->rt_failed, c->rt_prepares);
     }
@@ -1563,14 +1638,16 @@ static int heat_chars_cmd(const char* args, char* reply, int cap) {
                       (unsigned)(uint16_t)(fc - in->seen_fc), in->mask, in->pages_ok);
         for (uint32_t p = 0; p < s_ch[in->ch].t.n_pages && n > 0 && n < cap; p++)
             if ((in->pages_ok >> p) & 1u) n += snprintf(reply + n, cap - n, " p%u=%d,%d", p, in->page_vx[p], in->page_vy[p]);
+        RmkRemap rm[RMK_MAX_REMAP];
         if (n > 0 && n < cap)
-            n += snprintf(reply + n, cap - n, " bbox=%.1f,%.1f,%.1f,%.1f", in->bbox[0], in->bbox[1], in->bbox[2], in->bbox[3]);
+            n += snprintf(reply + n, cap - n, " bbox=%.1f,%.1f,%.1f,%.1f casas=%u", in->bbox[0], in->bbox[1], in->bbox[2],
+                          in->bbox[3], inst_remaps(in, &s_ch[in->ch].t, rm));
     }
     if (n > 0 && n < cap) n += snprintf(reply + n, cap - n, " || casas=%u", s_nvr);
     for (uint32_t i = 0; i < s_nvr && n > 0 && n < cap; i++)
         n += snprintf(reply + n, cap - n, " %d,%d-%d,%d>%d,%d", s_vr[i].x0, s_vr[i].y0, s_vr[i].x1, s_vr[i].y1, s_vr[i].dx, s_vr[i].dy);
     if (n > 0 && n < cap) n += snprintf(reply + n, cap - n, " || loads=%u", s_nloads);
-    for (uint32_t k = 0; k < 16 && k < s_nloads && n > 0 && n < cap; k++) {
+    for (uint32_t k = 0; k < 8 && k < s_nloads && n > 0 && n < cap; k++) {
         const uint32_t j = (s_nloads - 1u - k) % 16u;
         n += snprintf(reply + n, cap - n, " %d,%d,%dx%d:%08X%s%s", s_loads[j].x, s_loads[j].y, s_loads[j].w, s_loads[j].h,
                       s_loads[j].hash, s_loads[j].ch >= 0 ? "=" : "", s_loads[j].ch >= 0 ? s_ch[s_loads[j].ch].t.name : "");

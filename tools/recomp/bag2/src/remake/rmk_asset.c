@@ -7,7 +7,8 @@
  *   por grupo (1..n_groups): u8 posição na árvore, u8 pad, u16 nverts e u32 base_index do mesh do jogo
  *                desse gesto, u32 primeiro vértice, u32 nº de vértices (exclusivos do grupo, contíguos)
  *   por página (v5): s16 x, y na VRAM (x em halfwords, -1 = desconhecida), u16 largura, altura (texels),
- *                u8 bits por texel, u8 pad[3]; v6: + u32 FNV-1a dos 256 primeiros bytes da imagem do TIM
+ *                u8 bits por texel, u8 pad[3]; v6: + u32 FNV-1a de 64 palavras da imagem do TIM e u32 FNV-1a da
+ *                CLUT inteira
  *   por camada (v5): u8 página (0xFF = nenhuma)
  *   por vértice: RmkVert (8 bytes); os n_body primeiros são do corpo
  *   por face:    RmkTri (37 bytes), na ordem em que o jogo liga as primitivas na OT
@@ -167,11 +168,12 @@ static int read_tables(RmkAsset* a, FILE* f) {
         int16_t xy[2];
         uint16_t wh[2];
         uint8_t bpp_pad[4];
-        uint32_t hash = 0;
+        uint32_t hash[2] = {0, 0};
         ok = fread(xy, 2, 2, f) == 2 && fread(wh, 2, 2, f) == 2 && fread(bpp_pad, 1, 4, f) == 4 &&
-             (ver < 6 || fread(&hash, 4, 1, f) == 1);
+             (ver < 6 || fread(hash, 4, 2, f) == 2);
         RmkPage* g = &a->pages[p];
-        g->vx = xy[0]; g->vy = xy[1]; g->w = wh[0]; g->h = wh[1]; g->bpp = bpp_pad[0]; g->hash = hash;
+        g->vx = xy[0]; g->vy = xy[1]; g->w = wh[0]; g->h = wh[1]; g->bpp = bpp_pad[0];
+        g->hash = hash[0]; g->clut_hash = hash[1];
         ok = ok && (g->bpp == 4 || g->bpp == 8 || g->bpp == 16) && g->w && g->h;
     }
     memset(a->layer_page, RMK_NO_PAGE, sizeof a->layer_page);

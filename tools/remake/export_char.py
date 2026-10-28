@@ -23,8 +23,9 @@ Formato v6 (little-endian; lido por src/remake/rmk_asset.c, que lê também o v4
     por grupo (1..n_groups): u8 posição na árvore, u8 pad, u16 nverts e u32 base_index do mesh do jogo desse
                 grupo, u32 primeiro vértice, u32 nº de vértices exclusivos
     por página: s16 x, y na VRAM (-1 = achar no jogo), u16 largura, altura (texels), u8 bits por texel, u8 pad[3],
-                u32 FNV-1a dos 256 primeiros bytes da imagem do TIM (o plugin reconhece o LoadImage dele e carrega o
-                asset durante o carregamento da partida)
+                u32 FNV-1a de 64 palavras espalhadas pela imagem do TIM (o plugin reconhece o LoadImage dele e carrega
+                o asset durante o carregamento da partida), u32 FNV-1a da CLUT inteira do TIM (os dois figurinos de
+                vários personagens têm a mesma imagem e só a CLUT muda)
     por camada: u8 página
     por vértice, por face, por camada: como no v5 (RmkVert, RmkTri, tex_size² RGBA8). Modo da face: bits 0–1
                 material (0 cor, 1 cor + textura, 2 só textura), bit 2 sem mapa de normal, bit 4 semitransparente
@@ -72,9 +73,10 @@ def default_outs(name: str) -> list[str]:
 
 
 def drawn_and_alts(name, nodes):
-    """Nós desenhados (com mesh e ligados ao nó 0 pela cadeia de pais: posição na árvore = índice no arquivo) e
-    as mãos alternativas (mesh fora da árvore) com a posição que cada uma ocupa quando o jogo a liga: a do nó
-    desenhado sem filhos que se solda ao mesmo osso (mesmo conjunto de donos dos slots em "uses")."""
+    """Nós desenhados (com mesh e ligados ao nó 0 pela cadeia de pais; a posição na árvore do jogo é a ordem deles no
+    arquivo, e alguns personagens têm nós fora da árvore no meio da lista) e as mãos alternativas (mesh fora da
+    árvore) com o nó desenhado que cada uma substitui quando o jogo a liga: o sem filhos que se solda ao mesmo osso
+    (mesmo conjunto de donos dos slots em "uses"), ou ALT_POS."""
     def reaches_root(i):
         while i >= 0:
             if i == 0:
@@ -82,7 +84,6 @@ def drawn_and_alts(name, nodes):
             i = nodes[i].parent
         return False
     drawn = [nd.index for nd in nodes if nd.mesh and reaches_root(nd.index)]
-    assert drawn == list(range(len(drawn))), f'{name}: nós desenhados fora de ordem: {drawn}'
     alts = [nd.index for nd in nodes if nd.mesh and nd.index not in drawn]
     slot_owner = {}
     for nd in nodes:
@@ -156,7 +157,9 @@ def face_semi(rig, nodes):
 
 
 def tim_hash(tim) -> int:
-    """FNV-1a 32 dos 256 primeiros bytes da imagem do TIM como está no arquivo (e na RAM no LoadImage)."""
+    """FNV-1a 32 de 64 palavras espalhadas pela imagem do TIM como está no arquivo (e na RAM no LoadImage): palavra
+    no byte (k * N / 64) & ~3, N = bytes da imagem. Os primeiros bytes sozinhos colidiam (TIMs que começam com linhas
+    transparentes)."""
     idx = tim.idx.astype(np.uint32)
     if tim.bpp == 4:
         raw = (idx[:, 0::2] | idx[:, 1::2] << 4).astype(np.uint8).ravel()
@@ -164,8 +167,21 @@ def tim_hash(tim) -> int:
         raw = idx.astype(np.uint8).ravel()
     else:
         raw = idx.astype('<u2').view(np.uint8).ravel()
+    n = len(raw)
     h = 0x811C9DC5
-    for b in raw[:256].tolist():
+    for k in range(64):
+        o = (k * n // 64) & ~3
+        for b in raw[o:o + 4].tolist():
+            h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def clut_hash(tim) -> int:
+    """FNV-1a 32 da CLUT inteira do TIM (linhas x entradas, u16), como o LoadImage dela a manda para a VRAM."""
+    h = 0x811C9DC5
+    if tim.clut is None:
+        return 0
+    for b in np.ascontiguousarray(tim.clut, '<u2').view(np.uint8).ravel().tolist():
         h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
     return h
 
@@ -204,6 +220,9 @@ def export(name: str, outs: list[str]):
     nodes, anims, tims, _ = load_character(DISC, k, alt)
     label = name + ('*' if alt else '')
     drawn, alts, pos, unresolved = drawn_and_alts(label, nodes)
+    gaps = sorted(set(range(drawn[-1])) - set(drawn))
+    if len(gaps) >= 4:   # outro esqueleto intercalado (CHICHI&SALLY, COLUMBO, SUSHI BOY): o plugin só conhece uma árvore
+        raise SystemExit(f'{label}: {len(gaps)} nós fora da árvore no meio da lista ({gaps}): outro esqueleto; não suportado')
     # sem deduplicar: o modelo tem camadas coplanares (decalques) que só ficam certas na ordem do jogo
     base_rig = build_rig(nodes, set(), two_sided=True, dedup=False)
     layers = ps1_layers(base_rig, tims)
@@ -239,7 +258,7 @@ def export(name: str, outs: list[str]):
     rig.owner, rig.local = rig.owner[vperm], rig.local[vperm]
     rig.tris, rig.zpair = remap[rig.tris], remap[rig.zpair]
     assert (rig.tris >= 0).all() and (rig.zpair >= 0).all()
-    assert rig.owner.max() < len(drawn), 'vértice com dono fora da árvore desenhada'
+    assert np.isin(rig.owner, drawn).all(), 'vértice com dono fora da árvore desenhada'
     # oclusão ambiente na pose de descanso, por vértice (na GPU, como nos renders offline): o corpo com o primeiro
     # grupo de cada mão; cada combinação de grupos com o corpo
     from render import Renderer
@@ -262,25 +281,31 @@ def export(name: str, outs: list[str]):
     for f in range(len(rig.tris)):
         if rig.layer[f] >= 0 and rig.order[f][1] < len(GAME_LIST_ORDER):
             node_pages[int(rig.order[f][0])] |= 1 << base_rig.layers[int(rig.layer[f])][0]
+    # do índice no arquivo para a posição na árvore (o que o jogo percorre): dono dos vértices, grupos, tabela de nós
+    # (os desenhados primeiro, na ordem da árvore)
+    pos_of = {f: i for i, f in enumerate(drawn)}
+    owner_pos = np.array([pos_of[int(o)] for o in rig.owner])
+    node_order = drawn + [nd.index for nd in nodes if nd.index not in pos_of]
     import faces
     buf = bytearray(b'HTR6')
     buf += struct.pack('<10I', 6, len(nodes), len(rig.owner), len(rig.tris), len(hd), size, n_body, n_groups, len(tims), k)
     buf += label.encode('ascii')[:15].ljust(16, b'\0')
-    for nd in nodes:
-        buf += struct.pack('<HBBI', len(nd.mesh.verts) if nd.mesh else 0, int(node_pages[nd.index]) & 0xFF,
-                           int(nd.index in drawn), nd.mesh.base_index if nd.mesh else 0)
+    for i in node_order:
+        nd = nodes[i]
+        buf += struct.pack('<HBBI', len(nd.mesh.verts) if nd.mesh else 0, int(node_pages[i]) & 0xFF,
+                           int(i in pos_of), nd.mesh.base_index if nd.mesh else 0)
     for g in range(1, n_groups + 1):
         gp, node, nv, base = groups[g]
         v0, n = ranges[g]
-        buf += struct.pack('<BBHIII', gp, 0, nv, base, v0, n)
+        buf += struct.pack('<BBHIII', pos_of[gp], 0, nv, base, v0, n)
     for t, tim in enumerate(tims):
         vx, vy = faces.PAGE_VRAM.get(t, (-1, -1)) if name == 'HEAT' and not alt else (-1, -1)
-        buf += struct.pack('<hhHHB3xI', vx, vy, tim.w, tim.h, tim.bpp, tim_hash(tim))
+        buf += struct.pack('<hhHHB3xII', vx, vy, tim.w, tim.h, tim.bpp, tim_hash(tim), clut_hash(tim))
     assert len(base_rig.layers) == len(hd)
     buf += bytes(tex for tex, _ in base_rig.layers)
     loc = np.round(rig.local).astype(np.int64)
     assert np.abs(loc).max() < 32768
-    for (x, y, z), o, a in zip(loc, rig.owner, ao):
+    for (x, y, z), o, a in zip(loc, owner_pos, ao):
         buf += struct.pack('<hhhBB', x, y, z, int(o), int(np.clip(a * 255, 0, 255)))
     for f in range(len(rig.tris)):
         buf += struct.pack('<5HBb', *rig.tris[f], *rig.zpair[f], int(rig.mode[f]), int(rig.layer[f]))
@@ -298,7 +323,9 @@ def export(name: str, outs: list[str]):
           f'({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas, nós desenhados {len(drawn)}, cabeça {head}, '
           f'grupos ' + ', '.join(f'{g}: pos {groups[g][0]} nó {groups[g][1]} {ranges[g][1]} v' for g in groups) +
           (f'; alternativas sem posição (fora): {unresolved}' if unresolved else '') +
-          f'; páginas por nó {[int(x) for x in node_pages[:len(drawn)]]} -> {outs}')
+          f'; páginas por nó {[int(node_pages[i]) for i in drawn]}' +
+          (f'; fora da árvore no meio: {sorted(set(range(drawn[-1])) - set(drawn))}' if drawn[-1] >= len(drawn) else '') +
+          f' -> {outs}')
 
 
 def main():

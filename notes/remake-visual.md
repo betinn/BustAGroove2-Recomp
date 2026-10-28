@@ -1,4 +1,4 @@
-# Remake visual do HEAT e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27)
+# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco 2026-10-28)
 
 Pergunta: dá para modernizar o visual dos personagens **sem artista humano**, partindo das malhas
 originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animação? Feito só com o HEAT
@@ -13,6 +13,8 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
    expressão do rosto do original (seção "Fase 2 no jogo"), ainda a 60 fps em todos os segundos.
 5. **No jogo, fase 3** (palco): bloom e graduação depois da cena e antes do HUD, pulso no tempo da música e sombra
    macia do HEAT no chão (seção "Fase 3 no jogo").
+6. **No jogo, fase 4** (os dois jogadores e o elenco): o mesmo pipeline para os outros personagens e os dois
+   figurinos de cada um, com semitransparência (seção "Fase 4 no jogo").
 
 ## Como reproduzir
 ```
@@ -20,6 +22,9 @@ python -m venv tools/recomp/logs/remake/venv
 tools/recomp/logs/remake/venv/Scripts/python -m pip install -r tools/remake/requirements.txt
 tools/recomp/logs/remake/venv/Scripts/python tools/remake/heat_remake.py      # renders offline (~1 min, GPU)
 tools/recomp/logs/remake/venv/Scripts/python tools/remake/export_heat.py      # pacote do jogo (heat.bin)
+tools/recomp/logs/remake/venv/Scripts/python tools/remake/export_char.py COMET  # outro personagem (comet.bin);
+                                                     # "COMET*" = figurino alternativo (comet_alt.bin)
+python tools/remake/export_all.py                    # o elenco todo, nos dois figurinos (fase 4)
 ```
 `export_heat.py` grava `mods/remake/heat.bin` (25 MB, derivado do disco, fora do git) em `build/` e
 `build-debug/`. Depois é só compilar o runtime e jogar (`Jogar.bat`). Sem o `heat.bin`, o plugin fica inerte
@@ -592,6 +597,186 @@ sombra nova, ~0,2 s entre as duas), `fin1..3_ab.png` (palco original x fase 3, e
 - Polygonia: o pós-efeito e a sombra estão no núcleo portátil; o adaptador do Android precisa achar o ponto da OT
   (slot 96 / antes da OT do HUD) e o FBO de alta resolução do DuckStation, e não tem a emenda da tela larga.
 
+## Fase 4 no jogo: os dois jogadores e o elenco (2026-10-28)
+Todos os testes pelo modo 2 jogadores (`game_session.py` `to_match_2p`, `BAG2_MATCH="P1 P2 palco"`; rota, grade e
+pad 2 no `CLAUDE.md`): mesmos personagens e palco nas variantes.
+
+### Como o jogo desenha cada personagem
+- `FUN_8002BEB4(estado)` (um por personagem, todo quadro de partida) lê o **tipo** do personagem (estado +4) e o
+  **jogador** (+5) e chama `FUN_80029D4C` (tipo 0: só o HEAT) ou uma **função do overlay do personagem** (código em
+  `0x801CC510..` para o 1P e `0x801D3B64..` para o 2P; tipos 2, 3 e 14, com variantes por jogador e pelo byte +6),
+  sempre com a raiz da árvore (estado +0x28). O COMET (tipo 2, 2P) é desenhado por `0x801D76C0` → `0x801D759C`, uma
+  cópia do percurso da árvore com ajustes de ordem por osso (alguns ossos puxam o ponteiro da OT 8 ou 16 slots). Por
+  isso o gancho da fase 1 (`FUN_80029D4C`) só pegava o HEAT: numa partida HEAT × COMET ele roda só para o HEAT.
+- Os percursos dos overlays chamam `FUN_80029588(mesh, buffer, nó + 0x2C, ...)` por osso, a mesma função do HEAT.
+  Gancho de filtro novo nessa entrada (`mod_function_entry_funcs`; `psxrecomp-game` regenerou 1 shard): na raiz de
+  uma árvore reconhecida o plugin desenha o remake e pula o osso; os outros ossos da mesma árvore são pulados um a um
+  (lista dos nós da árvore). A árvore que `FUN_80029D4C` deixou para o original (modos de comparação) não é refeita.
+- Estados dos jogadores: ponteiros em `0x80060E30` (1P) e `0x80060E38` (2P) (`game_session.who()`).
+- **Figurino alternativo**: cada personagem tem dois, normal (texturas `87 + 2k`, modelo `123 + 2k`) e alternativo
+  (`159 + 2k`, `195 + 2k`); o 2P de uma partida espelhada usa o alternativo. A "paleta do jogador 2 em 88 + 2k" do
+  plano era leitura errada: `88 + 2k` e `124 + 2k` são as mesmas texturas e o mesmo modelo do 1P (iguais byte a byte;
+  conferido nos TIMs do HEAT e do COMET), carregados no lugar do 2P. Sete personagens mudam o modelo no figurino
+  alternativo (HEAT, COMET, HIRO, KELLY, KITTY-N, SHORTY, STRIKE); nos outros só a textura muda.
+- **CLUT**: a da VRAM é igual à do disco nos dois jogadores (conferido com `vram_peek` nas linhas do HEAT 1P e do COMET
+  2P); o 2P só põe a CLUT 16 linhas abaixo.
+
+### Exportador genérico (`tools/remake/export_char.py`, asset v6; `export_all.py` para o elenco)
+- Um asset por personagem e figurino: `mods/remake/<nome>.bin` e `<nome>_alt.bin` (fora do git). `export_heat.py`
+  virou atalho para `export_char.py HEAT`; só o HEAT normal ganha a geometria da fase 2 (mãos com dedos, orelhas,
+  nariz); os outros têm a malha original soldada + Phong + texturas HD (Real-ESRGAN 4x) + mapas de normal + luz do
+  palco + sombra própria + sombra no chão.
+- **Árvore**: nós desenhados = os ligados ao nó 0 pela cadeia de pais; a posição na árvore do jogo é a ordem deles no
+  arquivo (vários personagens têm nós fora da árvore no meio da lista: STRIKE, HUSTLE KONG, McLOAD, COMET*), então a
+  tabela de nós sai na ordem da árvore e o dono de cada vértice é a posição. Byte novo por nó: desenhado (a assinatura
+  exige exatamente esse número de ossos; antes era "até 24").
+- **Mãos alternativas** viram grupos de faces (como os gestos do HEAT): a posição de cada uma é a do nó desenhado sem
+  filhos que se solda ao mesmo osso ("uses" com os mesmos donos); as que não se soldam (COMET 21..26) vieram de
+  `char_tree.py` (qual nó o jogo liga em cada posição durante a partida) e, para as que não apareceram, do lado pelo
+  sinal de z do centro da malha (`ALT_POS`). O COMET troca a mão esquerda pela que segura a bandeja (nó 26). As que
+  ficam sem posição saem do asset: se o jogo ligar uma delas, a assinatura falha e o original aparece naquele
+  quadro (contador `bag2_heat.match_fail`).
+- **Páginas por nó** (bit por TIM usado pelas faces originais) e **impressão digital de cada TIM** (FNV-1a dos 256
+  primeiros bytes da imagem) no cabeçalho das páginas.
+- **Semitransparência**: bit 4 do modo da face nas primitivas com o bit semi do arquivo (o byte de textura >> 5 é
+  sempre 1 neste jogo) e alfa 143 nos texels cuja cor da CLUT tem o STP (camadas HD: o xBR mantém os valores exatos).
+- Recusados (outro esqueleto intercalado na lista de nós; o plugin conhece uma árvore por personagem):
+  CHICHI&SALLY, COLUMBO e SUSHI BOY (os três bloqueados no cartão do usuário).
+
+### Plugin para vários personagens (`src/bag2_heat.c`)
+- **Carga sob demanda**: na ativação só as tabelas de cada asset (`rmk_asset_peek`, assinaturas). O gancho em
+  `LoadImage` calcula a impressão digital dos 256 primeiros bytes de cada imagem; quando é um TIM de um asset, a malha e
+  as texturas são lidas numa thread (1,0–1,3 s com os mapas de normal) durante a tela de carregamento da partida, e os
+  recursos GL são criados aos poucos por marcadores de preparo do próprio personagem (26–32). Depois que a GPU tem as
+  camadas, a cópia de CPU sai (fica só a do HEAT normal, que o caminho por pacotes da fase 0 usa). Se o TIM não foi
+  visto (savestate, por exemplo), o primeiro desenho dispara a carga e o original aparece até ela terminar.
+- **Personagens na partida** (até 4, chave = raiz do vetor de nós): luzes do palco, chão, pose, sombra no chão,
+  marcadores do quadro e as **páginas na VRAM** de cada um. As páginas saem dos pacotes que o jogo montou para cada osso
+  (nó +0xA8, tamanho em +0xA4; tpage do 2º par de UV dos polígonos com textura) cruzados com as páginas que o asset diz
+  que cada osso usa: osso com uma página ainda desconhecida e um tpage ainda sem dono resolve a página. HEAT 1P: 704,256
+  e 768,256 (a constante medida na fase 2); COMET 2P: 960,256 e 896,256. (O buffer do nó não tem todos os pacotes: a
+  maior parte dos decalques da cabeça do COMET sai de outro lugar; para a página basta o que tem.)
+- **Figurino** quando os dois têm o mesmo modelo: o do TIM que o `LoadImage` pôs na página que o personagem usa.
+- **Expressão do rosto** em coordenadas da VRAM: `MoveImage` dentro de uma tpage (64 × 256 halfwords) vira casa na
+  tabela global; no quadro, cada personagem converte as casas que caem nas páginas dele. Conferido no HEAT 1P
+  (`game_face.py`, `rosto4_*.png`): dentes, olhos semicerrados e fechados iguais ao original no mesmo quadro.
+- Marcadores: o personagem vai nas flags do cabeçalho (bits 8..13), um só callback; 24 marcadores por metade.
+- Flags novas do `heat_mode`: 1024 = semitransparentes opacas (A/B), 2048 = só o HEAT (os outros carregam e preparam,
+  mas ficam originais: é a base das medições). Comando novo `heat_chars` (assets, carga, GL, personagens na partida,
+  páginas, casas, últimos `LoadImage` com a impressão digital).
+
+### Semitransparência (núcleo)
+- Medido no quadro da GPU (`gpu_frame_dump`, COMET 2P): o avental (nó 4, 51 primitivas) e 18 decalques da cabeça (CLUT
+  linha 5, a estrela do boné) saem com o bit semi, modo 0 (0,5 B + 0,5 F). A primeira versão ignorava os decalques
+  semi (o buffer do nó não os mostrava) e a estrela do boné saía vermelho-escura (a cor crua da linha 5) em vez de
+  amarela.
+- Face semitransparente: os texels com STP (alfa do mapa de normal, que agora guarda o STP) saem dos passos 1 e 2 e
+  são desenhados num **passo 3**, na mesma ordem de pintor, com `glBlendColor(0,5)` e
+  `glBlendFunc(CONSTANT_COLOR, CONSTANT_COLOR)`, sem escrever profundidade nem o alfa (bit 15). As faces semi ficam
+  repetidas numa faixa no fim do buffer de instâncias, desenhada mudando o ponteiro dos atributos (o GL 3.3 e o GLES
+  3.0 não têm `baseInstance`). O renderizador do framework refaz equação, função e cor da mistura a cada lote, e a
+  restauração do desenho de host desliga o blend.
+- **Decalque semi** (cor + textura): no jogo, o que fica atrás do GT3 semi é o G3 da mesma face, então a mistura é
+  feita no shader (textura com STP pesa 0,5 sobre a cor base), sem passo extra.
+
+### Desempenho (peça 2: HEAT × COMET com os dois remakes)
+Build-debug, RTX 3070 Ti, 9x + 16:9, pacote HD ligado ("HD textures: ... replacements on"), `game_perf.py`, palco do
+HEAT, 60 s por janela, 2 janelas por partida, ordem trocada entre as sessões. Base = estado do cbe175a (remake do HEAT
+e do palco; o COMET original): variante `"1 4 0.6 0.25 2050;1 0"` (flag 2048). Tudo = `"1 4 0.6 0.25 2;1 0"`.
+Logs `logs/remake/jogo/perf4A.txt` e `perf4B.txt`.
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| A / 1ª | base (só o HEAT com remake) | 59,9 (mín. 59,9) | 42 % (máx. 47) | 33 % (máx. 45) | 0 |
+| A / 2ª | HEAT + COMET com remake | 59,9 (mín. 59,9) | 32 % (máx. 36) | 39 % (máx. 48) | 0 |
+| B / 1ª | HEAT + COMET com remake | 59,9 (mín. 59,8) | 33 % (máx. 37) | 38 % (máx. 48) | 0 |
+| B / 2ª | base (só o HEAT com remake) | 59,9 (mín. 59,9) | 39 % (máx. 41) | 32 % (máx. 38) | 0 |
+
+Nenhum segundo abaixo de 59,5. Thread do jogo −10 e −6 pontos contra a base (o COMET original passa ~600 primitivas
+pela GPU emulada; o remake, um marcador). Render +6 e +6 (pedido: até +10). Plugin na thread do jogo: 41–42 µs por
+desenho de personagem com os dois (58–59 µs só com o HEAT, que tem 3,4 mil vértices com as mãos de dedos). Thread de
+render: 95 µs de CPU por desenho de host com os dois (135 µs na base). As sombras no chão não entraram nessas janelas
+(o palco do HEAT não chama a sombra do jogo nesse trecho; 0 nas duas variantes).
+
+Segundo par, KITTY-N × HIRO no Sushi Planet (palco com a sombra do jogo, logo com a sombra macia no chão dos dois);
+aqui a base deixa os **dois originais** (flag 2048; nenhum é o HEAT). Logs `perf4C.txt`, `perf4D.txt`:
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| C / 1ª | base (os dois originais) | 59,9 (mín. 59,9) | 54 % (máx. 56) | 28 % (máx. 40) | 0 |
+| C / 2ª | os dois com remake | 59,9 (mín. 59,9) | 32 % (máx. 37) | 34 % (máx. 49) | 0 |
+| D / 1ª | os dois com remake | 59,9 (mín. 59,9) | 36 % (máx. 37) | 29 % (máx. 39) | 0 |
+| D / 2ª | base (os dois originais) | 59,9 (mín. 59,7) | 49 % (máx. 55) | 27 % (máx. 37) | 0 |
+
+Jogo −22 e −13 pontos, render +6 e +2. Sombra nova no chão em 3108 e 3354 desenhos (a do jogo pulada nos mesmos).
+Desenho de host: 27–30 µs de CPU por chamada (corpo + sombra no chão, 7–8 mil por minuto). Plugin na thread do jogo:
+23 µs por personagem.
+
+### O elenco (peça 3; `export_all.py`, `chars_tour.py`, `logs/remake/jogo/tour.txt`)
+Cada par no 2 jogadores por 25–40 s de árvore (qual nó o jogo liga em cada posição), 3 capturas no modo 3 e o estado
+do plugin. Em todas as sessões: 59,9 fps, cada personagem reconhecido e desenhado em todos os quadros da janela
+(`frames_outros` = 30 por segundo por personagem), `match_fail` 0 (nenhum quadro caiu no original por mão
+desconhecida).
+
+| personagem | normal | alternativo (2P espelhado) | observações |
+|---|---|---|---|
+| HEAT | testado (fases 0–4) | testado (modelo próprio) | só o normal tem mãos com dedos, orelhas, nariz |
+| COMET | testado | testado | avental e decalques semi; mão da bandeja (nó 26); no alternativo os nós 4 e 13 ficam fora da árvore |
+| KITTY-N | testado | testado | página 1 só pelo LoadImage (rosto) |
+| HIRO | testado | testado | 115 faces semi (decalques) |
+| SHORTY | testado | testado | sem mãos alternativas |
+| STRIKE | testado | testado | posição ≠ índice (nó 17/16 fora da árvore); mãos 26–28 (25–27) sem posição |
+| TSUTOMU | testado | testado (mesma imagem, decidido pela CLUT) | mãos 24 e 25 sem posição |
+| CAPOEIRA | testado (dois dançarinos, duas árvores) | não testado (mesma imagem) | 2 camadas só |
+| BI-O | testado | testado (mesma imagem, só a CLUT do TIM 0 muda) | |
+| KELLY | testado | testado | |
+| PANDER, ROBO-Z GOLD, HUSTLE KONG, McLOAD, MICHAEL DOI | exportado, não testado | exportado, não testado | bloqueados no cartão do usuário; ROBO-Z com as mãos 20–24 sem posição |
+| CHICHI&SALLY, COLUMBO, SUSHI BOY | recusado | recusado | outro esqueleto intercalado na lista de nós |
+
+Assets: 8–63 MB cada (2–15 camadas), 30 no total (~1,2 GB por pasta de build). Capturas `tour_<P1>_<P2>_0_<nome>.png`
+(original à esquerda, remake à direita, 3 momentos), `sombra1.png` (KITTY-N e HIRO no Sushi Planet).
+
+### Capturas (`tools/recomp/logs/remake/jogo/`, fora do git)
+`f4b_*` e `ab3_COMET.png` (COMET original × remake, A/B de Phong e semi), `semi2_COMET.png` (estrela do boné e avental
+depois do decalque semi), `hh_HEAT*.png` (HEAT × HEAT: o 2P de figurino alternativo), `rosto4_*.png` (expressão do
+HEAT na rota nova), `tour_*` (o elenco).
+
+### Regressão (fase 4)
+- `stage_check.py` pela rota do 2 jogadores (HEAT × COMET, palco do HEAT; `palco/chk_fase4.txt`, `chk_fase4_grade.png`):
+  abertura (FMV), título, menu, seleção de personagem e de palco com 0 marcadores do palco e captura 1920×1080; a
+  partida com o efeito, HUD por cima intacto; no fim da música o 2 jogadores volta à seleção de personagem e os
+  marcadores param. 16:9 na partida, menus e FMV em 4:3 como antes.
+- `audio_buffer_check.py 90` pela rota nova (`ritmo/buf_fase4.txt`): 0 underruns da abertura em diante (título,
+  menu/seleção, carregamento, partida, fim da música); **699 no boot** (os primeiros 70 s, que incluem o vídeo de
+  abertura). O mesmo apareceu (701) na sessão do A/B do ritmo com o exe do cbe175a, antes de qualquer mudança da
+  fase 4, e não apareceu na outra sessão daquele A/B: é do começo da sessão, não do remake. Não investigado a fundo.
+- Ritmo: A/B na mesma música (`notes/recomp.md` §13), sem deriva no 566121.
+- Expressão do HEAT (`game_face.py`, `rosto4_*.png`) igual ao original; pacote HD ligado em todas as medições ("HD
+  textures: ... replacements on").
+- Build normal (`build/`, sem TCP) recompilada: sobe com o pacote HD (477 substituições) e sem erro no log em 40 s;
+  não joguei uma partida nela (sem servidor de testes nem computer-use nesta sessão).
+
+### Limites e o que não deu (fase 4)
+- **Não testados no jogo**: PANDER, ROBO-Z GOLD, HUSTLE KONG, McLOAD e MICHAEL DOI (e os alternativos), bloqueados no
+  cartão de memória (não aparecem na grade do 2 jogadores); CAPOEIRA*. Ficam em `mods/remake/`; se a assinatura
+  falhar no jogo, o original aparece.
+- **Recusados**: CHICHI&SALLY, COLUMBO e SUSHI BOY têm outro esqueleto (ou peça grande) intercalado na lista de nós;
+  o plugin conhece uma árvore por personagem. Exigiria reconhecer as árvores separadas.
+- **Mãos alternativas sem posição** (STRIKE, TSUTOMU, ROBO-Z): não se soldam ao antebraço e não apareceram nas danças
+  observadas; saíram do asset. Se o jogo ligar uma delas, aquele quadro sai original (`bag2_heat.match_fail`).
+- **Expressão do rosto dos outros**: a conversão das casas funciona (KITTY-N: 1 casa convertida numa partida; a página
+  do rosto achada pelo LoadImage), mas só o HEAT foi conferido por imagem (`game_face.py` é dele).
+- **Sombra no chão**: só onde o jogo chama a dele (no palco do HEAT, nenhuma; no Sushi Planet, todas).
+- **Memória**: cada asset carregado fica na GPU (~2 × camadas × 4 MB × 1,33 com mips: 30–160 MB) até fechar o jogo;
+  a cópia de CPU sai depois da subida. Uma sessão que passe por todo o elenco chega a ~2 GB de VRAM. Para o Polygonia,
+  descarregar os que saíram da partida e comprimir as camadas.
+- O CAPOEIRA é carregado em todas as partidas (a impressão digital de um TIM ou CLUT dele bate com algo carregado
+  sempre); custa 153 ms numa thread e 8 MB.
+- Na primeira partida de um personagem visto só no desenho (sem o LoadImage, ex.: savestate), o original aparece
+  ~1–2 s até a carga e o preparo.
+- `game_face.py`, `game_hands.py` e `game_sidebyside.py` continuam do HEAT; `game_chars.py`/`chars_tour.py` cobrem
+  os outros.
+
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos
 (`FUN_80029C6C`: filho em +0x94, irmão em +0x98; +0x6C = MATRIX câmera×osso já pronta para o GTE, +0x8C =
@@ -697,8 +882,8 @@ diagnóstico).
 - Caminho GLES 3.0 do núcleo escrito, mas só testado em GL 3.3 core (NVIDIA). Rewind não testado (savestate sim).
 - (Resolvido na fase 2: as mãos alternativas, nós 20–23, têm versão com dedos; antes o HEAT original aparecia
   nesses quadros.)
-- HEAT como jogador 2 usa outra paleta (container 88+2k); o `heat.bin` tem só a do jogador 1, então um HEAT
-  P2 sairia com as cores do P1. Não testado.
+- (Resolvido na fase 4: o "HEAT jogador 2 com outra paleta" era o figurino alternativo, 159/195 + 2k, que o 2P usa
+  na partida espelhada; virou asset próprio, `heat_alt.bin`.)
 - O hook também pega o HEAT de outras telas que usam `FUN_80029D4C` (seleção, resultado); não conferido.
 - Só testado na build-debug (dirigida por TCP). A build normal (`build/`) compila com o mesmo código e o
   `heat.bin` v3 está nas duas; não joguei uma partida nela.
