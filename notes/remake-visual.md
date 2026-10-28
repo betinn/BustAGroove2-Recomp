@@ -450,13 +450,14 @@ feitas (pós-efeito, pulso, sombra no chão); geometria do palco e dumps HD dos 
   ~45 % do que a GPU emulada desenha.
 
 ### Geometria e luz do palco pelo caminho novo: decisão (peça 4)
-Não feita, com base nos dados acima:
+Não feita na fase 3, com base nos dados acima (em 2026-10-28 o usuário decidiu fazer antes do Polygonia: fase 6 de
+`notes/remake-plano.md`):
 - Ganho: ~45 % do palco são planos grandes de fundo, chão e céu (FT4 com textura já HD; luz por pixel e Phong não
   mudam um plano texturizado), o resto são adereços pequenos de cor lisa (G3/G4) longe da câmera. O que mais muda o
   visual (halo dos neons, cor, sombra macia, pulso) já está nas peças 1–3.
 - Custo de fazer: o formato de malha do overlay do palco (containers 231..245) não está mapeado e seria um por
   palco; os adereços não passam por `FUN_80029D4C`. Custo de rodar não é problema (o palco é ~4 % da thread do jogo).
-- O que valeria tentar depois (fase 4 ou 6): reflexo dos dançarinos no chão escuro do Sushi Planet pelo caminho do
+- O que valeria tentar depois (agora na fase 6, palcos): reflexo dos dançarinos no chão escuro do Sushi Planet pelo caminho do
   remake (precisa dos dois dançarinos pelo pipeline, senão só o HEAT refletiria).
 
 ### Pacote HD na build-debug e remake do HEAT com o pacote HD

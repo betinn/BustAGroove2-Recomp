@@ -10,8 +10,8 @@ números, testes) ficam em `notes/remake-visual.md`. Toda sessão que avançar u
 ## Objetivo
 Salto visual grande no jogo em si (palco + jogadores), sem artista humano, mantendo 60 fps estáveis com
 folga e sem engasgo de áudio, com a mesma jogabilidade. Nada de mudança que quase não se nota. A abertura em
-vídeo fica para depois (fase 7). Primeiro no exe de PC; o port para o Android (Polygonia) vem depois e o PC
-já é construído pensando nele (fase 6).
+vídeo fica para depois (fase 8). Primeiro no exe de PC; o port para o Android (Polygonia) vem depois e o PC
+já é construído pensando nele (fase 7).
 
 ## Estado
 | Fase | O que | Estado |
@@ -22,8 +22,9 @@ já é construído pensando nele (fase 6).
 | 3 | Palco (luz, efeitos, geometria/luz pelo caminho novo) | **feito** (2026-10-27): pós-efeito, pulso, sombra no chão, dumps dos Stage 1; geometria do palco avaliada e adiada; render +0/+1 depois do patch do desenho de host |
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | **feito** (2026-10-28): rota do 2 jogadores, COMET e os dois figurinos de 15 personagens; 3 recusados (outro esqueleto) |
 | 5 | Memória do elenco: só quem está em cena fica carregado; lacunas da fase 4 conferidas | **feito** (2026-10-28): descarga, os 18 conferidos, asset v7 |
-| 6 | Port para o Polygonia (Android) | pendente |
-| 7 | Abertura em vídeo ampliada por IA | futuro |
+| 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **próxima** (decidida em 2026-10-28, antes do Polygonia) |
+| 7 | Port para o Polygonia (Android) | pendente |
+| 8 | Abertura em vídeo ampliada por IA | futuro |
 
 ## Onde estamos (fim da fase 5, 2026-10-28)
 - Só quem está em cena fica carregado: numa sessão de 5 partidas a GPU dedicada fica em 1,06–1,22 GB nas partidas e
@@ -222,7 +223,29 @@ sem conferir.
   reconhecimento pelo mesh de cada nó e asset v7 (osso próprio por grupo, peças sem posição); ROBO-Z (cabeça) e SUSHI
   BOY (mão) com posição observada; figurino do PANDER corrigido.
 
-## Fase 6 — Port para o Polygonia (Android)
+## Fase 6 — Palcos: geometria, luz e o pacote HD de todos (antes do Polygonia)
+Na fase 3 a geometria e a luz do palco pelo caminho novo foram avaliadas e adiadas (ganho menor que o custo naquele
+momento; `notes/remake-visual.md`, "Geometria e luz do palco pelo caminho novo: decisão"). Decisão do usuário
+(2026-10-28): os palcos têm de ficar no nível dos personagens **antes** do port para o Polygonia, e o port leva os dois
+juntos. Tudo no núcleo portátil (`src/remake/`, C99, GL 3.3/GLES 3.0, sem geometry/tessellation shader nem SSBO).
+- **Peça 0 — inventário**: todos os palcos que o jogo tem (overlays de palco nos containers 231..245, entrada 0, em
+  `0x801DB1B8`; a tela de palco do 2 jogadores escolhe qualquer um), com captura, primitivas por quadro
+  (`gpu_frame_dump`) e de onde vem cada parte (fundo e chão em `0x800D0000..`, céu/letreiros em `0x80080000..`,
+  adereços 3D em `0x800B4000..0x800C3FFF` no Sushi Planet; `notes/formats.md`, "Palco em partida").
+- **Peça 1 — pacote HD completo**: dumps de todos os palcos pelo 2 jogadores (`stage_dumps.py`, palco escolhido),
+  Real-ESRGAN incremental (`tools/hd_textures.py --filter esrgan`), nenhum palco sem HD.
+- **Peça 2 — formato e desenho**: mapear a malha dos adereços no overlay de cada palco e a função que os desenha
+  (matrizes, luz); exportador offline por palco (malha soldada, texturas HD, mapas de normal), no mesmo formato de asset
+  dos personagens quando couber.
+- **Peça 3 — no jogo**: adereços 3D pelo desenho de host (Phong, luz por pixel com as luzes do palco, sombra dos
+  dançarinos no cenário, não só no chão); planos grandes (fundo, chão) com mapa de normal e luz; reflexo dos dançarinos
+  no chão escuro onde couber (Sushi Planet). Carga e descarga por palco, como o elenco da fase 5.
+- **Peça 4 — medir e conferir**: por palco, no 2 jogadores, mesmos critérios (60 fps em todos os segundos, 0 underruns,
+  jogo ≤ base + 3, render ≤ base + 10 pontos), capturas original × remake, regressão (HUD, menus, FMV, 16:9, ritmo).
+  Junto: as pendências da fase 5 (render do par HEAT × COMET +12/+9; build normal numa partida jogada, que precisa do
+  computer-use autorizado).
+
+## Fase 7 — Port para o Polygonia (Android)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.
 - Hook: detectar no CPU emulado a entrada de `0x80029D4C` e ler as matrizes da RAM.
 - Desenho: adaptador para o renderizador do DuckStation (Vulkan e OpenGL ES), reaproveitando o núcleo
@@ -230,7 +253,7 @@ O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins
 - Assets gerados no PC a partir do disco do usuário e copiados para o celular; nada do jogo no APK nem no
   repositório público. Medir no aparelho. Estimativa: 4 a 8 sessões depois do PC estável.
 
-## Fase 7 — Abertura (futuro)
+## Fase 8 — Abertura (futuro)
 Ampliar a abertura (STR) por IA offline; falta investigar como trocar o vídeo no runtime.
 
 ## Aprendizados que valem para todas as fases (resumo; detalhes em `notes/remake-visual.md`)

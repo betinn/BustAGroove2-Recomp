@@ -133,8 +133,10 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 
 ## Próximo passo
 - **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fases 0–4 feitas (HEAT,
-  palco, os dois jogadores e o elenco); fase 5 (memória do elenco, os 18 conferidos) feita. Próxima: fase 6
-  (Polygonia), ou o que ficou em `notes/remake-visual.md`, "Limites e o que não deu (fase 5)".
+  palco, os dois jogadores e o elenco); fase 5 (memória do elenco, os 18 conferidos) feita. Próxima: **fase 6, os
+  palcos** (geometria e luz pelo caminho novo e o pacote HD de todos os palcos), decidida para antes do port; depois
+  fase 7 (Polygonia) e 8 (abertura). Pendências da fase 5 em `notes/remake-visual.md`, "Limites e o que não deu
+  (fase 5)".
 - Cobrir mais palcos no pack (dump incremental em partidas com outros personagens; Stage 1 muda por personagem).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
