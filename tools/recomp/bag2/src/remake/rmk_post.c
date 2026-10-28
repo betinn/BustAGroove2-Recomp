@@ -331,26 +331,36 @@ static void pass(RmkPost* p, const Prog* g, PUint src, int sw, int sh, PUint fbo
     p->Uniform2f(g->tx, 1.0f / (float)sw, 1.0f / (float)sh);
 }
 
-void rmk_post_apply(RmkPost* p, const RmkPostFrame* fr, uint32_t fbo, RmkRect r, const int vp[4]) {
-    if (!p || !p->ready || p->failed || !fr || fr->magic != RMK_POST_MAGIC || (fr->flags & RMK_POST_OFF)) return;
-    if (r.w < 64 || r.h < 64 || !ensure_targets(p, r.w, r.h)) return;
+/* Começo comum: alvos no tamanho w x h e o estado fixo dos passos. */
+static int begin(RmkPost* p, const RmkPostFrame* fr, int w, int h) {
+    if (!p || !p->ready || p->failed || !fr || fr->magic != RMK_POST_MAGIC || (fr->flags & RMK_POST_OFF)) return 0;
+    if (w < 64 || h < 64 || !ensure_targets(p, w, h)) return 0;
     p->Disable(P_BLEND);
     p->Disable(P_DEPTH_TEST);
     p->Disable(P_STENCIL_TEST);
     p->Disable(P_CULL_FACE);
     p->Disable(P_SCISSOR_TEST);
     p->ColorMask(1, 1, 1, 1);
-    /* 1. cena */
-    p->BindFramebuffer(P_READ_FRAMEBUFFER, fbo);
+    return 1;
+}
+
+/* Copia w x h de (sx, sy) do FBO `src` para (dx, dy) da textura da cena. */
+static void to_scene(RmkPost* p, uint32_t src, int sx, int sy, int w, int h, int dx, int dy) {
+    if (w <= 0 || h <= 0) return;
+    p->BindFramebuffer(P_READ_FRAMEBUFFER, src);
     p->BindFramebuffer(P_DRAW_FRAMEBUFFER, p->scene_fbo);
-    p->BlitFramebuffer(r.x, r.y, r.x + r.w, r.y + r.h, 0, 0, r.w, r.h, P_COLOR_BUFFER_BIT, P_NEAREST);
+    p->BlitFramebuffer(sx, sy, sx + w, sy + h, dx, dy, dx + w, dy + h, P_COLOR_BUFFER_BIT, P_NEAREST);
+}
+
+/* Brilho em 1/4, descidas e subidas somadas no nível de cima; depois deixa a composição pronta (programa,
+ * texturas 8..10, uniformes menos a origem) e devolve o programa dela. */
+static const Prog* bloom_and_comp(RmkPost* p, const RmkPostFrame* fr) {
     p->BindVertexArray(p->vao);
     const float env = rmk_post_envelope(fr->beat, fr->bar);
     const int bloom = !(fr->flags & RMK_POST_NO_BLOOM) && fr->bloom > 0.0f;
     if (bloom) {
-        /* 2. brilho em 1/4, descidas, subidas somadas no nível de cima */
         const Prog* g = &p->pg[PG_BRIGHT];
-        pass(p, g, p->scene_tex, r.w, r.h, p->lv_fbo[0], p->lw[0], p->lh[0]);
+        pass(p, g, p->scene_tex, p->sw, p->sh, p->lv_fbo[0], p->lw[0], p->lh[0]);
         p->Uniform4f(g->a, fr->thr, fr->knee, fr->satw, 1.0f);
         p->DrawArrays(P_TRIANGLES, 0, 3);
         g = &p->pg[PG_DOWN];
@@ -369,15 +379,8 @@ void rmk_post_apply(RmkPost* p, const RmkPostFrame* fr, uint32_t fbo, RmkRect r,
         }
         p->Disable(P_BLEND);
     }
-    /* 3. composição no retângulo de quem chama */
     const Prog* g = &p->pg[PG_COMP];
-    p->BindFramebuffer(P_FRAMEBUFFER, fbo);
-    p->Viewport(r.x, r.y, r.w, r.h);
     p->ColorMask(1, 1, 1, 0);
-    if (fr->flags & RMK_POST_SPLIT) {
-        p->Enable(P_SCISSOR_TEST);
-        p->Scissor(r.x + r.w / 2, r.y, r.w - r.w / 2, r.h);
-    }
     p->UseProgram(g->prog);
     p->ActiveTexture(P_TEXTURE0 + 8);
     p->BindTexture(P_TEXTURE_2D, p->scene_tex);
@@ -390,15 +393,64 @@ void rmk_post_apply(RmkPost* p, const RmkPostFrame* fr, uint32_t fbo, RmkRect r,
     p->Uniform1i(g->adapt, 10);
     /* os níveis somados chegam a ~LEVELS vezes o brilho: a força é por nível */
     const float strength = bloom ? fr->bloom * (1.0f + fr->pulse * env) / (float)LEVELS : 0.0f;
-    p->Uniform4f(g->a, (float)r.x, (float)r.y, (float)r.w / (float)r.h, 0.0f);
     p->Uniform4f(g->b, strength, (fr->flags & RMK_POST_SHOW_BRIGHT) ? 1.0f : 0.0f,
                  (fr->flags & RMK_POST_NO_GRADE) ? 0.0f : 1.0f, fr->vignette);
     p->Uniform4f(g->c, fr->expo * (1.0f + fr->pulse_expo * env), fr->contrast, fr->sat, fr->adapt);
     p->Uniform3f(g->lo, fr->tint_lo[0], fr->tint_lo[1], fr->tint_lo[2]);
     p->Uniform3f(g->hi, fr->tint_hi[0], fr->tint_hi[1], fr->tint_hi[2]);
+    return g;
+}
+
+/* Composição no FBO `fbo` com a cena inteira mapeada em (vx, vy, sw, sh), só dentro de `clip` (e, com
+ * RMK_POST_SPLIT, só na metade direita da cena). */
+static void comp_draw(RmkPost* p, const Prog* g, const RmkPostFrame* fr, uint32_t fbo, int vx, int vy, RmkRect clip) {
+    int x0 = clip.x, x1 = clip.x + clip.w;
+    if ((fr->flags & RMK_POST_SPLIT) && x0 < vx + p->sw / 2) x0 = vx + p->sw / 2;
+    if (x1 <= x0 || clip.h <= 0) return;
+    p->BindFramebuffer(P_FRAMEBUFFER, fbo);
+    p->Viewport(vx, vy, p->sw, p->sh);
+    p->Enable(P_SCISSOR_TEST);
+    p->Scissor(x0, clip.y, x1 - x0, clip.h);
+    p->Uniform4f(g->a, (float)vx, (float)vy, (float)p->sw / (float)p->sh, 0.0f);
     p->DrawArrays(P_TRIANGLES, 0, 3);
+}
+
+static void end(RmkPost* p, uint32_t fbo, const int vp[4]) {
     p->ColorMask(1, 1, 1, 1);
     p->Disable(P_SCISSOR_TEST);
     p->BindVertexArray(0);
+    p->BindFramebuffer(P_FRAMEBUFFER, fbo);
     p->Viewport(vp[0], vp[1], vp[2], vp[3]);
+}
+
+void rmk_post_apply(RmkPost* p, const RmkPostFrame* fr, uint32_t fbo, RmkRect r, const int vp[4]) {
+    if (!begin(p, fr, r.w, r.h)) return;
+    to_scene(p, fbo, r.x, r.y, r.w, r.h, 0, 0);
+    const Prog* g = bloom_and_comp(p, fr);
+    comp_draw(p, g, fr, fbo, r.x, r.y, r);
+    end(p, fbo, vp);
+}
+
+void rmk_post_apply_wide(RmkPost* p, const RmkPostFrame* fr, uint32_t wide_fbo, RmkRect band, RmkRect c,
+                         uint32_t hr_fbo, RmkRect hr, const int vp[4]) {
+    if (c.w != hr.w || c.h != hr.h || c.x < band.x || c.x + c.w > band.x + band.w) {
+        /* centro fora da faixa ou em outra escala: emenda, processa e devolve (mais cópias, mesmo resultado) */
+        rmk_post_blit(p, hr_fbo, hr, wide_fbo, c, wide_fbo);
+        rmk_post_apply(p, fr, wide_fbo, band, vp);
+        rmk_post_blit(p, wide_fbo, c, hr_fbo, hr, wide_fbo);
+        return;
+    }
+    if (!begin(p, fr, band.w, band.h)) return;
+    const int cx = c.x - band.x, cy = c.y - band.y, rx = c.x + c.w, rw = band.x + band.w - rx;
+    to_scene(p, hr_fbo, hr.x, hr.y, hr.w, hr.h, cx, cy);
+    to_scene(p, wide_fbo, band.x, band.y, cx, band.h, 0, 0);
+    to_scene(p, wide_fbo, rx, band.y, rw, band.h, rx - band.x, 0);
+    const Prog* g = bloom_and_comp(p, fr);
+    RmkRect side = band;
+    side.w = cx;
+    comp_draw(p, g, fr, wide_fbo, band.x, band.y, side);
+    side.x = rx; side.w = rw;
+    comp_draw(p, g, fr, wide_fbo, band.x, band.y, side);
+    comp_draw(p, g, fr, hr_fbo, hr.x - cx, hr.y - cy, hr);
+    end(p, wide_fbo, vp);
 }

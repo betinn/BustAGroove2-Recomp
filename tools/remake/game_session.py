@@ -69,9 +69,16 @@ class Session:
         return self.cmd({'cmd': 'press', 'buttons': mask, 'frames': frames})
 
     def to_match(self):
-        """Rota do bag2perf.py: abertura (~1 min), START, X (modo), X (personagem = HEAT), X."""
+        """Rota do bag2perf.py: abertura (~1 min), START, X (modo), X (personagem = HEAT), X.
+        O jogo grava no cartão o último personagem escolhido e o cursor da seleção começa nele: BAG2_SELECT no
+        ambiente (U/D/L/R) move o cursor antes do X (ex.: BAG2_SELECT=U volta ao HEAT depois de um dump com "D")."""
         self.at(75); self.press(START); self.at(78); self.press(CROSS)
-        self.at(81); self.press(CROSS); self.at(84); self.press(CROSS)
+        self.at(80.5)
+        moves = {'U': 0xFFEF, 'D': 0xFFBF, 'L': 0xFF7F, 'R': 0xFFDF}
+        for c in os.environ.get('BAG2_SELECT', ''):
+            self.press(moves[c]); time.sleep(0.5)
+        self.at(81 + 0.5 * len(os.environ.get('BAG2_SELECT', ''))); self.press(CROSS)
+        self.at(84 + 0.5 * len(os.environ.get('BAG2_SELECT', ''))); self.press(CROSS)
         self.at(100)
 
     def shot(self, path):

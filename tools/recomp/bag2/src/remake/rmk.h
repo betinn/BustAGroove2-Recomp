@@ -166,6 +166,12 @@ int rmk_post_prepare(RmkPost* p);
 /* Processa `r` do FBO `fbo` no lugar (o alfa, bit 15 do PS1, fica intacto). Deixa ligados `fbo` e o viewport
  * `vp`; quem chama restaura o resto (programa, VAO, texturas 8..11, blend, recorte, máscara de cor). */
 void rmk_post_apply(RmkPost* p, const RmkPostFrame* fr, uint32_t fbo, RmkRect r, const int vp[4]);
+/* Tela larga em que o centro vale na outra superfície (`hr` do FBO `hr_fbo`, que cai em `c` da faixa `band` do
+ * FBO `wide_fbo`, mesmo tamanho): a cena sai do centro de lá e das laterais de cá, e a composição escreve o centro
+ * lá e as laterais cá (sem emendar nem devolver o centro: duas cópias de resolução cheia a menos). Deixa ligados
+ * `wide_fbo` e `vp`. */
+void rmk_post_apply_wide(RmkPost* p, const RmkPostFrame* fr, uint32_t wide_fbo, RmkRect band, RmkRect c,
+                         uint32_t hr_fbo, RmkRect hr, const int vp[4]);
 /* Cópia de cor entre FBOs (filtro linear se os tamanhos diferem); deixa `bind` ligado. */
 void rmk_post_blit(RmkPost* p, uint32_t src, RmkRect rs, uint32_t dst, RmkRect rd, uint32_t bind);
 /* Envelope do pulso (0..1) na fase da batida: ataque na batida e queda exponencial; mais forte no 1 do compasso. */

@@ -382,9 +382,12 @@ feitas (pós-efeito, pulso, sombra no chão); geometria do palco e dumps HD dos 
   escuro fica inteiro) e composição: exposição, vibração, curva S, sombras frias e realces quentes, vinheta, bloom por
   "screen", alfa (bit 15 do PS1) intacto. Alvos RGBA8 e RGB10_A2.
 - **Tela larga**: o centro 4:3 só chega à superfície larga na apresentação (`blit_wide_center_from_canonical`).
-  No passo do espelho o callback emenda o centro da superfície canônica, processa a faixa inteira e devolve o centro
-  processado (o halo atravessa a borda do 4:3 sem corte; sem emenda visível nas capturas). Em 4:3 processa no
-  passo 0.
+  No passo do espelho o callback monta a cena com o centro da superfície canônica e as laterais da larga, e a
+  composição escreve o centro de volta na canônica e as laterais na larga (`rmk_post_apply_wide`; o halo atravessa
+  a borda do 4:3 sem corte). A 1ª versão emendava o centro na larga, processava a faixa e devolvia o centro: duas
+  cópias de resolução cheia a mais, 1,06–1,22 ms de GPU por chamada contra 0,86–0,93 ms agora (flag 32 do
+  `stage_post` volta ao caminho antigo para A/B). Em 4:3 processa no passo 0. A área de desenho do jogo tem
+  **512 px** de largura (não 320): na 9x a faixa larga é 6138×2160 (13 Mpx) e o centro 4608×2160.
 - Comando `stage_post "<on> <flags> <bloom> <limiar> <joelho> <peso sem cor> <pulso> <pulso exp.> <exposição>
   <curva> <saturação> <vinheta> <atraso> <frio> <quente> <adaptação>"` (flags: 2 sem bloom, 4 sem graduação,
   8 **metade direita** = A/B no mesmo quadro, 16 mostra o brilho); `stage_stats`. Padrão `3 0,55 0,3 0,1 0,6 0,05 1
@@ -421,10 +424,100 @@ feitas (pós-efeito, pulso, sombra no chão); geometria do palco e dumps HD dos 
   Flag 256 do `heat_mode` volta à sombra do jogo. Geometria e ordem do quadro são feitas uma vez e servem à sombra
   no chão, ao corpo e ao espelho da tela larga (`frame_setup`).
 
+### Regressão (`tools/remake/stage_check.py`)
+- Abertura (FMV), título, menu e seleção: 0 marcadores do palco, captura 1920×1080 (tela cheia) igual ao original.
+- Partida, fim da música e "CONTINUE?": efeito na cena, HUD e textos por cima intactos. De volta ao título: o
+  contador para (0 marcadores novos). A **demonstração do attract** (partida automática KITTY-N × COMET no Sushi
+  Planet) recebe o efeito: é uma partida para o jogo (`0x8008A2C8` != 0). Capturas `chk_*.png`, `chk_grade.png`,
+  `neon_final_ab.png` (Sushi Planet com os parâmetros finais, original × fase 3, ~0,1 s entre as duas).
+- Build normal (`build/`, sem TCP): sobe com o pacote HD ligado (477 substituições) e sem erro no log; não foi
+  conferida por tela nesta sessão (sem acesso de computer-use ao exe).
+
+### Custo do palco hoje (antes do remake dele)
+- Thread do jogo: `dma_hold_stats` em 10 s de partida: 356 caminhadas da OT (o jogo monta a OT a 30 Hz), 2,9 ms
+  e 13,4 mil palavras GP0 por caminhada (~0,22 µs por palavra), 10 % da thread do jogo. Divisão das palavras por
+  origem (3 quadros, `gpu_frame_dump`): outro dançarino 37–39 %, adereços 3D 29 %, sombras 15–17 %, fundo/chão 7 %,
+  outros 5–6 %, HUD 3 %, céu/letreiros 2 %. O palco (adereços + fundo + céu + outros) fica em ~43 % das palavras:
+  ~1,2 ms por OT, ~4 % da thread do jogo.
+- Thread de render: não separável por origem com as ferramentas atuais; pela mesma divisão de primitivas o palco é
+  ~45 % do que a GPU emulada desenha.
+
+### Geometria e luz do palco pelo caminho novo: decisão (peça 4)
+Não feita, com base nos dados acima:
+- Ganho: ~45 % do palco são planos grandes de fundo, chão e céu (FT4 com textura já HD; luz por pixel e Phong não
+  mudam um plano texturizado), o resto são adereços pequenos de cor lisa (G3/G4) longe da câmera. O que mais muda o
+  visual (halo dos neons, cor, sombra macia, pulso) já está nas peças 1–3.
+- Custo de fazer: o formato de malha do overlay do palco (containers 231..245) não está mapeado e seria um por
+  palco; os adereços não passam por `FUN_80029D4C`. Custo de rodar não é problema (o palco é ~4 % da thread do jogo).
+- O que valeria tentar depois (fase 4 ou 6): reflexo dos dançarinos no chão escuro do Sushi Planet pelo caminho do
+  remake (precisa dos dois dançarinos pelo pipeline, senão só o HEAT refletiria).
+
+### Pacote HD na build-debug e remake do HEAT com o pacote HD
+- A junção `build-debug/mods/texture-packs/SLUS-01159/replacements` apontava para a pasta antiga `BustAGroove2Web`
+  (renomeada em 2026-10-24): o log de 103 execuções da build-debug tem "HD textures: filesystem error: cannot create
+  directories: File exists", ou seja, **o pacote HD estava desligado na build-debug** (palco e outro dançarino com as
+  texturas originais) em todas as medições e capturas desde então (fases 1–3). Refeita para
+  `build/mods/texture-packs/SLUS-01159/replacements` em 2026-10-27.
+- Com o pacote HD ligado, o renderizador assume a VRAM nativa (`s_hd_native_authority`) e
+  `psx_mod_texture_banks_supported()` devolve 0. `use_host_path()` exigia os bancos e **o remake do HEAT se
+  desligava sozinho na configuração de jogo** (a `build/` normal). Corrigido: o desenho de host não usa bancos, só o
+  caminho por pacotes da fase 0 precisa deles.
+- Com o pacote HD, a thread de render subia +10/+11 pontos com o pós-efeito. O retângulo do marcador do pós-efeito
+  era a tela inteira (−256..768 × 0..240), e o renderizador marca esse retângulo como sujo na VRAM; com o HD isso
+  pesa. O callback usa a área de desenho do alvo, não o retângulo, então o marcador passou a 1 linha (y 0..1).
+  Números na tabela abaixo.
+
+### Dumps HD dos palcos (peça 5, `tools/remake/stage_dumps.py`)
+- O cartão de memória guarda o último personagem escolhido e o cursor da seleção começa nele;
+  `BAG2_SELECT` (U/D/L/R) em `game_session.py` move o cursor antes do X. `stage_dumps.py "R|RR|RRR|D"` entra em
+  quatro partidas com outros personagens (o Stage 1 muda por personagem), liga `hd_textures dump=1` ao vivo e sai
+  pelo `quit` (sem matar o processo antes, senão o último lote se perde): 89 + 2 + 3 + 64 = 158 dumps.
+  `tools/hd_textures.py --filter esrgan` (incremental): 14 nomes novos, 9 texturas novas ampliadas (o resto já
+  estava no pacote como recorte de outra). O cartão do usuário ficou com outro personagem escolhido no fim dos dumps
+  e foi devolvido ao HEAT pela própria seleção (`BAG2_SELECT`).
+
 ### Desempenho (fase 3)
 Build-debug, RTX 3070 Ti, 9x + 16:9, `game_perf.py` (variante = `heat_mode;stage_post`), 60 s por janela, 2 janelas
 por partida, ordem trocada entre sessões. Base = estado do 78a887f (remake do HEAT, palco original): `"1 4 0.6 0.25
 258;0"`. Tudo = `"1 4 0.6 0.25 2;1 0"`.
+
+**Com o pacote HD** (configuração de jogo; logs `perf_hdA..I.txt`). hdA..C antes de reduzir o retângulo do
+marcador, hdD..F depois, hdI com o caminho novo da tela larga:
+
+| sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
+|---|---|---|---|---|---|
+| hdA / 1ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 33 % (máx. 45) | 0 |
+| hdA / 2ª | tudo | 59,9 (mín. 59,9) | 40 % (máx. 41) | 43 % (máx. 53) | 0 |
+| hdB / 1ª | tudo | 59,9 (mín. 59,9) | 39 % (máx. 41) | 43 % (máx. 53) | 0 |
+| hdB / 2ª | base | 59,9 (mín. 59,9) | 41 % (máx. 47) | 32 % (máx. 42) | 0 |
+| hdC / 1ª | modo 6 (4 HEATs) + tudo | 59,9 (mín. 59,9) | 40 % (máx. 42) | 47 % (máx. 51) | 0 |
+| hdC / 2ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 31 % (máx. 45) | 0 |
+| hdD / 1ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 35 % (máx. 51) | 0 |
+| hdD / 2ª | tudo | 59,9 (mín. 59,9) | 39 % (máx. 41) | 42 % (máx. 52) | 0 |
+| hdE / 1ª | tudo | 59,9 (mín. 59,9) | 40 % (máx. 41) | 43 % (máx. 52) | 0 |
+| hdE / 2ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 32 % (máx. 44) | 0 |
+| hdF / 1ª | modo 6 + tudo | 59,9 (mín. 59,9) | 40 % (máx. 42) | 44 % (máx. 52) | 0 |
+| hdF / 2ª | base | 59,9 (mín. 59,9) | 40 % (máx. 42) | 32 % (máx. 44) | 0 |
+| hdI / 1ª | tudo | 59,9 (mín. 59,9) | 40 % (máx. 49) | 43 % (máx. 51) | 0 |
+| hdI / 2ª | base | 59,9 (mín. 59,9) | 41 % (máx. 45) | 32 % (máx. 43) | 0 |
+
+Nenhum segundo abaixo de 59,5, 0 underruns em todas. Thread do jogo: −1 a 0 ponto contra a base (pedido: até +3).
+**Thread de render: +10, +11, +7, +11, +11 pontos (média +10, pedido: até +10): no limite, 3 de 5 sessões 1 ponto
+acima.** Sem o HD (tabela abaixo) era −7/+4. Modo 6 + tudo: 59,9 fps, 0 underruns.
+
+Custo de GPU de cada peça, medido pelos próprios plugins com carimbos `GL_TIMESTAMP` em volta do trabalho
+(`src/gpu_timer.h`, `tools/remake/stage_gpu.py`; 30 chamadas por segundo, uma por quadro do jogo): pós-efeito
+0,86–0,93 ms por chamada (1,06–1,22 ms no caminho antigo com emenda), sombra no chão 0,18–0,23 ms, corpo do HEAT com
+a sombra própria 0,17–0,30 ms. Somado: ~1,1 ms de GPU por quadro do jogo, ~3 % do tempo da GPU. O caminho novo do pós
+tirou 20 % da GPU dele e a thread de render não mudou (hdI = hdA/B), então o resto dos pontos não é GPU do trabalho
+do remake. Suspeita não provada: custo fixo por desenho de host no framework (`hostdraw_save` faz ~12
+`glGetIntegerv` por chamada, e o pós e o chão somam 3 chamadas por quadro com o espelho), que com o driver em modo
+de thread pode virar espera; o teste com o marcador vazio (`stage_post "1 1"`) saiu com ruído da máquina (base a
+49 %) e um A/B na mesma partida (`render_ab`) deriva com a fase da música. `frame_perf` (GL_TIME_ELAPSED do
+framework) mede o intervalo da cena na GPU com as esperas dentro (cena + apresentação dão sempre 16,7 ms) e não
+serve para custo.
+
+**Sem o pacote HD** (junção quebrada, ver acima; medições da 1ª rodada da fase 3, antes da correção do HEAT com HD):
 
 | sessão / janela | variante | fps por segundo | thread do jogo | thread de render | underruns |
 |---|---|---|---|---|---|
@@ -450,11 +543,13 @@ parâmetros da afinação), `u_grade.png` / `v_grade.png` (estúdio, metade dire
 sombra nova, ~0,2 s entre as duas), `fin1..3_ab.png` (palco original x fase 3, estúdio), `palcoA..C.log` (medições).
 
 ### Limites e o que não deu (fase 3)
-- **Geometria e luz do palco pelo caminho novo: não feita.** O palco é ~1100 primitivas por quadro, metade planos
-  grandes de fundo/chão já com textura HD e a outra metade adereços 3D pequenos de cor lisa; o ganho de luz por pixel
-  neles é pequeno perto do bloom e da sombra, e exigiria um exportador do formato do overlay do palco (não mapeado)
-  por palco. Fica para depois da fase 4.
-- **Dumps HD dos outros palcos: não feitos** nesta sessão (o oponente é sorteado; só apareceram COMET e KITTY-N).
+- **Thread de render com o pacote HD no limite** (+10 em média, +11 em 3 de 5 sessões; pedido +10). A GPU do remake
+  é ~1,1 ms por quadro do jogo; a origem do resto não foi provada (ver "Desempenho"). Próximo passo, se precisar:
+  medir o custo fixo de um desenho de host no framework (marcador vazio contra base em sessão limpa) e, se for o
+  `hostdraw_save`, guardar o estado sem `glGetIntegerv` no patch `psxrecomp-host-draw.patch`.
+- **Geometria e luz do palco pelo caminho novo: não feita** (decisão com dados acima). Fica para depois da fase 4.
+- **Dumps HD**: só os Stage 1 de quatro personagens (rotas R, RR, RRR, D) e os palcos que o sorteio do oponente
+  trouxe; os palcos seguintes do modo história (2..8) precisam de partidas vencidas em sequência, não feitas.
 - Ganho visual grande no palco de noite (neons com halo forte, vibração); no estúdio claro é discreto (vibração,
   vinheta, leve brilho no telão, sombra macia).
 - O atraso do som tem incerteza de ±3 quadros entre músicas (ver acima); a verificação objetiva é

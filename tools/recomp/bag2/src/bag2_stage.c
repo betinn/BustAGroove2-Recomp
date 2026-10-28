@@ -4,8 +4,9 @@
  * (patch local psxrecomp-host-draw.patch) no slot 96 da OT, o último da cena; o HUD do jogo fica numa OT de 4
  * entradas pendurada na entrada 0 e sai depois, sem passar pelo efeito. Menus e FMV não têm marcador. O callback, na thread de render, chama o
  * núcleo portátil (src/remake/rmk_post.c): bloom multiescala e graduação de cor. Na tela larga o centro 4:3 só
- * chega à superfície larga na apresentação, então o callback no espelho emenda o centro da superfície canônica,
- * processa a faixa inteira e devolve o centro processado (o bloom atravessa a emenda sem corte).
+ * chega à superfície larga na apresentação, então o callback no espelho monta a cena com o centro da superfície
+ * canônica e as laterais da larga, e a composição escreve o centro na canônica e as laterais na larga (o bloom
+ * atravessa a borda do 4:3 sem corte; rmk_post_apply_wide).
  *
  * Batida: a música é XA, mas o jogo conta o tempo em ticks (0x8005FBB4, 256 por batida; a batida inteira fica em
  * 0x8005FBD8). O ataque do som no SPU sai de +1 a +8 quadros depois da virada do tick conforme a música (medido com
@@ -17,6 +18,7 @@
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
+#include "gpu_timer.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -61,6 +63,9 @@ static volatile double s_us;
 static uint32_t s_hr_fbo;
 static RmkRect s_hr_rect;
 static int s_hr_valid;
+static volatile int s_band_w, s_band_h, s_band_changes;   /* tamanho da faixa (trocas = alvos refeitos) */
+static GpuTimer s_gt;                /* tempo de GPU do pós-efeito por chamada */
+static volatile int s_last_pass, s_last_scale, s_last_fbo, s_last_area[4], s_last_vp[4], s_pass_count[3];
 
 static uint32_t rd32(uint32_t a) { return psx_mod_read_word(a); }
 
@@ -118,8 +123,7 @@ static void post_frame(RmkPostFrame* f) {
     }
 }
 
-/* Marcador no slot POST_SLOT da OT do quadro: tag (1 palavra), NOP "HDR", cabeçalho, RmkPostFrame. O retângulo
- * passa das bordas do 4:3 de propósito: assim o renderizador chama também o espelho da tela larga. */
+/* Marcador no slot POST_SLOT da OT do quadro: tag (1 palavra), NOP "HDR", cabeçalho, RmkPostFrame. */
 static void emit_post(void) {
     static uint32_t buf[MARK_BYTES / 4u];
     if (!s_arena) return;
@@ -132,7 +136,10 @@ static void emit_post(void) {
     h.magic = PSX_MOD_HOST_DRAW_MAGIC;
     h.id = HOST_DRAW_POST;
     h.bytes = (uint32_t)sizeof(RmkPostFrame);
-    h.bbox[0] = -256; h.bbox[1] = 0; h.bbox[2] = 768; h.bbox[3] = 240;
+    /* x passa das bordas do 4:3 (o renderizador chama também o espelho da tela larga); y só 1 linha: o callback
+     * processa a área de desenho inteira, e o retângulo é o que o renderizador marca como sujo na VRAM (com o pacote
+     * HD ativo marcar a tela toda pesa na thread de render: notes/remake-visual.md, Fase 3) */
+    h.bbox[0] = -256; h.bbox[1] = 0; h.bbox[2] = 768; h.bbox[3] = 1;
     RmkPostFrame f;
     post_frame(&f);
     const uint32_t ot = rd32(OT_PTR) - 0x180u + 4u * POST_SLOT;
@@ -179,22 +186,33 @@ static void stage_host_draw(const PSXModHostDrawTarget* t, const void* payload, 
     if (t->pass < 0 || !s_ready || !f || bytes < sizeof *f || f->magic != RMK_POST_MAGIC) return;
     const int wide = (f->flags & 0x80000000u) != 0;
     const int S = t->scale;
+    gt_init(&s_gt, t->get_proc);
+    s_last_pass = t->pass; s_last_scale = S; s_last_fbo = (int)t->fbo;
+    for (int k = 0; k < 4; k++) { s_last_area[k] = t->area[k]; s_last_vp[k] = t->viewport[k]; }
+    if (t->pass >= 0 && t->pass < 2) s_pass_count[t->pass]++;
     const int ax = t->area[0], ay = t->area[1], aw = t->area[2] - t->area[0] + 1, ah = t->area[3] - t->area[1] + 1;
     if (aw <= 0 || ah <= 0) return;
     if (t->pass == 0) {
         s_hr_fbo = t->fbo;
         s_hr_rect.x = ax * S; s_hr_rect.y = ay * S; s_hr_rect.w = aw * S; s_hr_rect.h = ah * S;
         s_hr_valid = 1;
-        if (!wide) rmk_post_apply(s_post, f, t->fbo, s_hr_rect, t->viewport);
+        if (!wide) { gt_begin(&s_gt); rmk_post_apply(s_post, f, t->fbo, s_hr_rect, t->viewport); gt_end(&s_gt); }
     } else if (s_hr_valid) {
         /* superfície larga: x da tela = (x da VRAM + x_off) * escala; o centro ainda é o do quadro anterior */
         RmkRect c, band;
         c.x = (int)lrintf(((float)ax + t->x_off) * (float)S); c.y = ay * S; c.w = aw * S; c.h = ah * S;
         band.x = t->scissor[0]; band.w = t->scissor[2]; band.y = c.y; band.h = c.h;
         if (band.w < c.w) { band.x = 0; band.w = t->viewport[2]; }
-        rmk_post_blit(s_post, s_hr_fbo, s_hr_rect, t->fbo, c, t->fbo);
-        rmk_post_apply(s_post, f, t->fbo, band, t->viewport);
-        rmk_post_blit(s_post, t->fbo, c, s_hr_fbo, s_hr_rect, t->fbo);
+        if (band.w != s_band_w || band.h != s_band_h) { s_band_w = band.w; s_band_h = band.h; s_band_changes++; }
+        gt_begin(&s_gt);
+        if (s_flags & 32u) {             /* depuração: o caminho antigo (emenda, processa e devolve), para A/B */
+            rmk_post_blit(s_post, s_hr_fbo, s_hr_rect, t->fbo, c, t->fbo);
+            rmk_post_apply(s_post, f, t->fbo, band, t->viewport);
+            rmk_post_blit(s_post, t->fbo, c, s_hr_fbo, s_hr_rect, t->fbo);
+        } else {
+            rmk_post_apply_wide(s_post, f, t->fbo, band, c, s_hr_fbo, s_hr_rect, t->viewport);
+        }
+        gt_end(&s_gt);
         s_hr_valid = 0;
     }
     s_draws++;
@@ -226,8 +244,15 @@ static int stage_stats_cmd(const char* args, char* reply, int cap) {
     static double u0;
     const uint32_t d = s_draws;
     const double u = s_us;
-    snprintf(reply, cap, "draws=%u us_per_draw=%.1f prepares=%u ready=%d failed=%d err=%s", d - d0,
-             d > d0 ? (u - u0) / (double)(d - d0) : 0.0, s_prepares, s_ready, s_failed, s_post ? rmk_post_error(s_post) : "");
+    static uint64_t g_ns0, g_n0;
+    uint64_t g_cnt = 0;
+    const double g_us = gt_take(&s_gt, &g_ns0, &g_n0, &g_cnt);
+    snprintf(reply, cap, "gpu_us=%.0f gpu_n=%llu draws=%u us_per_draw=%.1f prepares=%u ready=%d failed=%d err=%s | ultimo passo=%d escala=%d "
+             "fbo=%d area=%d,%d,%d,%d vp=%d,%d,%d,%d passos0=%d passos1=%d faixa=%dx%d trocas=%d", g_us, (unsigned long long)g_cnt, d - d0,
+             d > d0 ? (u - u0) / (double)(d - d0) : 0.0, s_prepares, s_ready, s_failed, s_post ? rmk_post_error(s_post) : "",
+             s_last_pass, s_last_scale, s_last_fbo, s_last_area[0], s_last_area[1], s_last_area[2], s_last_area[3],
+             s_last_vp[0], s_last_vp[1], s_last_vp[2], s_last_vp[3], s_pass_count[0], s_pass_count[1], s_band_w, s_band_h,
+             s_band_changes);
     d0 = d; u0 = u;
     return 0;
 }

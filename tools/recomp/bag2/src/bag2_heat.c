@@ -27,6 +27,7 @@
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
+#include "gpu_timer.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -114,6 +115,7 @@ static RmkGL* s_gl;
 static volatile int s_rt_ready, s_rt_failed;
 static volatile double s_rt_us;
 static volatile uint32_t s_rt_draws, s_rt_prepares;
+static GpuTimer s_gt_body, s_gt_floor;   /* tempo de GPU por chamada: corpo (com a sombra própria) e chão */
 static uint32_t s_serial;
 
 static uint32_t rd32(uint32_t a) { return psx_mod_read_word(a); }
@@ -513,8 +515,12 @@ static void heat_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     memcpy(rt.viewport, t->viewport, sizeof rt.viewport);
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     memcpy(rt.bbox, fr->bbox, sizeof rt.bbox);
+    GpuTimer* gt = (fr->flags & RMK_FLAG_FLOOR) ? &s_gt_floor : &s_gt_body;
+    gt_init(gt, t->get_proc);
+    gt_begin(gt);
     if (fr->flags & RMK_FLAG_FLOOR) rmk_gl_draw_floor(s_gl, &A, fr, full, &rt);
     else rmk_gl_draw(s_gl, &A, fr, full, &rt);
+    gt_end(gt);
     s_rt_draws++;
     s_rt_us += now_us() - t0;
 }
@@ -965,7 +971,9 @@ static void force_gesture(uint32_t root) {
     }
 }
 
-static int use_host_path(void) { return !(s_flags & 4) && s_marks && !s_rt_failed && psx_mod_texture_banks_supported(); }
+/* O desenho de host não usa bancos de textura: com o pacote HD ativo o renderizador desliga os bancos
+ * (autoridade de VRAM nativa) e o caminho por pacotes deixa de existir, mas o de host continua. */
+static int use_host_path(void) { return !(s_flags & 4) && s_marks && !s_rt_failed; }
 
 static int heat_filter(struct CPUState* cpu, uint32_t address) {
     (void)address;
@@ -1144,8 +1152,11 @@ static int heat_stats_cmd(const char* args, char* reply, int cap) {
     const double u = s_rt_us;
     uint64_t m = 0, k = 0;
     const uint64_t c = gl_renderer_host_draw_stats(&m, &k);
-    snprintf(reply, cap, "rt_draws=%u rt_us_per_draw=%.1f gl_calls=%llu gl_mirrors=%llu gl_skipped=%llu rt_prepares=%u "
-             "rt_ready=%d rt_failed=%d err=%s", d - d0, d > d0 ? (u - u0) / (double)(d - d0) : 0.0,
+    static uint64_t b_ns, b_n, f_ns, f_n;
+    uint64_t bc = 0, fc = 0;
+    const double bu = gt_take(&s_gt_body, &b_ns, &b_n, &bc), fu = gt_take(&s_gt_floor, &f_ns, &f_n, &fc);
+    snprintf(reply, cap, "gpu_corpo_us=%.0f (%llu) gpu_chao_us=%.0f (%llu) rt_draws=%u rt_us_per_draw=%.1f gl_calls=%llu gl_mirrors=%llu gl_skipped=%llu rt_prepares=%u "
+             "rt_ready=%d rt_failed=%d err=%s", bu, (unsigned long long)bc, fu, (unsigned long long)fc, d - d0, d > d0 ? (u - u0) / (double)(d - d0) : 0.0,
              (unsigned long long)(c - c0), (unsigned long long)(m - m0), (unsigned long long)(k - k0), s_rt_prepares,
              s_rt_ready, s_rt_failed, s_gl ? rmk_gl_error(s_gl) : "");
     d0 = d; u0 = u; c0 = c; m0 = m; k0 = k;
