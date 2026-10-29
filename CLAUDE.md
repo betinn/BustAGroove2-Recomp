@@ -146,7 +146,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `stage_geo` desliga); 241 e 245 pelo índice do palco (byte `0x8005FB56`, `BAG2_STAGE_IDX` no `game_session.py`,
   `stage_hidden.py`; o 245 não tem partida: só o palco por ~55 s); texturas das faces livres fora dos TIMs lidas da VRAM
   (`stage_vram_keys.py` grava em `logs/remake/palcos/vram/`, `export_stage.py` usa); textura animada por retângulo da
-  página (`stage_geo d` lista as marcas) e hash da CLUT na tabela `.stg`; janela de textura (E2h) no shader. Re-exportar
+  página (`stage_geo d` lista as marcas) e hash da CLUT na tabela `.stg`; janela de textura (E2h) no shader; `stage_geo
+  p` diz de onde vêm as faces livres sem par (página/camada, endereço na RAM, nós da OT). Re-exportar
   um palco: `python tools/remake/export_stage.py <container>` (escreve nas duas pastas `mods/remake/`).
 - **Build-debug e o pacote HD**: `build-debug/mods/texture-packs/SLUS-01159/replacements` é uma junção para a pasta
   de `build/`; conferir "HD textures:" no log antes de medir (ficou quebrada de 2026-10-24 a 2026-10-27). Com o HD
@@ -167,7 +168,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   volta de dumps, o Phong nas peças curvas, 241 e 245 no jogo, as texturas da VRAM, a janela de textura e a causa do
   HEAT × COMET (driver, não pixel). 13 palcos a 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a
   +2. Aberto (`notes/remake-visual.md`, "Limites e o que não deu (fase 6b)"): partida na build normal pelo teclado
-  (computer-use negado nas duas rodadas).
+  (computer-use negado nas duas rodadas); cobertura de 65–95 % dos pacotes do palco por quadro (o resto: texturas
+  animadas, efeitos e faces do overlay em 0x8008xxxx/0x800Dxxxx com projeção que o plugin não vê, até ~80 por OT no 233 e no 235).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
 ## Testes de palcos e personagens: usar o modo 2 jogadores

@@ -1335,6 +1335,31 @@ na build-debug).
 - **245** só existe no 2 jogadores como palco sem dançarinos (~55 s); medido em janelas de 20 s.
 - **Texturas animadas** (CLUT ou página trocadas na partida) ficam com o jogo, por decisão (acima); as 8 texturas de
   efeito que aparecem em 5 palcos ou mais também.
+- **Cobertura: o que ainda fica com o jogo** (pacote HD, sem a luz nova), pacotes por OT na janela "tudo" do `perf6d`:
+
+  | palco | trocados | sem par | sem camada | trocados / total |
+  |---|---|---|---|---|
+  | 234 | 253 | 45 | 42 | 74 % |
+  | 233 | 597 | 79 | 9 | 87 % |
+  | 242 | 502 | 23 | 52 | 87 % |
+  | 243 | 423 | 38 | 7 | 90 % |
+  | 232 | 263 | 0 | 141 | 65 % |
+  | 237 | 395 | 11 | 8 | 95 % |
+  | 244 | 294 | 21 | 11 | 90 % |
+  | 235 | 432 | 73 | 10 | 84 % |
+  | 236 | 538 | 28 | 7 | 94 % |
+  | 231 | 172 | 3 | 40 | 80 % |
+  | 238 | 299 | 2 | 41 | 87 % |
+
+  "Sem camada" são as texturas animadas e os efeitos: no 232 as três CLUTs que o jogo copia por MoveImage na partida
+  (008/0A3E, 008/0ABE, 00D/0C3C); no 231 a página que o jogo recarrega (8 retângulos, 00B/0D3F); no 238 só os efeitos
+  da página 0x18. "Sem par" (`stage_geo p`: página e camada, vértices que bateram, endereço na RAM) são faces com textura do próprio
+  palco montadas pelo overlay em `0x80080000..0x80086FFF` (céu e letreiros) e `0x800D0000..0x800D6FFF` (fundo e chão),
+  com vértices que não saem de nenhuma transformação do GTE que o plugin vê: nem as funções da libgte já com gancho,
+  nem o RTPT/RTPS em linha, nem os outros RTPT/RTPS do executável (RotAverage3/4 em 0x8004621C/0x8004627C, o RTPT de
+  0x80047BDC e FUN_80035F60: com gancho de teste em todos, 4 vezes mais vértices e o mesmo número sem par, então o
+  gancho foi desfeito). Provável projeção pela CPU no overlay ou divisão de polígono na tela; fechar isso pede ler o
+  código de cada overlay.
 - **Phong** só nas faces com as três normais dos cantos entre 3° e 45° e arestas até 1200 unidades: as superfícies
   grandes do fundo ficam planas (a silhueta contra o céu não muda). Uma face só ganha Phong quando o nó dela aparece em
   cena (antes disso ela nem é desenhada).

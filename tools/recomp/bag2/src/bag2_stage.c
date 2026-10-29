@@ -318,6 +318,13 @@ static struct { uint32_t ots, runs, pkts, kept, unknown, lines, nopr, semi_flat,
                 double err_sum; uint32_t err_n, err_b[3]; float err_max;
                 float node_err[RMK_MAX_NODES]; uint32_t node_n[RMK_MAX_NODES], dup, overlap, size_bad;
                 uint32_t free_faces, free_verts, free_nomatch, free_miss, free_twin, rtp; } s_gs;   /* estatísticas (stage_geo_stats) */
+/* Pacotes de fora dos nós sem par nos vértices transformados (`stage_geo p`): com textura do palco ou sem textura, e
+ * quantos vértices bateram antes do primeiro que faltou (0 = nenhum: geometria que não passa pelas RTP vistas). */
+static struct { uint32_t tex, flat, hit[4]; } s_nm;
+static struct { uint16_t tpage; uint8_t layer; uint32_t n; } s_nm_tp[24];
+static uint32_t s_nm_ntp;
+static struct { uint32_t page, n; } s_nm_at[16];   /* onde estão na RAM (páginas de 4 KB) */
+static uint32_t s_nm_nat;
 /* Vértices que as funções RTP do executável e o RTPT/RTPS em linha do overlay transformaram para a OT que está sendo
  * montada (o código do overlay monta os pacotes do chão e do fundo com eles): tela (como o GTE: OF + H x / z) ->
  * posição na câmera. Um pacote de fora dos nós cujos vértices batem todos (+-1 pixel) com estes vira face livre do
@@ -862,7 +869,23 @@ static int try_free(uint32_t a, uint32_t len, RmkStagePkt* e, uint32_t* tp, int1
     if ((e->flags & RMK_SPKT_TEX) && e->layer == 0xFFu) { s_gs.free_miss++; return 0; }
     float* out = &s_ff_pos[3u * s_nffv];
     for (int v = 0; v < nv; v++)
-        if (!fv_find(xy[v][0], xy[v][1], &out[3 * v])) { s_gs.free_nomatch++; return 0; }
+        if (!fv_find(xy[v][0], xy[v][1], &out[3 * v])) {
+            s_gs.free_nomatch++;
+            s_nm.hit[v < 3 ? v : 3]++;
+            {
+                uint32_t i = 0;
+                while (i < s_nm_nat && s_nm_at[i].page != (a >> 12)) i++;
+                if (i < s_nm_nat) s_nm_at[i].n++;
+                else if (s_nm_nat < 16u) { s_nm_at[i].page = a >> 12; s_nm_at[i].n = 1; s_nm_nat++; }
+            }
+            if (!(e->flags & RMK_SPKT_TEX)) { s_nm.flat++; return 0; }
+            s_nm.tex++;
+            uint32_t i = 0;
+            while (i < s_nm_ntp && !(s_nm_tp[i].tpage == (*tp & 0x19Fu) && s_nm_tp[i].layer == e->layer)) i++;
+            if (i < s_nm_ntp) s_nm_tp[i].n++;
+            else if (s_nm_ntp < 24u) { s_nm_tp[i].tpage = (uint16_t)(*tp & 0x19Fu); s_nm_tp[i].layer = e->layer; s_nm_tp[i].n = 1; s_nm_ntp++; }
+            return 0;
+        }
     e->prim = (uint16_t)(RMK_SPKT_FREE | s_nffv);
     if (nv == 4) e->flags |= RMK_SPKT_QUAD;
     e->twin = s_twin;
@@ -1258,6 +1281,20 @@ static int stage_geo_cmd(const char* args, char* reply, int cap) {
         for (uint32_t i = 0; i < s_nmiss && n < cap - 32; i++)
             n += snprintf(reply + n, cap - n, " %03X/%04X/%u", s_miss[i].tpage, s_miss[i].clut, s_miss[i].n);
         if (args[1] == 'z') s_nmiss = 0;
+        return 0;
+    }
+    if (args && args[0] == 'p') {   /* faces livres sem par: com textura / sem; vértices que bateram; página/camada/vezes */
+        int n = snprintf(reply, cap, "sem_par: textura=%u sem_textura=%u bateram 0=%u 1=%u 2=%u 3=%u:", s_nm.tex, s_nm.flat,
+                         s_nm.hit[0], s_nm.hit[1], s_nm.hit[2], s_nm.hit[3]);
+        for (uint32_t i = 0; i < s_nm_ntp && n < cap - 32; i++)
+            n += snprintf(reply + n, cap - n, " %03X/%u/%u", s_nm_tp[i].tpage, s_nm_tp[i].layer, s_nm_tp[i].n);
+        n += snprintf(reply + n, cap - n, " | RAM:");
+        for (uint32_t i = 0; i < s_nm_nat && n < cap - 32; i++)
+            n += snprintf(reply + n, cap - n, " %05X000/%u", s_nm_at[i].page, s_nm_at[i].n);
+        n += snprintf(reply + n, cap - n, " | nós na OT %d:", s_nseen);
+        for (int i = 0; i < s_nseen && n < cap - 40; i++)
+            n += snprintf(reply + n, cap - n, " %d:%06X-%06X", s_seen[i].k, s_seen[i].lo & 0xFFFFFFu, s_seen[i].hi & 0xFFFFFFu);
+        if (args[1] == 'z') { memset(&s_nm, 0, sizeof s_nm); s_nm_ntp = 0; s_nm_nat = 0; }
         return 0;
     }
     float v[8];

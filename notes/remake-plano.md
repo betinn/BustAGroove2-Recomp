@@ -38,7 +38,10 @@ já é construído pensando nele (fase 7).
 - Desempenho nos 13 palcos: 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a +2. Memória: até
   1,72 GB de GPU no processo na partida, 692 MB no menu. Regressão sem mudança nos menus e no vídeo.
 - Aberto: a partida na build normal pelo teclado (computer-use negado); a build normal foi recompilada e o palco
-  carrega e descarrega nela (memória de GPU na demonstração automática).
+  carrega e descarrega nela (memória de GPU na demonstração automática). Cobertura: 65–95 % dos pacotes do palco por
+  quadro saem pelo caminho novo; o resto fica com o jogo (pacote HD): texturas animadas, efeitos e faces que o overlay
+  monta em 0x8008xxxx/0x800Dxxxx com vértices de uma projeção que o plugin não vê (até ~80 por OT no 233 e no 235;
+  tabela em `notes/remake-visual.md`, "Limites e o que não deu (fase 6b)").
 
 ## Onde estávamos (fim da primeira volta da fase 6b, 2026-10-28)
 - No 16:9 o palco desenhava duas vezes o centro da tela (superfície canônica e espelho da tela larga, cujo centro a
