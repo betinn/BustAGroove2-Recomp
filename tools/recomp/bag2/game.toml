@@ -47,6 +47,12 @@ discovery = "whole-image"
 # FUN_8001F278 (n vértices) e RotTransPers / RotTransPers3 / RotTransPers4 da libgte (0x800460AC, 0x800460DC,
 # 0x8004619C); o plugin guarda posição e tela de cada vértice e reconhece os pacotes que os usam.
 mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588", "0x800486AC", "0x8001F278", "0x800460AC", "0x800460DC", "0x8004619C"]
+# Fase 6b: RTPT/RTPS em linha no código dos overlays de palco (0x801DB000, um por palco no mesmo endereço; o chão do
+# Sushi Planet e peças de outros palcos não passam pelas funções da libgte). O plugin bag2.stage_remake registra um
+# gancho antes de cada uma com a palavra da instrução; o runtime confere a palavra na RAM, então o endereço de um
+# palco não dispara no código de outro. Mudar a lista = regenerar os overlays estáticos (aot_overlay_pipeline.py
+# static, notes/recomp.md).
+mod_instruction_sites = ["0x801DB2B0", "0x801DB2FC", "0x801DB304", "0x801DB31C", "0x801DB348", "0x801DB354", "0x801DB374", "0x801DB3A0", "0x801DB3BC", "0x801DB3DC", "0x801DB40C", "0x801E0304", "0x801E035C", "0x801E1E0C", "0x801E1E64", "0x801E1ED0", "0x801E2868", "0x801E28C0", "0x801E3440", "0x801E3498"]
 
 [runtime]
 window_title = "Bust A Groove 2 Recompiled"

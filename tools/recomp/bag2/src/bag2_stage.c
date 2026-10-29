@@ -67,6 +67,7 @@ static RmkRect s_hr_rect;
 static int s_hr_valid;
 static volatile int s_band_w, s_band_h, s_band_changes;   /* tamanho da faixa (trocas = alvos refeitos) */
 static GpuTimer s_gt;                /* tempo de GPU do pós-efeito por chamada */
+static GpuTimer s_gt_geo[2];         /* ... da geometria do palco, na superfície canônica e no espelho da tela larga */
 volatile int bag2_gpu_timers;        /* tempo de GPU por peça (gpu_timer.h); desligado por padrão */
 static volatile int s_last_pass, s_last_scale, s_last_fbo, s_last_area[4], s_last_vp[4], s_pass_count[3];
 
@@ -88,6 +89,15 @@ float bag2_stage_reflection(float* fade) {
     const int c = s_cur_container();
     *fade = 650.0f;
     return c == 233 ? 0.42f : c == 235 ? 0.30f : 0.0f;
+}
+
+/* Colunas do espelho da tela larga que a apresentação cobre com a superfície canônica (o desenho de host pode pular;
+ * os dançarinos e o palco usam). Flag 2048 do stage_geo: desenha também o centro (comparação). */
+static uint32_t s_geo_flags;
+void bag2_stage_skip_x(const PSXModHostDrawTarget* t, int skip[2]) {
+    const int on = t->pass == 1 && !(s_geo_flags & 2048u) && t->center_x[1] > t->center_x[0];
+    skip[0] = on ? t->center_x[0] : 0;
+    skip[1] = on ? t->center_x[1] : 0;
 }
 
 /* Pulso do quadro atual (0..1), para a luz do remake do HEAT acompanhar o palco. */
@@ -243,7 +253,9 @@ static void stage_host_draw(const PSXModHostDrawTarget* t, const void* payload, 
  * renderizador chama stage_geo_draw na mesma posição da ordem de desenho. O primeiro marcador do quadro leva as
  * matrizes dos nós e a luz. Pacote que o plugin não conhece (linha, primitiva sem face, semitransparente sem textura)
  * fica com o jogo e corta a sequência. Depois de cada marcador com textura vai um GP0 E1h com a última página, para
- * o estado da GPU seguir como no original. */
+ * o estado da GPU seguir como no original. A geometria do código do overlay entra como faces livres: os vértices que
+ * ele transforma (funções da libgte e, desde a fase 6b, o RTPT/RTPS em linha) são reconhecidos nos pacotes. No espelho
+ * da tela larga só as laterais são desenhadas (o centro vem da superfície canônica na apresentação). */
 #define DRAW_OT_FN 0x800486ACu       /* libgpu DrawOTagEnv(ot, env), chamada pelo laço principal com a OT pronta */
 #define NODE_FILL_FN 0x80029588u     /* FUN_80029588(mesh, buffer, nó + 0x2C, ...) */
 #define STAGE_OVERLAY 0x801DB1B8u
@@ -286,9 +298,10 @@ static int s_cur = -1;               /* palco cujo overlay está na RAM numa par
 static double s_seen_us;             /* último FUN_80029588 de um nó do palco atual (o jogo está desenhando o palco) */
 static uint32_t s_model;             /* modelo do palco atual na RAM (0 = ainda não achado) */
 static int s_geo_on = 1;
-static uint32_t s_geo_flags;         /* RMK_SFLAG_* | 64: confere a posição projetada contra o pacote (estatísticas);
+/* s_geo_flags (declarado antes de bag2_stage_skip_x): RMK_SFLAG_* | 64: confere a posição projetada contra o pacote (estatísticas);
                                         128: só a metade direita da tela (comparação no mesmo quadro);
-                                        512: sem as faces livres (só os nós do modelo); 1024: sem o reflexo no chão */
+                                        512: sem as faces livres (só os nós do modelo); 1024: sem o reflexo no chão;
+                                        2048: o espelho da tela larga desenha também o centro (comparação) */
 static float s_geo_par[8] = {0.55f, 0.9f, 0.35f, 0.6f, 0.55f, 1.0f, 0.45f, 0.6f};
 /* reiluminação, relevo do mapa de normal, especular, oclusão ambiente, sombra dos dançarinos, exposição, rugosidade,
  * pulso (no especular) */
@@ -305,11 +318,12 @@ static struct { uint32_t ots, runs, pkts, kept, unknown, lines, nopr, semi_flat,
                 double err_sum; uint32_t err_n, err_b[3]; float err_max;
                 float node_err[RMK_MAX_NODES]; uint32_t node_n[RMK_MAX_NODES], dup, overlap, size_bad;
                 uint32_t free_faces, free_verts, free_nomatch, free_miss, free_twin, rtp; } s_gs;   /* estatísticas (stage_geo_stats) */
-/* Vértices que as funções RTP do executável transformaram para a OT que está sendo montada (o código do overlay monta
- * os pacotes do chão e do fundo com eles): tela (como o GTE: OF + H x / z) -> posição na câmera. Um pacote de fora dos
- * nós cujos vértices batem todos (+-1 pixel) com estes vira face livre do remake. */
+/* Vértices que as funções RTP do executável e o RTPT/RTPS em linha do overlay transformaram para a OT que está sendo
+ * montada (o código do overlay monta os pacotes do chão e do fundo com eles): tela (como o GTE: OF + H x / z) ->
+ * posição na câmera. Um pacote de fora dos nós cujos vértices batem todos (+-1 pixel) com estes vira face livre do
+ * remake. */
 typedef struct { int16_t sx, sy; uint16_t next, pad; float p[3]; } FreeV;
-#define FV_MAX 4096u
+#define FV_MAX 8192u
 static FreeV s_fv[FV_MAX];
 static uint32_t s_nfv;
 static uint16_t s_fh[4096];          /* cabeça de cada célula (índice + 1) */
@@ -535,11 +549,9 @@ static void fv_reset(void) {
     s_nfv = 0;
 }
 
-/* Um vértice (SVECTOR na RAM) pela matriz que está no GTE, como RTPS faria; guarda posição e tela. */
-static void fv_add(const struct CPUState* cpu, uint32_t v) {
-    if (s_nfv >= FV_MAX || v < 0x80000000u || v >= 0x801FFFF8u) return;
-    const float x = (float)(int16_t)psx_mod_read_half(v), y = (float)(int16_t)psx_mod_read_half(v + 2u);
-    const float z = (float)(int16_t)psx_mod_read_half(v + 4u);
+/* Um vértice pela matriz que está no GTE, como RTPS faria; guarda posição e tela. */
+static void fv_add_xyz(const struct CPUState* cpu, float x, float y, float z) {
+    if (s_nfv >= FV_MAX) return;
     float m[9];
     for (int r = 0; r < 4; r++) { m[2 * r] = (float)(int16_t)cpu->gte_ctrl[r]; m[2 * r + 1] = (float)(int16_t)(cpu->gte_ctrl[r] >> 16); }
     m[8] = (float)(int16_t)cpu->gte_ctrl[4];
@@ -557,6 +569,13 @@ static void fv_add(const struct CPUState* cpu, uint32_t v) {
     s_fh[c] = (uint16_t)(s_nfv + 1u);
     s_nfv++;
     s_gs.rtp++;
+}
+
+/* ... de um SVECTOR na RAM (argumento das funções da libgte) */
+static void fv_add(const struct CPUState* cpu, uint32_t v) {
+    if (v < 0x80000000u || v >= 0x801FFFF8u) return;
+    fv_add_xyz(cpu, (float)(int16_t)psx_mod_read_half(v), (float)(int16_t)psx_mod_read_half(v + 2u),
+               (float)(int16_t)psx_mod_read_half(v + 4u));
 }
 
 static int fv_find(int x, int y, float out[3]) {
@@ -581,6 +600,24 @@ static void geo_rtp(struct CPUState* cpu, uint32_t address) {
     } else {
         const int n = address == RTP_FN ? 1 : address == RTP3_FN ? 3 : 4;
         for (int i = 0; i < n; i++) fv_add(cpu, cpu->gpr[4 + i]);
+    }
+}
+
+/* RTPT/RTPS em linha no código do overlay do palco (o chão do 233 e peças de outros palcos não passam pelas funções da
+ * libgte): gancho antes da instrução ([recompiler] mod_instruction_sites; o runtime confere a palavra na RAM, então
+ * os endereços dos outros overlays de palco não disparam), com os vértices em V0..V2 do GTE. */
+#define RTPT_WORD 0x4A280030u
+#define RTPS_WORD 0x4A180001u
+static const uint32_t RTPT_SITES[] = {0x801E1E0Cu, 0x801E1E64u, 0x801E1ED0u, 0x801E3440u, 0x801E3498u, 0x801DB2FCu,
+                                      0x801DB354u, 0x801DB348u, 0x801DB3A0u, 0x801DB40Cu, 0x801DB2B0u, 0x801DB304u,
+                                      0x801E2868u, 0x801E28C0u, 0x801DB31Cu, 0x801DB374u, 0x801E0304u, 0x801E035Cu};
+static const uint32_t RTPS_SITES[] = {0x801DB3BCu, 0x801DB3DCu};
+static void geo_gte_rtp(struct CPUState* cpu, uint32_t address) {
+    if (!s_fv_rec) return;
+    const int n = psx_mod_read_word(address) == RTPT_WORD ? 3 : 1;
+    for (int i = 0; i < n; i++) {
+        const uint32_t xy = cpu->gte_data[2 * i], z = cpu->gte_data[2 * i + 1];
+        fv_add_xyz(cpu, (float)(int16_t)xy, (float)(int16_t)(xy >> 16), (float)(int16_t)z);
     }
 }
 
@@ -1072,12 +1109,17 @@ static void geo_host_draw(const PSXModHostDrawTarget* t, const void* payload, ui
     memcpy(rt.viewport, t->viewport, sizeof rt.viewport);
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     rt.bbox[0] = rt.bbox[1] = 0.0f; rt.bbox[2] = rt.bbox[3] = 0.0f;
+    bag2_stage_skip_x(t, rt.skip_x);
     RmkShadowView sh[2];
     const int nsh = bag2_heat_shadow_views(sh, 2);
     /* a mesma sequência no espelho da tela larga: a chave (endereço do payload no fluxo não serve) é o primeiro pacote */
     const RmkStagePkt* pk = (const RmkStagePkt*)q;
     const uint32_t key = r->serial * 4096u + (r->n ? pk[0].prim : 0u) * 3u + r->n;
+    GpuTimer* gt = &s_gt_geo[t->pass == 1];
+    gt_init(gt, t->get_proc);
+    gt_begin(gt);
     rmk_stage_gl_draw(s->gl, s->full, &s->t, pk, r->n, key, &rt, sh, nsh);
+    gt_end(gt);
     s_geo_draws++;
     s_geo_us += st_now_us() - t0;
 }
@@ -1096,6 +1138,16 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
     n += snprintf(reply + n, cap - n, " livres: faces=%u vértices=%u sem_par=%u sem_camada=%u janela=%u rtp=%u |",
                   s_gs.free_faces, s_gs.free_verts, s_gs.free_nomatch, s_gs.free_miss, s_gs.free_twin, s_gs.rtp);
     n += snprintf(reply + n, cap - n, " texturas_animadas=%u", s_dyn_n);
+    {   /* tempo de GPU (com gpu_timers 1): por desenho e no total da janela, canônica e espelho */
+        static uint64_t ns0[2], n0[2];
+        for (int k = 0; k < 2; k++) {
+            uint64_t c = 0;
+            const uint64_t a = s_gt_geo[k].ns - ns0[k];
+            const double us = gt_take(&s_gt_geo[k], &ns0[k], &n0[k], &c);
+            n += snprintf(reply + n, cap - n, " gpu%d_us=%.1f gpu%d_n=%llu gpu%d_ms_total=%.0f", k, us, k,
+                          (unsigned long long)c, k, (double)a / 1e6);
+        }
+    }
     n += snprintf(reply + n, cap - n, " dup=%u sobrepostos=%u tamanho_errado=%u nós com erro:", s_gs.dup, s_gs.overlap,
                   s_gs.size_bad);
     for (int k = 0; k < RMK_MAX_NODES && n < cap - 160; k++)
@@ -1113,7 +1165,8 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
 }
 
 /* stage_geo "<on> <flags> <reiluminação> <relevo> <especular> <AO> <sombra> <exposição> <rugosidade> <pulso>";
- * stage_geo "s" = estatísticas ("sz" zera depois). Um comando só: o framework guarda até 16. */
+ * stage_geo "s" = estatísticas ("sz" zera depois; com gpu_timers 1, também o tempo de GPU na superfície canônica e no
+ * espelho da tela larga). Um comando só: o framework guarda até 16. */
 static int stage_geo_cmd(const char* args, char* reply, int cap) {
     if (args && args[0] == 's') return stage_geo_stats_cmd(args + 1, reply, cap);
     if (args && args[0] == 'k') {   /* texturas das faces livres sem camada HD: tpage/clut/vezes */
@@ -1200,5 +1253,9 @@ PSX_MOD_CONSTRUCTOR(bag2_stage_register) {
     (void)psx_mod_register_function_entry_plugin("bag2.stage_remake", RTP_FN, geo_rtp);
     (void)psx_mod_register_function_entry_plugin("bag2.stage_remake", RTP3_FN, geo_rtp);
     (void)psx_mod_register_function_entry_plugin("bag2.stage_remake", RTP4_FN, geo_rtp);
+    for (size_t i = 0; i < sizeof RTPT_SITES / sizeof RTPT_SITES[0]; i++)
+        (void)psx_mod_register_instruction_plugin("bag2.stage_remake", RTPT_SITES[i], RTPT_WORD, geo_gte_rtp);
+    for (size_t i = 0; i < sizeof RTPS_SITES / sizeof RTPS_SITES[0]; i++)
+        (void)psx_mod_register_instruction_plugin("bag2.stage_remake", RTPS_SITES[i], RTPS_WORD, geo_gte_rtp);
     (void)psx_mod_register_host_draw(HOST_DRAW_GEO, geo_host_draw);
 }

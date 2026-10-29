@@ -888,7 +888,12 @@ void rmk_gl_draw_floor(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const fl
     /* penumbra em unidades do mapa: profundidade 0..1 = 2 raios; mínimo ~1,5 texel, máximo = raio da busca */
     g->Uniform4f(g->f_fl, fr->floor_alpha, 0.08f * fr->floor_soft, 1.5f / SHADOW_SIZE, 0.01f + 0.025f * fr->floor_soft);
     g->BindVertexArray(g->floor_vao);
-    g->DrawArrays(0x0005 /* GL_TRIANGLE_STRIP */, 0, 4);
+    int rc[2][4];
+    const int nr = rmk_target_rects(t, t->scissor, rc);   /* no espelho da tela larga, só as laterais */
+    for (int q = 0; q < nr; q++) {
+        g->Scissor(rc[q][0], rc[q][1], rc[q][2], rc[q][3]);
+        g->DrawArrays(0x0005 /* GL_TRIANGLE_STRIP */, 0, 4);
+    }
     g->BindVertexArray(0);
     g->BindSampler(12, 0);
     g->BindSampler(13, 0);
@@ -911,6 +916,13 @@ void rmk_gl_draw(RmkGL* g, const RmkAsset* a, const RmkFrame* fr, const float* p
     if (x1 > t->scissor[0] + t->scissor[2]) x1 = t->scissor[0] + t->scissor[2];
     if (y1 > t->scissor[1] + t->scissor[3]) y1 = t->scissor[1] + t->scissor[3];
     if (x1 <= x0 || y1 <= y0) return;
+    {   /* espelho da tela larga: o centro vem da superfície canônica; numa lateral só, o recorte fica nela */
+        const int box[4] = {x0, y0, x1 - x0, y1 - y0};
+        int rc[2][4];
+        const int nr = rmk_target_rects(t, box, rc);
+        if (!nr) return;
+        if (nr == 1) { x0 = rc[0][0]; x1 = rc[0][0] + rc[0][2]; }
+    }
     frame_setup(g, a, fr, pos);   /* o espelho da tela larga reaproveita geometria, ordem e sombra */
     const int new_frame = !g->have_shadow || fr->serial != g->shadow_serial;
     g->Enable(0x0C11 /* GL_SCISSOR_TEST */);

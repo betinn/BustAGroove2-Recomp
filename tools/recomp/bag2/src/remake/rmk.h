@@ -14,6 +14,7 @@
 #define RMK_H
 
 #include <stdint.h>
+#include <string.h>
 
 #define RMK_MAX_NODES 64
 #define RMK_MAX_GROUPS 16            /* grupo 0 = corpo (sempre); 1.. = gestos das mãos */
@@ -156,7 +157,23 @@ typedef struct {
     int viewport[4];                 /* do alvo (pixels) */
     int scissor[4];                  /* recorte do alvo (pixels); a profundidade é limpa só no retângulo */
     float bbox[4];                   /* retângulo do desenho na tela do PS1 */
+    int skip_x[2];                   /* colunas [x0, x1) do alvo que não aparecem (no espelho da tela larga, o centro
+                                        que a apresentação cobre com a superfície canônica); x1 <= x0 = nenhuma */
 } RmkTarget;
+
+/* O retângulo box (x, y, w, h, pixels do alvo) sem as colunas skip_x: até 2 retângulos em r; devolve quantos. */
+static inline int rmk_target_rects(const RmkTarget* t, const int box[4], int r[2][4]) {
+    const int x0 = box[0], x1 = box[0] + box[2];
+    int n = 0;
+    if (box[2] <= 0 || box[3] <= 0) return 0;
+    if (t->skip_x[1] <= t->skip_x[0] || x1 <= t->skip_x[0] || x0 >= t->skip_x[1]) {
+        memcpy(r[0], box, 4 * sizeof(int));
+        return 1;
+    }
+    if (x0 < t->skip_x[0]) { r[n][0] = x0; r[n][1] = box[1]; r[n][2] = t->skip_x[0] - x0; r[n][3] = box[3]; n++; }
+    if (x1 > t->skip_x[1]) { r[n][0] = t->skip_x[1]; r[n][1] = box[1]; r[n][2] = x1 - t->skip_x[1]; r[n][3] = box[3]; n++; }
+    return n;
+}
 
 /* ---- pós-efeito do palco (rmk_post.c, fase 3) ----------------------------------------------------- */
 /* Bloom multiescala e graduação de cor aplicados no meio do quadro, depois da cena e antes do HUD (o adaptador

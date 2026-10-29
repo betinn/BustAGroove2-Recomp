@@ -596,6 +596,7 @@ static void read_stage_light(const struct CPUState* cpu, uint32_t node0, Inst* i
 
 float bag2_stage_pulse(void);
 float bag2_stage_reflection(float* fade);
+void bag2_stage_skip_x(const PSXModHostDrawTarget* t, int skip[2]);
 
 /* Plano do chão (y = 0 do mundo) e direção da sombra do jogo no espaço da câmera: a sombra original é o esqueleto
  * cisalhado para y = 0 ao longo da luz em SHADOW_LIGHT, pela câmera em CAMERA_MATRIX (FUN_8002A46C). A normal fica
@@ -1138,6 +1139,7 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     memcpy(rt.viewport, t->viewport, sizeof rt.viewport);
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     memcpy(rt.bbox, fr->bbox, sizeof rt.bbox);
+    bag2_stage_skip_x(t, rt.skip_x);
     GpuTimer* gt = (fr->flags & RMK_FLAG_FLOOR) ? &s_gt_floor : &s_gt_body;
     gt_init(gt, t->get_proc);
     gt_begin(gt);

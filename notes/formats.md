@@ -170,7 +170,10 @@ endereço do pacote.
 - **Geometria do código do overlay** (chão, vigas, fundos, painéis): pacotes montados pelo próprio overlay, com os
   vértices de `FUN_8001F278(SVECTOR* v, long* sxy, long* sz, int n)` (o chão do 234 é uma grade de 105 vértices),
   `RotTransPers`, `RotTransPers3`, `RotTransPers4` da libgte ou de RTPT/RTPS em linha no overlay (233, 236 e 238 usam
-  mais RTPT em linha e RotTransSV).
+  mais RTPT em linha e RotTransSV). RTPT/RTPS em linha nos overlays de palco (todos carregados em `0x801DB000`; 8 dos 13
+  têm): RTPT (`0x4A280030`) em 0x801DB2B0, 2FC, 304, 31C, 348, 354, 374, 3A0, 40C, 0x801E0304, 035C, 1E0C, 1E64, 1ED0,
+  2868, 28C0, 3440, 3498; RTPS (`0x4A180001`) em 0x801DB3BC e 3DC (o mesmo endereço é outra instrução em outro palco).
+  Os vértices estão em V0..V2 do GTE na hora da instrução, com a matriz e o deslocamento do GTE (RT, TR, OFX, OFY, H).
 - **Envio da OT**: o laço principal (`main`) chama `DrawOTagEnv(ot, env)` (0x800486AC) quando a OT do quadro está pronta
   (30 Hz) e espera o `DrawSync` chamando `rand()`; então o tempo que a GPU emulada leva para andar a OT muda o sorteio
   (peças com movimento aleatório, como a gaiola do 234, divergem entre duas variantes depois de um savestate).

@@ -20,6 +20,9 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
 8. **No jogo, fase 6** (os palcos): os 11 palcos da tela de palco pelo desenho de host, na ordem de pintor do jogo, com
    texturas HD de borda suave, mapa de normal, luz por pixel e a sombra dos dançarinos no cenário; chão e fundos do
    código do overlay reconhecidos pelos vértices transformados; pacote HD de todos os palcos (seção "Fase 6 no jogo").
+9. **No jogo, fase 6b** (pendências dos palcos): espelho do 16:9 só nas laterais, RTPT em linha do overlay (chão do
+   Sushi Planet, asfalto do 236), sombra macia no cenário, leitura da textura presa na face, segunda volta de dumps HD
+   (seção "Fase 6b no jogo").
 
 ## Como reproduzir
 ```
@@ -1141,6 +1144,96 @@ dançarinos) e voltar a 847 MB depois: o palco carrega e descarrega na build nor
 - A segunda volta de dumps HD (para saber se falta textura de algum palco) não foi feita; a primeira cobriu 60 s por
   palco com o voo da câmera.
 - Partida na build normal pelo teclado: não conferida (computer-use negado).
+
+## Fase 6b no jogo: pendências da fase 6 (2026-10-28)
+Pedido: a render do 236 dentro do critério sem perder imagem (prioridade é o upgrade gráfico) e a segunda volta de
+dumps HD. Junto, o que dava para fechar das lacunas da fase 6 sem baixar a qualidade.
+
+### O que mudou
+- **Espelho da tela larga só nas laterais.** No 16:9 o renderizador chama cada desenho de host duas vezes: na
+  superfície canônica (o 4:3 da VRAM) e, se o retângulo passa do 4:3, no espelho da tela larga. Com o centro canônico
+  (`wide_center_is_canonical`, o caso da partida) a apresentação copia o centro 4:3 da canônica por cima do espelho
+  (`wide_blit_center`): tudo o que o espelho desenhava no centro (75 % da largura) era jogado fora, e o palco cobre a
+  tela inteira. O patch do framework passa essas colunas ao plugin (`PSXModHostDrawTarget.center_x`, só no passo 1) e o
+  núcleo recorta (`RmkTarget.skip_x`, `rmk_target_rects`): o palco desenha no espelho só as duas laterais; dançarinos e
+  sombra no chão também, quando o retângulo deles cai numa lateral só. Capturas no mesmo quadro com e sem o recorte
+  (`stage_geo` flag 2048 desenha também o centro): iguais (até 2/255 em ~100 px de 10 milhões). Tempo de GPU do
+  espelho (carimbos GL): 236 0,59 → 0,37 ms por quadro, 233 0,24 → 0,10.
+- **Uma leitura do mapa de normal** por pixel para o STP e o relevo (antes duas, a mesma coordenada).
+- **Sombra dos dançarinos no cenário com 5 leituras** de comparação bilinear (borda de ~3 texels, como a sombra própria
+  deles; na fase 6 tinha ficado uma leitura para segurar a render do 236).
+- **Leitura da textura presa no retângulo de UV da face.** O PS1 lê sem filtro; com o filtro da textura HD (bilinear,
+  mipmaps, anisotrópico) a borda de uma face puxava os texels vizinhos da página: uma junta escura fina entre os
+  ladrilhos do chão do Sushi Planet. O shader prende a coordenada nos centros dos texels dos cantos da face.
+- **RTPT/RTPS em linha no código do overlay** (o chão do Sushi Planet, o asfalto do 236, peças de outros palcos): esse código não chama a libgte, então os ganchos de função da fase 6 não viam os vértices. Agora são 20
+  endereços em `[recompiler] mod_instruction_sites` do `game.toml` (18 RTPT e 2 RTPS, nos 8 dos 13 overlays de palco
+  que os têm, todos em `0x801DB000`); os overlays estáticos foram regenerados (`aot_overlay_pipeline.py static`, mesmo
+  recompilador: só os 13 de palco mudaram, e só com as chamadas do gancho). O plugin registra um gancho de instrução por
+  endereço com a palavra da instrução (o runtime confere a palavra na RAM, então o endereço de um palco não dispara no
+  código de outro) e guarda posição e tela dos vértices de V0..V2, como faz com as funções. Faces livres por OT: 233
+  0 → ~115 (o chão inteiro), 236 36 → ~175; pacotes sem par: 233 186 → ~80, 236 113 → ~29. `stage_keys.py` de novo:
+  chaves novas em 7 palcos, mas só o 238 ganhou camadas (15 → 19); as outras são texturas de fora dos TIMs do palco e
+  ficam com o pacote HD do jogo.
+- **Medição pelo tempo de GPU**: `stage_geo s` com `gpu_timers 1` dá o tempo de GPU de cada desenho do palco, separado
+  entre canônica e espelho; `tools/remake/stage_gpu_ab.py` alterna variantes em janelas curtas na mesma partida. O palco
+  inteiro custa menos de 1 ms de GPU por quadro no 236 (0,5 na canônica, 0,37 no espelho). O `render_busy` do
+  `game_perf.py` varia uns 5 pontos entre janelas de 60 s da mesma variante (o fim da música pesa mais; recorte ligado ×
+  desligado em duas sessões deu −5 numa ordem e +7 na outra): ele decide o critério, mas não mede diferença pequena.
+
+### Desempenho (`stage_perf.py ... perf6b`, `logs/remake/palcos/perf6b.txt`)
+Mesma medição da fase 6 (build-debug, RTX 3070 Ti, 9x + 16:9, pacote HD, HEAT × COMET, uma sessão por palco, duas
+janelas de 60 s com a ordem trocada de um palco para o outro; base = `stage_geo 0`, tudo = `stage_geo 1`).
+
+| pos. | palco | ordem | base: fps (mín.) | jogo | render (máx.) | tudo: fps (mín.) | jogo | render (máx.) | Δ jogo | Δ render | underruns |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 234 | base primeiro | 59,9 (59,9) | 34 % | 42 % (57) | 59,9 (59,9) | 31 % | 36 % (47) | −3 | −6 | 0/0 |
+| 1 | 233 | tudo primeiro | 59,9 (59,9) | 34 % | 38 % (54) | 59,9 (59,9) | 32 % | 26 % (47) | −2 | −12 | 0/0 |
+| 2 | 242 | base primeiro | 59,9 (59,9) | 37 % | 38 % (53) | 59,9 (59,9) | 32 % | 26 % (44) | −5 | −12 | 0/0 |
+| 3 | 243 | tudo primeiro | 59,9 (59,9) | 32 % | 37 % (47) | 59,9 (59,9) | 29 % | 39 % (46) | −3 | +2 | 0/0 |
+| 4 | 232 | base primeiro | 59,9 (59,9) | 31 % | 46 % (51) | 59,9 (59,9) | 29 % | 44 % (50) | −2 | −2 | 0/0 |
+| 5 | 237 | tudo primeiro | 59,9 (59,9) | 32 % | 44 % (50) | 59,9 (59,9) | 28 % | 45 % (48) | −4 | +1 | 0/0 |
+| 6 | 244 | base primeiro | 59,9 (59,9) | 31 % | 44 % (52) | 59,9 (59,9) | 27 % | 40 % (49) | −4 | −4 | 0/0 |
+| 7 | 235 | tudo primeiro | 59,9 (59,9) | 32 % | 39 % (44) | 59,9 (59,9) | 30 % | 36 % (46) | −2 | −3 | 0/0 |
+| 8 | 236 | base primeiro | 59,9 (59,9) | 33 % | 39 % (50) | 59,9 (59,9) | 28 % | 43 % (48) | −5 | +4 | 0/0 |
+| 9 | 231 | tudo primeiro | 59,9 (59,9) | 31 % | 47 % (52) | 59,9 (59,9) | 30 % | 42 % (47) | −1 | −5 | 0/0 |
+| 10 | 238 | base primeiro | 59,9 (59,9) | 31 % | 37 % (49) | 59,9 (59,9) | 29 % | 37 % (46) | −2 | 0 | 0/0 |
+
+Nenhum segundo abaixo de 59,5, 0 underruns. Jogo −1 a −5 em todos (o gancho de instrução e os vértices a mais não
+aparecem: a GPU emulada anda ainda menos pacotes). Render −12 a +4; o 236, na ordem que na fase 6 deu +11 (base
+primeiro, a tudo no fim da música, que pesa mais), deu +4. Antes desta tabela, só com o recorte (sem o RTPT em
+linha), duas sessões do 236: −2 (base primeiro) e +4 (tudo primeiro), média +1 (`perf7.txt`).
+
+### Segunda volta de dumps HD (`tools/remake/stage_dump2.py`, `logs/remake/palcos/dump2.txt`)
+Uma sessão, os 11 palcos, a música quase inteira em cada um (145 s depois da carga), dump ao vivo ligado: 104 PNG
+novos (a primeira volta, 60 s por palco, deu 562). `tools/hd_textures.py --filter esrgan` incremental: 59 texturas novas
+(466 já existiam, 299 recortes redundantes); o pacote foi de 564 para **620 substituições**. Do palco 4 em diante o P1
+não foi o HEAT (o cursor da seleção começa no último personagem do cartão e, com os 18 liberados, a grade muda): STRIKE,
+HIRO, ROBO-Z GOLD e CHICHI&SALLY; parte dos dumps novos pode ser deles (efeitos de dança), não do palco. Cartões
+devolvidos pela sessão (md5 igual ao do começo).
+
+### Limites e o que não deu (fase 6b)
+- **Pendência HEAT × COMET** (render +9/+10 com o palco original): o carimbo de GPU do corpo não separa trabalho da
+  GPU de espera pela CPU. Corpo só do HEAT 1,4 % do tempo; os dois 8,9 % com o palco original e 1,9 % com o palco novo:
+  quando a GPU tem folga, o intervalo entre os dois carimbos inclui o tempo até os comandos chegarem. A causa continua
+  sem confirmação; na configuração do jogo (os dois remakes e o palco novo) a render fica abaixo da base.
+- **Texturas das faces novas** que não são dos TIMs do palco (chaves novas em 7 palcos; só o 238 ganhou camadas): ficam
+  com o pacote HD do jogo, sem a luz nova. Texturas com janela de textura (E2h, 238): com o jogo.
+- **Phong nos adereços**: não feito. Offline (`export_stage.py` + `smooth_normals`), 49–93 % das faces de cada palco
+  ficam numa superfície suave (desvio das normais dos cantos de 4° a 40°, média 22–29°): com Phong essas faces incham
+  (num chão grande com normais tortas o deslocamento seria de dezenas de unidades) e, sem profundidade, a ordem de
+  pintor erraria onde a face inchada cruza outra. Precisa escolher as superfícies (só peças curvas de verdade) antes.
+- **Partida na build normal pelo teclado**: não conferida (usuário fora do PC; computer-use não pedido). A build normal
+  foi recompilada com o código final.
+- 241 e 245 continuam fora da tela de palco (não conferidos); texturas animadas continuam com o jogo. Na montagem final
+  (`palcos_ab.png`, `palco_<pos>_ab.png`) o 235 e o 238 mostram luzes e telão diferentes entre original e remake: são
+  texturas animadas (com o jogo nas duas variantes) e o sorteio diverge depois do savestate; numa segunda captura do
+  235 as duas variantes batem (`z07.png`).
+- O tempo de GPU por carimbo vale como limite de cima (inclui espera), o que basta para o palco (menos de 1 ms por
+  quadro) e para comparar variantes alternadas na mesma partida.
+- **Um travamento** (build-debug, `stage_geo_pause.py`): logo depois de carregar um savestate no 234 com `stage_geo 0`,
+  o quadro caiu para 24 fps e o jogo parou de responder (o servidor TCP também). A mesma sessão repetida passou nos 11
+  palcos; as outras sessões desta fase (mais de 50 partidas) não travaram. Junto do crash "out of GPU memory" da NVIDIA
+  visto uma vez na fase 6, fica como ocorrência não reproduzida.
 
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos

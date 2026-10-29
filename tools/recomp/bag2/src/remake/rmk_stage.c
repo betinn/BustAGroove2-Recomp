@@ -125,6 +125,7 @@ static const char* VS =
     "layout(location = 10) in vec2 a_lm;\n"
     "out vec3 v_pos; out vec3 v_nrm; out vec3 v_base; out vec3 v_over; out vec2 v_uv; out float v_ao;\n"
     "flat out int v_layer; flat out int v_mode;\n"
+    "flat out vec4 v_uvr;   /* retângulo de UV da face (centros dos texels dos cantos) */\n"
     "vec4 geo(uint i) { int k = int(i); return texelFetch(u_geo, ivec2(k % u_geo_w, k / u_geo_w), 0); }\n"
     "void main() {\n"
     "  vec3 b = a_bary;\n"
@@ -134,6 +135,7 @@ static const char* VS =
     "  v_base = a_base0.rgb * b.x + a_base1.rgb * b.y + a_base2.rgb * b.z;\n"
     "  v_over = (a_over0.rgb * b.x + a_over1.rgb * b.y + a_over2.rgb * b.z) * (255.0 / 128.0);\n"
     "  v_uv = (a_uv01.xy * b.x + a_uv01.zw * b.y + a_uv2 * b.z + 0.5) / 256.0;\n"
+    "  v_uvr = vec4(min(min(a_uv01.xy, a_uv01.zw), a_uv2) + 0.5, max(max(a_uv01.xy, a_uv01.zw), a_uv2) + 0.5) / 256.0;\n"
     "  v_layer = int(floor(a_lm.x + 0.5)); v_mode = int(floor(a_lm.y + 0.5));\n"
     "  /* tela * z, sem dividir: o GL recorta em w = z > 0 (vértice atrás da câmera numa face que o jogo desenhou) */\n"
     "  vec2 sz = u_proj.xy * p.z + u_proj.z * p.xy;\n"
@@ -158,6 +160,7 @@ static const char* FS =
     "uniform vec4 u_floor;  /* normal do chão (câmera) e 1 = a sombra macia no chão já sai (o chão fica sem esta) */\n"
     "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao;\n"
     "flat in int v_layer; flat in int v_mode;\n"
+    "flat in vec4 v_uvr;\n"
     "layout(location = 0) out vec4 frag;\n"
     "vec3 perturb(vec3 n, vec3 p, vec2 uv, vec3 t) {\n"
     "  vec3 dp1 = dFdx(p), dp2 = dFdy(p); vec2 du1 = dFdx(uv), du2 = dFdy(uv);\n"
@@ -174,7 +177,12 @@ static const char* FS =
     "  vec3 r = v_pos - c.xyz;\n"
     "  vec3 q = vec3(dot(r, u), dot(r, v), dot(r, d)) * c.w * 0.5 + 0.5;\n"
     "  if (q.z < 0.02 || any(lessThan(q.xy, vec2(0.0))) || any(greaterThan(q.xy, vec2(1.0)))) return 1.0;\n"
-    "  float s = texture(sm, vec3(q.xy, min(q.z - 0.01, 0.995)));   /* uma leitura: PCF bilinear do hardware */\n"
+    "  /* 5 leituras com comparação bilinear (como a sombra própria dos dançarinos): borda macia de ~3 texels */\n"
+    "  vec3 o = vec3(q.xy, min(q.z - 0.01, 0.995));\n"
+    "  float k = 1.5 / 1024.0, s = texture(sm, o) * 2.0;\n"
+    "  s += texture(sm, o + vec3(k, k, 0.0)) + texture(sm, o + vec3(-k, k, 0.0));\n"
+    "  s += texture(sm, o + vec3(k, -k, 0.0)) + texture(sm, o + vec3(-k, -k, 0.0));\n"
+    "  s /= 6.0;\n"
     "  vec2 e = min(q.xy, 1.0 - q.xy);\n"
     "  return mix(1.0, s, smoothstep(0.0, 0.05, min(e.x, e.y)));\n"
     "}\n"
@@ -184,10 +192,14 @@ static const char* FS =
     "  float tex_a = 0.0, cover = 1.0;\n"
     "  bool stp = (v_mode & 256) != 0;\n"
     "  vec2 gx = dFdx(v_uv), gy = dFdy(v_uv);\n"
+    "  vec4 nm = vec4(0.5, 0.5, 1.0, 1.0);   /* mapa de normal (xyz) e STP (a): uma leitura para os dois */\n"
     "  if (md > 0 && v_layer >= 0) {\n"
-    "    vec4 t = textureGrad(u_tex, vec3(v_uv, float(v_layer)), gx, gy);\n"
-    "    float st = textureGrad(u_nmap, vec3(v_uv, float(v_layer)), gx, gy).a;\n"
-    "    stp = stp && st > 0.5;\n"
+    "    /* o PS1 lê sem filtro: com o filtro da textura HD a borda da face puxaria os texels vizinhos da página (a\n"
+    "       junta escura entre ladrilhos); a leitura fica no retângulo de UV da face */\n"
+    "    vec3 uc = vec3(clamp(v_uv, v_uvr.xy, v_uvr.zw), float(v_layer));\n"
+    "    vec4 t = textureGrad(u_tex, uc, gx, gy);\n"
+    "    nm = textureGrad(u_nmap, uc, gx, gy);\n"
+    "    stp = stp && nm.a > 0.5;\n"
     "    /* alfa = campo suave de cobertura (borda em 0,5): borda com antisserrilhado, misturada na ordem de pintor */\n"
     "    float fw = max(fwidth(t.a), 1e-3) * 0.75;\n"
     "    float cv = smoothstep(0.5 - fw, 0.5 + fw, t.a);\n"
@@ -200,10 +212,7 @@ static const char* FS =
     "  vec3 n0 = normalize(v_nrm);\n"
     "  if (dot(n0, v) < 0.0) n0 = -n0;\n"
     "  vec3 n = n0;\n"
-    "  if (tex_a > 0.5 && u_nmap_on > 0.5 && (v_mode & 4) == 0) {\n"
-    "    vec3 t = textureGrad(u_nmap, vec3(v_uv, float(v_layer)), gx, gy).xyz * 2.0 - 1.0;\n"
-    "    n = perturb(n0, v_pos, v_uv, t);\n"
-    "  }\n"
+    "  if (tex_a > 0.5 && u_nmap_on > 0.5 && (v_mode & 4) == 0) n = perturb(n0, v_pos, v_uv, nm.xyz * 2.0 - 1.0);\n"
     "  vec3 Ig = u_bk, In = u_bk, Ir = u_bk, sp = vec3(0.0);\n"
     "  float a = u_w2.w * u_w2.w;\n"
     "  for (int i = 0; i < 3; i++) {\n"
@@ -666,27 +675,33 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
     }
     g->Uniform1i(g->u_nsh, ns);
     g->BindVertexArray(g->vao);
-    /* grupos seguidos com a mesma mistura, na ordem; a face semi sai em dois passos (texels opacos, depois os com STP) */
+    /* grupos seguidos com a mesma mistura, na ordem; a face semi sai em dois passos (texels opacos, depois os com STP).
+     * No espelho da tela larga só as laterais (o centro vem da superfície canônica na apresentação). */
     const uint8_t* sg = g->seg + g->run_first;
-    uint32_t i = 0;
-    while (i < g->run_n) {
-        uint32_t j = i + 1;
-        while (j < g->run_n && sg[j] == sg[i]) j++;
-        inst_attribs(g, g->run_first + i);
-        if (!sg[i]) {
-            opaque_blend(g);
-            g->Uniform1i(g->u_semi, -1);
-            g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
-        } else {
-            opaque_blend(g);
-            g->Uniform1i(g->u_semi, 0);
-            g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
-            set_blend(g, sg[i] - 1u);
-            g->ColorMask(1, 1, 1, 0);
-            g->Uniform1i(g->u_semi, 1);
-            g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
+    int rc[2][4];
+    const int nrc = rmk_target_rects(t, t->scissor, rc);
+    for (int q = 0; q < nrc; q++) {
+        g->Scissor(rc[q][0], rc[q][1], rc[q][2], rc[q][3]);
+        uint32_t i = 0;
+        while (i < g->run_n) {
+            uint32_t j = i + 1;
+            while (j < g->run_n && sg[j] == sg[i]) j++;
+            inst_attribs(g, g->run_first + i);
+            if (!sg[i]) {
+                opaque_blend(g);
+                g->Uniform1i(g->u_semi, -1);
+                g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
+            } else {
+                opaque_blend(g);
+                g->Uniform1i(g->u_semi, 0);
+                g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
+                set_blend(g, sg[i] - 1u);
+                g->ColorMask(1, 1, 1, 0);
+                g->Uniform1i(g->u_semi, 1);
+                g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
+            }
+            i = j;
         }
-        i = j;
     }
     inst_attribs(g, 0);
     g->Disable(R_BLEND);

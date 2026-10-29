@@ -6,9 +6,12 @@
 # 2026-10-27 (fase 3): o desenho de host não lê estado de volta (sem glGetIntegerv: com o driver da NVIDIA em
 # modo de thread cada um esperava a fila do driver, 1,5-1,9 ms por desenho de host) e mede o tempo de parede de
 # cada parte (gl_renderer_host_draw_times).
+# 2026-10-28 (fase 6b): PSXModHostDrawTarget.center_x no espelho da tela larga (as colunas que a apresentação
+# cobre com a superfície canônica): o plugin desenha só as laterais. Patch regenerado contra o código com os dois
+# patches anteriores aplicados (sem pares -/+ que só mudavam o fim de linha).
 --- a/runtime/include/gpu_gl_renderer.h
 +++ b/runtime/include/gpu_gl_renderer.h
-@@ -26,6 +26,12 @@ int gl_renderer_select_texture_bank(uint16_t id);
+@@ -26,6 +26,12 @@
  /* Retain texture indices while sampling current guest CLUTs (fades/animation). */
  int gl_renderer_select_texture_bank_live_clut(uint16_t id);
  int gl_renderer_texture_banks_supported(void);
@@ -23,7 +26,7 @@
  void gl_renderer_set_hd_texture_mode(int enabled);
 --- a/runtime/include/mod_plugins.h
 +++ b/runtime/include/mod_plugins.h
-@@ -184,6 +184,48 @@ void psx_mod_set_texture_bank_batching(int enabled);
+@@ -184,6 +184,50 @@
   * precise perspective rendering without transient host-pointer side tables.
   * Allocate during activation; do not mix stock game packets into this arena. */
  uint32_t psx_mod_alloc_texture_packet_memory(uint32_t size, uint32_t alignment);
@@ -60,6 +63,8 @@
 +    uint16_t flags;          /* do cabeçalho */
 +    uint16_t alpha_is_mask;  /* 1: o alfa da cor é o bit 15 do PS1 (escrever 0 em pixel opaco comum) */
 +    void* (*get_proc)(const char* name);   /* carregador de funções GL */
++    int32_t  center_x[2];    /* pass 1: colunas [x0, x1) do alvo (pixels de host) que a apresentação cobre com a
++                                superfície canônica (o centro 4:3); desenhar nelas não aparece. x1 <= x0 = nenhuma */
 +} PSXModHostDrawTarget;
 +/* Roda na thread que tem o contexto GL (a de render, ou a do jogo num ponto de sincronia). Depois dele o
 + * renderizador volta aos padrões que supõe (programa 0, VAO 0, ARRAY_BUFFER 0, unidade de textura 0 ativa,
@@ -74,7 +79,7 @@
  uint16_t psx_mod_read_half(uint32_t address);
 --- a/runtime/include/mod_texture_banks.h
 +++ b/runtime/include/mod_texture_banks.h
-@@ -7,6 +7,12 @@ const uint16_t* mod_texture_bank_pixels(uint16_t id, uint32_t* width, uint32_t*
+@@ -7,6 +7,12 @@
  uint16_t mod_texture_packet_bank(uint32_t source, const uint32_t* words, uint32_t count);
  int mod_texture_packet_precision(uint32_t source, float q[3], float xy[6]);
  int mod_texture_bank_batchable(int immutable, int mask_check, int semi);
@@ -89,7 +94,7 @@
  #endif
 --- a/runtime/src/gpu.c
 +++ b/runtime/src/gpu.c
-@@ -6080,6 +6080,11 @@ static void gp0_exec_textured_16x16(void) {
+@@ -6080,6 +6080,11 @@
  
  static void gp0_exec_nop(void) {
      /* 0x00 / 0x01 — nothing to do */
@@ -103,19 +108,17 @@
  static void gp0_exec_fill_rect(void) {
 --- a/runtime/src/gpu_gl_renderer.c
 +++ b/runtime/src/gpu_gl_renderer.c
-@@ -469,8 +469,9 @@ enum {
-     RTH_WIDE_DISABLE, RTH_WIDE_CLEAR, RTH_WIDE_CLEAR_MARGINS, RTH_PROJ_TRI,
+@@ -470,7 +470,8 @@
      RTH_WIDE_RECOVERY, RTH_INTERP_SUSPENDED, RTH_PRESENT_VRAM,
      RTH_PRESENT_WIDE, RTH_STATE, RTH_PEEK, RTH_RING_CAPTURE, RTH_DYN_STEP,
--    RTH_FRAME, RTH_FG_SRC, RTH_DEPTH, RTH_HD_NOTE, RTH_DITHER, RTH_WIDE_FEEDBACK,
+     RTH_FRAME, RTH_FG_SRC, RTH_DEPTH, RTH_HD_NOTE, RTH_DITHER, RTH_WIDE_FEEDBACK,
 -    RTH_BANK   /* bag2: seleção de banco de textura gravada no fluxo (sem sync por pacote) */
-+    RTH_FRAME, RTH_FG_SRC, RTH_DEPTH, RTH_HD_NOTE, RTH_DITHER, RTH_WIDE_FEEDBACK,
 +    RTH_BANK,  /* bag2: seleção de banco de textura gravada no fluxo (sem sync por pacote) */
 +    RTH_HOSTDRAW   /* bag2: desenho de host de um plugin (psxrecomp-host-draw.patch) */
  };
  /* GP0(A0) whose payload gpu.c is still streaming into its array (the
   * facade's vram_upload_open, emulation thread), tracked whatever the HD
-@@ -2353,6 +2354,8 @@ static void apply_psx_blend(int mode) {
+@@ -2353,6 +2354,8 @@
  }
  
  /* ---- hr FBO render-state bracket ---------------------------------------- */
@@ -124,7 +127,7 @@
  static void hr_begin(int clip_to_draw_area) {
      p_glBindFramebuffer(PSXGL_FRAMEBUFFER, s_hr_fbo);
      glViewport(0, 0, VRAM_W * s_hr_scale, VRAM_H * s_hr_scale);
-@@ -2369,6 +2372,8 @@ static void hr_begin(int clip_to_draw_area) {
+@@ -2369,6 +2372,8 @@
          if (sw < 0) sw = 0; if (sh < 0) sh = 0;
          glScissor(ax1 * s_hr_scale, ay1 * s_hr_scale,
                    sw * s_hr_scale, sh * s_hr_scale);
@@ -133,7 +136,7 @@
      }
  }
  static void hr_end(void) {
-@@ -3294,6 +3299,8 @@ static void wide_band_scissor_x(int x, int w) {
+@@ -3294,6 +3299,8 @@
      wide_band_rows(&sy, &sh);
      glEnable(GL_SCISSOR_TEST);
      glScissor(x * s_out_scale, sy * s_out_scale, w * s_out_scale, sh * s_out_scale);
@@ -142,165 +145,7 @@
  }
  static void wide_band_scissor(void) { wide_band_scissor_x(0, g_wide_w); }
  static void wide_target_begin(int dx, GLint uXoff, GLint uXhalf) {
-@@ -6417,10 +6424,10 @@ int gl_renderer_read_display_hires(int x, int y, int w, int h, uint32_t *out,
-                                 cap_px, ow, oh);
- }
- 
--/* bag2 (patch local): a seleção de banco roda na thread que tem o contexto GL. Com a thread de render
-- * ligada, a thread do jogo só grava RTH_BANK; antes cada seleção chamava GL_RT_SYNC, que devolve o
-- * contexto e copia a VRAM inteira de volta, uma vez por pacote. */
--static int glb_select_texture_bank(uint16_t id, int live_clut) {
-+/* bag2 (patch local): a seleção de banco roda na thread que tem o contexto GL. Com a thread de render
-+ * ligada, a thread do jogo só grava RTH_BANK; antes cada seleção chamava GL_RT_SYNC, que devolve o
-+ * contexto e copia a VRAM inteira de volta, uma vez por pacote. */
-+static int glb_select_texture_bank(uint16_t id, int live_clut) {
-     uint32_t width, height;
-     const uint16_t* pixels;
-     GLint alignment, row_length;
-@@ -6451,38 +6458,38 @@ static int glb_select_texture_bank(uint16_t id, int live_clut) {
-         }
-     }
-     s_selected_bank_tex = s_bank_tex[id];
--    s_selected_bank_live_clut = live_clut != 0;
--    return 1;
--}
--
--static int rth_record_mode(void);
--/* Banco já gravado no fluxo (-1 = desconhecido) e volta ao banco 0 pendente. gpu.c seleciona o banco antes
-- * de cada pacote da arena e volta ao 0 depois; gravar as duas coisas por pacote dobrava os registros. A
-- * volta ao 0 só é gravada quando outro desenho vier (rth_rec_ints), e some se o próximo pacote usar o
-- * mesmo banco. */
--static int s_rec_bank = -1, s_rec_bank_live = 0, s_rec_bank_zero_pending = 0;
--static int s_rec_semi = -1;   /* último SEMI gravado (rtb_set_semi_transparency) */
--static int rth_record_bank(uint16_t id, int live_clut) {
--    uint32_t w, h;
--    if (id && (!gl_renderer_texture_banks_supported() || !mod_texture_bank_pixels(id, &w, &h))) return 0;
--    if (!id) { if (s_rec_bank != 0) s_rec_bank_zero_pending = 1; return 1; }
--    s_rec_bank_zero_pending = 0;
--    if (s_rec_bank == (int)id && s_rec_bank_live == live_clut) return 1;
--    RTH_REC(RTH_BANK, 0, (int32_t)id, live_clut);
--    s_rec_bank = id; s_rec_bank_live = live_clut;
-+    s_selected_bank_live_clut = live_clut != 0;
-     return 1;
- }
- 
--int gl_renderer_select_texture_bank(uint16_t id) {
--    if (rth_record_mode()) return rth_record_bank(id, 0);
--    GL_RT_SYNC("select_texture_bank");
--    return glb_select_texture_bank(id, 0);
--}
--
-+static int rth_record_mode(void);
-+/* Banco já gravado no fluxo (-1 = desconhecido) e volta ao banco 0 pendente. gpu.c seleciona o banco antes
-+ * de cada pacote da arena e volta ao 0 depois; gravar as duas coisas por pacote dobrava os registros. A
-+ * volta ao 0 só é gravada quando outro desenho vier (rth_rec_ints), e some se o próximo pacote usar o
-+ * mesmo banco. */
-+static int s_rec_bank = -1, s_rec_bank_live = 0, s_rec_bank_zero_pending = 0;
-+static int s_rec_semi = -1;   /* último SEMI gravado (rtb_set_semi_transparency) */
-+static int rth_record_bank(uint16_t id, int live_clut) {
-+    uint32_t w, h;
-+    if (id && (!gl_renderer_texture_banks_supported() || !mod_texture_bank_pixels(id, &w, &h))) return 0;
-+    if (!id) { if (s_rec_bank != 0) s_rec_bank_zero_pending = 1; return 1; }
-+    s_rec_bank_zero_pending = 0;
-+    if (s_rec_bank == (int)id && s_rec_bank_live == live_clut) return 1;
-+    RTH_REC(RTH_BANK, 0, (int32_t)id, live_clut);
-+    s_rec_bank = id; s_rec_bank_live = live_clut;
-+    return 1;
-+}
-+
-+int gl_renderer_select_texture_bank(uint16_t id) {
-+    if (rth_record_mode()) return rth_record_bank(id, 0);
-+    GL_RT_SYNC("select_texture_bank");
-+    return glb_select_texture_bank(id, 0);
-+}
-+
- int gl_renderer_select_texture_bank_live_clut(uint16_t id) {
--    if (rth_record_mode()) return rth_record_bank(id, 1);
-+    if (rth_record_mode()) return rth_record_bank(id, 1);
-     GL_RT_SYNC("select_texture_bank_live_clut");
--    return glb_select_texture_bank(id, 1);
-+    return glb_select_texture_bank(id, 1);
- }
- 
- int gl_renderer_init_context(SDL_Window *win) {
-@@ -11287,15 +11294,15 @@ static int rth_mirror_wide_present_ok(int base_x) {
- }
- 
- static int rth_rec_ints(uint16_t op, uint16_t flags, int n, const int32_t *v) {
--    if (s_rec_bank_zero_pending && op != RTH_BANK && op != RTH_SEMI && op != RTH_MASK && op != RTH_TWIN &&
--        op != RTH_MOD && op != RTH_PRECISE && op != RTH_PERSP && op != RTH_DEPTH && op != RTH_DITHER &&
--        op != RTH_STATE) {
--        const int32_t z[2] = {0, 0};
--        int32_t *q = (int32_t *)rt_cmd_begin(RTH_BANK, 0, 8u);
--        if (q) { memcpy(q, z, 8u); rt_cmd_commit(); }
--        s_rec_bank = 0; s_rec_bank_live = 0; s_rec_bank_zero_pending = 0;
--    }
--    if (op == RTH_FRAME) { s_rec_bank = -1; s_rec_semi = -1; }   /* bag2: nada de cache entre quadros */
-+    if (s_rec_bank_zero_pending && op != RTH_BANK && op != RTH_SEMI && op != RTH_MASK && op != RTH_TWIN &&
-+        op != RTH_MOD && op != RTH_PRECISE && op != RTH_PERSP && op != RTH_DEPTH && op != RTH_DITHER &&
-+        op != RTH_STATE) {
-+        const int32_t z[2] = {0, 0};
-+        int32_t *q = (int32_t *)rt_cmd_begin(RTH_BANK, 0, 8u);
-+        if (q) { memcpy(q, z, 8u); rt_cmd_commit(); }
-+        s_rec_bank = 0; s_rec_bank_live = 0; s_rec_bank_zero_pending = 0;
-+    }
-+    if (op == RTH_FRAME) { s_rec_bank = -1; s_rec_semi = -1; }   /* bag2: nada de cache entre quadros */
-     int32_t *p = (int32_t *)rt_cmd_begin(op, flags, (uint32_t)n * 4u);
-     if (!p) return 0;
-     memcpy(p, v, (size_t)n * 4u);
-@@ -11349,12 +11356,12 @@ static void rth_hd_publish_private(void) {
- 
- static void gl_rth_acquire(const char *reason) {
-     if (!s_rth_on || rt_on_render_thread() || rt_held()) return;
--    if (s_rec_bank_zero_pending) {   /* a volta ao banco 0 pendente vira estado direto */
--        s_rec_bank_zero_pending = 0;
--        RTH_REC(RTH_BANK, 0, 0, 0);
--    }
--    s_rec_bank = -1;
--    s_rec_semi = -1;
-+    if (s_rec_bank_zero_pending) {   /* a volta ao banco 0 pendente vira estado direto */
-+        s_rec_bank_zero_pending = 0;
-+        RTH_REC(RTH_BANK, 0, 0, 0);
-+    }
-+    s_rec_bank = -1;
-+    s_rec_semi = -1;
-     rt_acquire(reason);
-     rth_hd_publish_private();
-     s_vram = s_rth_vram_pub;
-@@ -11890,7 +11897,7 @@ static int fg_op_kept(uint16_t op) {
-     case RTH_TEX_TRI: case RTH_SHADED_TEX_TRI: case RTH_FLAT_RECT: case RTH_TEX_RECT:
-     case RTH_TEX_RECT_SCALED: case RTH_LINE: case RTH_SHADED_LINE: case RTH_AREA:
-     case RTH_OFFSET: case RTH_WIDE_VIEW: case RTH_WIDE_TARGET: case RTH_WIDE_DISABLE:
--    case RTH_WIDE_CLEAR: case RTH_WIDE_CLEAR_MARGINS: case RTH_PROJ_TRI: case RTH_STATE: case RTH_BANK:
-+    case RTH_WIDE_CLEAR: case RTH_WIDE_CLEAR_MARGINS: case RTH_PROJ_TRI: case RTH_STATE: case RTH_BANK:
-         return 1;
-     default:
-         return 0;
-@@ -14216,15 +14223,15 @@ static void rtb_set_texture_filter(int b) { GL_RT_SYNC("texture_filter"); glb_se
- static int  rtb_texture_filter(void) { return s_tex_filter; }
- static void rtb_set_dither(int on) {
-     RTH_DIRECT_OR(RTH_REC(RTH_DITHER, 0, on ? 1 : 0)); glb_set_dither(on); }
--/* bag2 (patch local): não grava SEMI repetido (cada polígono chama; o remake manda milhares por quadro). */
-+/* bag2 (patch local): não grava SEMI repetido (cada polígono chama; o remake manda milhares por quadro). */
- static void rtb_set_semi_transparency(int e, int m) {
--    if (rth_record_mode()) {
--        const int key = (e ? 1 : 0) | (m << 1);
--        if (key != s_rec_semi) { RTH_REC(RTH_SEMI, 0, e, m); s_rec_semi = key; }
--        return;
--    }
--    s_rec_semi = -1;
--    glb_set_semi_transparency(e, m); }
-+    if (rth_record_mode()) {
-+        const int key = (e ? 1 : 0) | (m << 1);
-+        if (key != s_rec_semi) { RTH_REC(RTH_SEMI, 0, e, m); s_rec_semi = key; }
-+        return;
-+    }
-+    s_rec_semi = -1;
-+    glb_set_semi_transparency(e, m); }
- static void rtb_set_mask_bits(int sb, int cb) {
-     RTH_DIRECT_OR(RTH_REC(RTH_MASK, 0, sb, cb)); glb_set_mask_bits(sb, cb); }
- static void rtb_set_texture_window(uint32_t r) {
-@@ -14468,6 +14475,134 @@ static const GpuRenderBackend GL_RT_BACKEND = {
+@@ -14468,6 +14475,140 @@
      .wide_feedback_rect = rtb_wide_feedback_rect,
  };
  
@@ -392,6 +237,12 @@
 +        wide_band_scissor_x(view_pad_left, g_wide_w - view_pad_left - view_pad_right);
 +        hostdraw_fill_target(&t, g_wide_cur, 1, s_out_scale, g_wide_w * s_out_scale, VRAM_H * s_out_scale,
 +                             (float)dx, (float)g_wide_w / 2.0f);
++        /* o centro desta superfície vem da canônica na apresentação (wide_blit_center), como o espelho que
++         * mirror_x_center_only pula: o plugin pode desenhar só as laterais */
++        if (wide_center_is_canonical() && g_wide_w > 2 * g_wide_off) {
++            t.center_x[0] = g_wide_off * s_out_scale;
++            t.center_x[1] = (g_wide_w - g_wide_off) * s_out_scale;
++        }
 +        fn(&t, payload, bytes);
 +        hostdraw_restore(&t);
 +        const float q[8] = { (float)x0, (float)y0, (float)x1, (float)y0, (float)x0, (float)y1, (float)x1, (float)y1 };
@@ -435,19 +286,17 @@
  /* ---- replay (render thread) ---------------------------------------------- */
  static void gl_rth_exec(void *user, const RtCmd *c, const void *payload) {
      (void)user;
-@@ -14481,7 +14616,8 @@ static void gl_rth_exec(void *user, const RtCmd *c, const void *payload) {
-     if (s_fg_on) fg_capture(c, payload);
+@@ -14482,6 +14623,7 @@
      switch (c->op) {
      case RTH_SEMI:      glb_set_semi_transparency(v[0], v[1]); break;
--    case RTH_BANK:      (void)glb_select_texture_bank((uint16_t)v[0], v[1]); break;
-+    case RTH_BANK:      (void)glb_select_texture_bank((uint16_t)v[0], v[1]); break;
+     case RTH_BANK:      (void)glb_select_texture_bank((uint16_t)v[0], v[1]); break;
 +    case RTH_HOSTDRAW:  glb_host_draw(v); break;
      case RTH_DITHER:    glb_set_dither(v[0]); break;
      case RTH_MASK:      glb_set_mask_bits(v[0], v[1]); break;
      case RTH_TWIN:      glb_set_texture_window((uint32_t)v[0]); break;
 --- a/runtime/src/mod_texture_banks.c
 +++ b/runtime/src/mod_texture_banks.c
-@@ -106,3 +106,38 @@ int mod_texture_packet_precision(uint32_t source, float q[3], float xy[6]) {
+@@ -106,3 +106,38 @@
      }
      return 0;
  }
