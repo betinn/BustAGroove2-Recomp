@@ -7,7 +7,9 @@
  * Desenho: o adaptador passa cada sequência de pacotes do palco na ordem da OT (a ordem de pintor exata do jogo, com
  * os dançarinos e o resto do quadro entre as sequências). Para cada pacote vivo (cor, UV, CLUT/página: o que o jogo
  * montou neste quadro, então animação de UV ou de cor continua) saem as faces do asset, com a posição pela matriz do
- * nó. Sem profundidade (a ordem é a do jogo), um triângulo por face (os adereços são caixas: sem Phong). Luz por
+ * nó. Sem profundidade (a ordem é a do jogo), um triângulo por face; as faces de superfícies curvas de verdade (fase 6b:
+ * todos os cantos com a normal suave fora da normal da face, e uma aresta lisa com outra face curva) saem numa grade de
+ * Phong Tessellation, com as arestas que dão para faces planas presas retas (sem fenda). Luz por
  * pixel sobre a cor do jogo, que já tem a luz do palco "pintada": a reiluminação pesa a diferença entre a luz das
  * luzes do palco (as dos dançarinos, GTE) na normal da geometria e uma luz média, o relevo do mapa de normal pesa a
  * diferença entre a normal perturbada e a da geometria, mais especular GGX e oclusão ambiente; a sombra dos dançarinos
@@ -81,7 +83,9 @@ typedef struct {
     float uv[6];
     uint8_t base[3][4], over[3][4];
     float layer, mode;
-} SInst;                             /* 64 bytes por face */
+    uint32_t twin;                   /* janela de textura do pacote (GP0 E2h) */
+} SInst;                             /* 68 bytes por face */
+typedef struct { uint32_t key, slot; } EdgeRef;   /* aresta (vértice menor << 16 | maior), 3 * face + canto oposto */
 
 struct RmkStageGL {
 #define X(ret, name, args) ret(RGLAPI* name) args;
@@ -89,18 +93,24 @@ struct RmkStageGL {
 #undef X
     int gles, step, ready, failed, has_nmap;
     GLuint_ prog, vao, tri_vbo, inst_vbo, tex, nmap, geo[GEO_RING], smp_shadow;
+    GLuint_ vao_grid, grid_vbo, grid_ibo;   /* grade de Phong (RMK_TESS_L) para as faces curvas */
+    uint8_t* tess;                   /* por face do asset: 128 curva (Phong) | arestas presas (bit k = a oposta ao canto k) */
+    uint8_t* curv;                   /* por face: 1 curva (decidido com o nó dela em cena), 0 plana ou nó ainda não visto */
+    EdgeRef* edges;                  /* as 3 arestas de cada face, ordenadas pela chave (uma vez por asset) */
+    uint64_t nodes_done;             /* nós cujas faces já foram decididas */
+    uint32_t n_tess;                 /* faces curvas (estatística) */
     int geo_w, geo_h, ring;
     uint32_t serial, have_frame, n_inst_cap, inst_used, run_key, run_first, run_n, n_free;
     float* pos;                      /* posições no espaço da câmera (3 floats por vértice) */
     float* staging;
     SInst* inst;
-    uint8_t* seg;                    /* por instância da sequência: grupo de mistura (0 opaco, 1..4 modo semi + 1) */
+    uint8_t* seg;                    /* por instância da sequência: grupo de mistura (0 opaco, 1..4 modo semi + 1) | 128 Phong */
     float ofx, ofy, h, expo, rough;
     float ldir[3][3], lcol[3][3], bk[3];
     float relight, detail, spec, ao, shadow, pulse, floor_on, floor_n[3];
     uint32_t flags;
     GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_tex, u_nmap, u_nmap_on, u_semi, u_ldir, u_lcol, u_bk, u_w, u_w2, u_floor;
-    GLint_ u_sh[2], u_su[1], u_sv[1], u_sd[1], u_sc[1], u_nsh;
+    GLint_ u_sh[2], u_su[1], u_sv[1], u_sd[1], u_sc[1], u_nsh, u_phong;
     uint64_t bytes;
     char err[512];
 };
@@ -123,20 +133,36 @@ static const char* VS =
     "layout(location = 8) in vec4 a_over1;\n"
     "layout(location = 9) in vec4 a_over2;\n"
     "layout(location = 10) in vec2 a_lm;\n"
+    "layout(location = 11) in uint a_tess;   /* 128 face curva | arestas presas */\n"
+    "layout(location = 12) in uint a_twin;   /* janela de textura (GP0 E2h) */\n"
+    "flat out uint v_twin;\n"
+    "uniform float u_phong;   /* alfa do Phong (0 = desligado) */\n"
     "out vec3 v_pos; out vec3 v_nrm; out vec3 v_base; out vec3 v_over; out vec2 v_uv; out float v_ao;\n"
     "flat out int v_layer; flat out int v_mode;\n"
     "flat out vec4 v_uvr;   /* retângulo de UV da face (centros dos texels dos cantos) */\n"
     "vec4 geo(uint i) { int k = int(i); return texelFetch(u_geo, ivec2(k % u_geo_w, k / u_geo_w), 0); }\n"
     "void main() {\n"
     "  vec3 b = a_bary;\n"
-    "  uint vi = b.x > 0.5 ? a_vi.x : (b.y > 0.5 ? a_vi.y : a_vi.z);\n"
-    "  vec4 p = geo(vi * 2u);\n"
-    "  v_pos = p.xyz; v_ao = p.w; v_nrm = geo(vi * 2u + 1u).xyz;\n"
+    "  vec4 p0 = geo(a_vi.x * 2u), p1 = geo(a_vi.y * 2u), p2 = geo(a_vi.z * 2u);\n"
+    "  vec3 n0 = geo(a_vi.x * 2u + 1u).xyz, n1 = geo(a_vi.y * 2u + 1u).xyz, n2 = geo(a_vi.z * 2u + 1u).xyz;\n"
+    "  vec3 c = p0.xyz * b.x + p1.xyz * b.y + p2.xyz * b.z;\n"
+    "  vec4 p = vec4(c, 1.0);\n"
+    "  if ((a_tess & 128u) != 0u && u_phong > 0.0) {   /* Phong Tessellation (Boubekeur & Alexa 2008) */\n"
+    "    vec3 ph = b.x * (c - dot(c - p0.xyz, n0) * n0) + b.y * (c - dot(c - p1.xyz, n1) * n1)\n"
+    "            + b.z * (c - dot(c - p2.xyz, n2) * n2);\n"
+    "    /* aresta presa (a vizinha é plana ou não existe): reta nela, o Phong entra a um passo da grade */\n"
+    "    float w = 1.0;\n"
+    "    if ((a_tess & 1u) != 0u) w *= clamp(b.x * 4.0, 0.0, 1.0);\n"
+    "    if ((a_tess & 2u) != 0u) w *= clamp(b.y * 4.0, 0.0, 1.0);\n"
+    "    if ((a_tess & 4u) != 0u) w *= clamp(b.z * 4.0, 0.0, 1.0);\n"
+    "    p.xyz = mix(c, ph, u_phong * w);\n"
+    "  }\n"
+    "  v_pos = p.xyz; v_ao = p0.w * b.x + p1.w * b.y + p2.w * b.z; v_nrm = n0 * b.x + n1 * b.y + n2 * b.z;\n"
     "  v_base = a_base0.rgb * b.x + a_base1.rgb * b.y + a_base2.rgb * b.z;\n"
     "  v_over = (a_over0.rgb * b.x + a_over1.rgb * b.y + a_over2.rgb * b.z) * (255.0 / 128.0);\n"
     "  v_uv = (a_uv01.xy * b.x + a_uv01.zw * b.y + a_uv2 * b.z + 0.5) / 256.0;\n"
     "  v_uvr = vec4(min(min(a_uv01.xy, a_uv01.zw), a_uv2) + 0.5, max(max(a_uv01.xy, a_uv01.zw), a_uv2) + 0.5) / 256.0;\n"
-    "  v_layer = int(floor(a_lm.x + 0.5)); v_mode = int(floor(a_lm.y + 0.5));\n"
+    "  v_layer = int(floor(a_lm.x + 0.5)); v_mode = int(floor(a_lm.y + 0.5)); v_twin = a_twin;\n"
     "  /* tela * z, sem dividir: o GL recorta em w = z > 0 (vértice atrás da câmera numa face que o jogo desenhou) */\n"
     "  vec2 sz = u_proj.xy * p.z + u_proj.z * p.xy;\n"
     "  gl_Position = vec4(sz * u_ndc.xz + u_ndc.yw * p.z, 0.0, p.z);\n"
@@ -144,6 +170,7 @@ static const char* VS =
 
 static const char* FS =
     "precision highp float;\n"
+    "precision highp int;\n"
     "precision mediump sampler2DArray;\n"
     "precision mediump sampler2DShadow;\n"
     "uniform mediump sampler2DArray u_tex;\n"
@@ -161,6 +188,7 @@ static const char* FS =
     "in vec3 v_pos; in vec3 v_nrm; in vec3 v_base; in vec3 v_over; in vec2 v_uv; in float v_ao;\n"
     "flat in int v_layer; flat in int v_mode;\n"
     "flat in vec4 v_uvr;\n"
+    "flat in highp uint v_twin;   /* 20 bits: mediump não cabe */\n"
     "layout(location = 0) out vec4 frag;\n"
     "vec3 perturb(vec3 n, vec3 p, vec2 uv, vec3 t) {\n"
     "  vec3 dp1 = dFdx(p), dp2 = dFdy(p); vec2 du1 = dFdx(uv), du2 = dFdy(uv);\n"
@@ -168,6 +196,20 @@ static const char* FS =
     "  vec3 T = dp2p * du1.x + dp1p * du2.x, B = dp2p * du1.y + dp1p * du2.y;\n"
     "  float im = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));\n"
     "  return normalize(T * im * t.x + B * im * t.y + n * t.z);\n"
+    "}\n"
+    "/* janela de textura do PS1 (GP0 E2h), por eixo: texel = (texel & ~(máscara * 8)) | ((deslocamento & máscara) * 8);\n"
+    "   a leitura fica na célula da janela (o menor bit da máscara), sem o filtro passar para a vizinha */\n"
+    "vec2 twin_uv(vec2 uv) {\n"
+    "  vec2 t = uv * 256.0;\n"
+    "  uvec2 m = uvec2(v_twin & 31u, (v_twin >> 5) & 31u) * 8u;\n"
+    "  uvec2 o = uvec2((v_twin >> 10) & 31u, (v_twin >> 15) & 31u) * 8u;\n"
+    "  uvec2 w = (uvec2(max(floor(t), 0.0)) & 255u & ~m) | (o & m);\n"
+    "  vec2 r = vec2(w) + fract(t);\n"
+    "  uvec2 sz = m & (~m + 1u);\n"
+    "  vec2 cs = vec2(w & ~(sz - 1u)), fs = vec2(sz);\n"
+    "  vec2 rc = clamp(r, cs + 0.5, cs + fs - 0.5);\n"
+    "  r = mix(r, rc, vec2(greaterThan(sz, uvec2(0u))));\n"
+    "  return r / 256.0;\n"
     "}\n"
     "float wrapd(float nl) { return max((nl + 0.3) / 1.3, 0.0); }\n"
     "float D_ggx(float nh, float a) { float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (3.14159 * d * d); }\n"
@@ -196,7 +238,7 @@ static const char* FS =
     "  if (md > 0 && v_layer >= 0) {\n"
     "    /* o PS1 lê sem filtro: com o filtro da textura HD a borda da face puxaria os texels vizinhos da página (a\n"
     "       junta escura entre ladrilhos); a leitura fica no retângulo de UV da face */\n"
-    "    vec3 uc = vec3(clamp(v_uv, v_uvr.xy, v_uvr.zw), float(v_layer));\n"
+    "    vec3 uc = vec3(v_twin != 0u ? twin_uv(v_uv) : clamp(v_uv, v_uvr.xy, v_uvr.zw), float(v_layer));\n"
     "    vec4 t = textureGrad(u_tex, uc, gx, gy);\n"
     "    nm = textureGrad(u_nmap, uc, gx, gy);\n"
     "    stp = stp && nm.a > 0.5;\n"
@@ -242,6 +284,7 @@ static const char* FS =
 
 const char* rmk_stage_gl_error(const RmkStageGL* g) { return g ? g->err : "sem contexto"; }
 uint64_t rmk_stage_gl_bytes(const RmkStageGL* g) { return g ? g->bytes : 0u; }
+uint32_t rmk_stage_gl_curved(const RmkStageGL* g) { return g ? g->n_tess : 0u; }
 
 void rmk_stage_gl_destroy(RmkStageGL* g) {
     if (!g) return;
@@ -252,6 +295,9 @@ void rmk_stage_gl_destroy(RmkStageGL* g) {
         const GLuint_ bf[2] = {g->tri_vbo, g->inst_vbo};
         g->DeleteBuffers(2, bf);
         g->DeleteVertexArrays(1, &g->vao);
+        g->DeleteVertexArrays(1, &g->vao_grid);
+        const GLuint_ gb[2] = {g->grid_vbo, g->grid_ibo};
+        g->DeleteBuffers(2, gb);
         g->DeleteSamplers(1, &g->smp_shadow);
         if (g->prog) g->DeleteProgram(g->prog);
     }
@@ -259,6 +305,9 @@ void rmk_stage_gl_destroy(RmkStageGL* g) {
     free(g->staging);
     free(g->inst);
     free(g->seg);
+    free(g->tess);
+    free(g->curv);
+    free(g->edges);
     free(g);
 }
 
@@ -304,6 +353,94 @@ static void inst_attribs(RmkStageGL* g, uint32_t first) {
         g->VertexAttribPointer(7 + k, 4, R_UNSIGNED_BYTE, 1, st, (const void*)(b + offsetof(SInst, over) + 4 * k));
     }
     g->VertexAttribPointer(10, 2, R_FLOAT, 0, st, (const void*)(b + offsetof(SInst, layer)));
+    g->VertexAttribIPointer(11, 1, R_UNSIGNED_SHORT, st, (const void*)(b + offsetof(SInst, pad)));
+    g->VertexAttribIPointer(12, 1, R_UNSIGNED_INT, st, (const void*)(b + offsetof(SInst, twin)));
+}
+
+/* Grade baricêntrica de Phong: ponto (i, j) = (1 - i/L - j/L, i/L, j/L) */
+#define GRID_PTS ((RMK_TESS_L + 1) * (RMK_TESS_L + 2) / 2)
+#define GRID_IDX (RMK_TESS_L * RMK_TESS_L * 3)
+static int gi(int i, int j) { return i * (RMK_TESS_L + 1) - i * (i - 1) / 2 + j; }
+
+/* Os atributos do VAO ligado: 0 por vértice (do buffer ligado agora), 1..12 por instância do inst_vbo. */
+static void vao_attribs(RmkStageGL* g) {
+    g->EnableVertexAttribArray(0);
+    g->VertexAttribPointer(0, 3, R_FLOAT, 0, 12, (const void*)0);
+    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
+    for (int i = 1; i <= 12; i++) g->EnableVertexAttribArray((GLuint_)i);
+    inst_attribs(g, 0);
+    for (int i = 1; i <= 12; i++) g->VertexAttribDivisor((GLuint_)i, 1);
+}
+
+/* Quais faces do asset saem pela grade de Phong. Cada face é decidida no primeiro quadro em que o nó dela está em cena,
+ * no espaço da câmera: a matriz do nó traz a escala do modelo (no espaço do nó dono, o dos vértices do asset, as
+ * arestas medem outra coisa: 233 266 faces curvas contra 612), e PHONG_EDGE foi medido offline nas posições do modelo
+ * montado (`export_stage.py`, pose_positions). O ângulo entre normais de um mesmo nó não muda com a pose. A primeira
+ * versão decidia tudo no primeiro quadro, e os nós ainda fora de cena (matriz de espera: identidade com
+ * t[2] = RMK_STAGE_UNSEEN_Z, ou seja, no espaço do nó) davam outra conta a cada carga (232: 208 ou 512; 236: 48 a 81).
+ * Curva: os três cantos com a normal suave fora da normal da face (3° a 45°) e a maior aresta até PHONG_EDGE (as peças;
+ * os morros e paredões do fundo, com arestas de milhares de unidades, mudariam a silhueta contra o céu e abririam
+ * frestas). Aresta presa: não é dividida só por faces curvas que usam os mesmos dois vértices (vizinha plana, borda ou
+ * vinco: Phong de um lado só abriria uma fenda). Face curva com as três arestas presas fica plana (incharia sozinha). As
+ * travas são refeitas a cada nó novo, numa passada pelas arestas (ordenadas uma vez por asset). */
+#define PHONG_EDGE 1200.0f             /* unidades do GTE */
+static int edge_cmp(const void* a, const void* b) {
+    const uint32_t x = ((const EdgeRef*)a)->key, y = ((const EdgeRef*)b)->key;
+    return x < y ? -1 : x > y;
+}
+static void classify_tess(RmkStageGL* g, const RmkAsset* a, uint64_t done) {
+    const float lo = cosf(3.0f * 3.14159265f / 180.0f), hi = cosf(45.0f * 3.14159265f / 180.0f);
+    const uint32_t ne = 3u * a->n_tris;
+    if (!g->edges) {
+        g->edges = (EdgeRef*)malloc(sizeof(EdgeRef) * (ne ? ne : 1u));
+        if (!g->edges) return;
+        for (uint32_t f = 0; f < a->n_tris; f++)
+            for (uint32_t k = 0; k < 3u; k++) {   /* aresta oposta ao canto k */
+                const uint32_t x = a->tris[f].v[(k + 1u) % 3u], y = a->tris[f].v[(k + 2u) % 3u];
+                g->edges[3u * f + k].key = x < y ? (x << 16) | y : (y << 16) | x;
+                g->edges[3u * f + k].slot = 3u * f + k;
+            }
+        qsort(g->edges, ne, sizeof *g->edges, edge_cmp);
+    }
+    const EdgeRef* e = g->edges;
+    for (uint32_t f = 0; f < a->n_tris; f++) {
+        const RmkTri* t = &a->tris[f];
+        uint64_t own = 0;
+        for (int k = 0; k < 3; k++) own |= 1ull << (a->verts[t->v[k]].owner & 63u);
+        if ((own & done) != own || (own & g->nodes_done) == own) continue;   /* nó fora de cena ou já decidida */
+        const float* s0 = &g->staging[8u * t->v[0]];
+        const float* s1 = &g->staging[8u * t->v[1]];
+        const float* s2 = &g->staging[8u * t->v[2]];
+        const float u[3] = {s1[0] - s0[0], s1[1] - s0[1], s1[2] - s0[2]}, w[3] = {s2[0] - s0[0], s2[1] - s0[1], s2[2] - s0[2]};
+        const float n[3] = {u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]};
+        const float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        const float e2 = s2[0] - s1[0], e2y = s2[1] - s1[1], e2z = s2[2] - s1[2];
+        const float m2 = fmaxf(fmaxf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2], w[0] * w[0] + w[1] * w[1] + w[2] * w[2]),
+                               e2 * e2 + e2y * e2y + e2z * e2z);
+        int curved = l > 1e-6f && m2 <= PHONG_EDGE * PHONG_EDGE;
+        for (int k = 0; k < 3 && curved; k++) {
+            const float* v = &g->staging[8u * t->v[k] + 4u];
+            const float d = fabsf(v[0] * n[0] + v[1] * n[1] + v[2] * n[2]) / l;
+            curved = d < lo && d > hi;
+        }
+        g->curv[f] = (uint8_t)curved;
+    }
+    for (uint32_t f = 0; f < a->n_tris; f++) g->tess[f] = g->curv[f] ? 128u : 0u;
+    for (uint32_t i = 0; i < ne;) {
+        uint32_t j = i + 1u;
+        while (j < ne && e[j].key == e[i].key) j++;
+        int all = j - i >= 2u;
+        for (uint32_t k = i; k < j && all; k++) all = (g->tess[e[k].slot / 3u] & 128u) != 0;
+        if (!all)
+            for (uint32_t k = i; k < j; k++) g->tess[e[k].slot / 3u] |= (uint8_t)(1u << (e[k].slot % 3u));
+        i = j;
+    }
+    uint32_t nt = 0;
+    for (uint32_t f = 0; f < a->n_tris; f++) {
+        if ((g->tess[f] & 7u) == 7u) g->tess[f] = 0;
+        nt += (g->tess[f] & 128u) != 0;
+    }
+    g->n_tess = nt;
 }
 
 static int build(RmkStageGL* g, const RmkAsset* a) {
@@ -326,7 +463,7 @@ static int build(RmkStageGL* g, const RmkAsset* a) {
     }
 #define U(name) g->name = g->GetUniformLocation(g->prog, #name)
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_semi); U(u_bk); U(u_w); U(u_w2);
-    U(u_nsh); U(u_floor);
+    U(u_nsh); U(u_floor); U(u_phong);
 #undef U
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
@@ -341,26 +478,51 @@ static int build(RmkStageGL* g, const RmkAsset* a) {
     g->n_inst_cap = 2u * a->n_tris + 64u;
     g->inst = (SInst*)calloc(g->n_inst_cap, sizeof(SInst));
     g->seg = (uint8_t*)calloc(g->n_inst_cap, 1);
+    g->tess = (uint8_t*)calloc(a->n_tris ? a->n_tris : 1u, 1);
+    g->curv = (uint8_t*)calloc(a->n_tris ? a->n_tris : 1u, 1);
     g->pos = (float*)calloc(3u * a->n_verts, sizeof(float));
     g->n_inst_cap += 2u * RMK_STAGE_MAX_FREE;
     const int texels = 2 * (int)(a->n_verts + RMK_STAGE_MAX_FREE);   /* asset + vértices livres do quadro */
     g->geo_w = texels < 1024 ? texels : 1024;
     g->geo_h = (texels + g->geo_w - 1) / g->geo_w;
     g->staging = (float*)calloc((size_t)g->geo_w * g->geo_h * 4u, sizeof(float));
-    if (!g->inst || !g->seg || !g->pos || !g->staging) return 0;
+    if (!g->inst || !g->seg || !g->pos || !g->staging || !g->tess || !g->curv) return 0;
+    float grid[GRID_PTS * 3];
+    uint16_t idx[GRID_IDX];
+    {
+        int n = 0, m = 0;
+        const int L = RMK_TESS_L;
+        for (int i = 0; i <= L; i++)
+            for (int j = 0; j <= L - i; j++, n++) {
+                grid[3 * n + 1] = (float)i / L; grid[3 * n + 2] = (float)j / L;
+                grid[3 * n] = 1.0f - grid[3 * n + 1] - grid[3 * n + 2];
+            }
+        for (int i = 0; i < L; i++)
+            for (int j = 0; j < L - i; j++) {
+                idx[m++] = (uint16_t)gi(i, j); idx[m++] = (uint16_t)gi(i + 1, j); idx[m++] = (uint16_t)gi(i, j + 1);
+                if (j < L - i - 1) {
+                    idx[m++] = (uint16_t)gi(i + 1, j); idx[m++] = (uint16_t)gi(i + 1, j + 1); idx[m++] = (uint16_t)gi(i, j + 1);
+                }
+            }
+    }
+    g->GenBuffers(1, &g->inst_vbo);
+    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
+    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * g->n_inst_cap), NULL, R_STREAM_DRAW);
     g->GenVertexArrays(1, &g->vao);
     g->BindVertexArray(g->vao);
     g->GenBuffers(1, &g->tri_vbo);
     g->BindBuffer(R_ARRAY_BUFFER, g->tri_vbo);
     g->BufferData(R_ARRAY_BUFFER, sizeof tri, tri, R_STATIC_DRAW);
-    g->EnableVertexAttribArray(0);
-    g->VertexAttribPointer(0, 3, R_FLOAT, 0, 12, (const void*)0);
-    g->GenBuffers(1, &g->inst_vbo);
-    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * g->n_inst_cap), NULL, R_STREAM_DRAW);
-    for (int i = 1; i <= 10; i++) g->EnableVertexAttribArray((GLuint_)i);
-    inst_attribs(g, 0);
-    for (int i = 1; i <= 10; i++) g->VertexAttribDivisor((GLuint_)i, 1);
+    vao_attribs(g);
+    g->GenVertexArrays(1, &g->vao_grid);
+    g->BindVertexArray(g->vao_grid);
+    g->GenBuffers(1, &g->grid_vbo);
+    g->BindBuffer(R_ARRAY_BUFFER, g->grid_vbo);
+    g->BufferData(R_ARRAY_BUFFER, sizeof grid, grid, R_STATIC_DRAW);
+    vao_attribs(g);
+    g->GenBuffers(1, &g->grid_ibo);
+    g->BindBuffer(R_ELEMENT_ARRAY_BUFFER, g->grid_ibo);   /* fica no VAO da grade */
+    g->BufferData(R_ELEMENT_ARRAY_BUFFER, sizeof idx, idx, R_STATIC_DRAW);
     g->BindVertexArray(0);
     g->BindBuffer(R_ARRAY_BUFFER, 0);
     g->GenTextures(GEO_RING, g->geo);
@@ -456,6 +618,17 @@ void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* f
     const int nb = fr->n_bones < (uint32_t)a->n_bones ? (int)fr->n_bones : a->n_bones;
     rmk_skin(a, fr->bones, nb, 1u, g->pos);
     rmk_pack_geometry(a, g->pos, 1u, g->staging);
+    uint64_t seen = 0;   /* nós em cena com matriz de verdade (não a de espera) */
+    for (int k = 0; k < nb && k < 64; k++) {
+        const float* m = fr->bones[k].m;
+        const float det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) +
+                          m[2] * (m[3] * m[7] - m[4] * m[6]);
+        if (fr->bones[k].t[2] < 0.5f * RMK_STAGE_UNSEEN_Z && fabsf(det) > 1e-9f) seen |= 1ull << k;
+    }
+    if (seen & ~g->nodes_done) {
+        classify_tess(g, a, g->nodes_done | seen);
+        g->nodes_done |= seen;
+    }
     /* vértices livres depois dos do asset: posição, AO 1 e a normal da face (cada face tem os seus vértices) */
     g->n_free = 0;
     if (fv && face_n && free_pos && fv->n_free_verts <= RMK_STAGE_MAX_FREE) {
@@ -534,6 +707,7 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
                 }
                 const int nc = (g->flags & RMK_SFLAG_NODE_COLORS) != 0;
                 o->layer = (float)(nc ? -1 : layer);
+                o->twin = p->twin;
                 o->mode = (float)(nc || layer < 0 ? 0u : (2u | (semi ? 256u : 0u)));
                 sg[m] = (uint8_t)(semi && !nc ? 1u + RMK_SPKT_BLEND(p->flags) : 0u);
                 m++;
@@ -573,7 +747,9 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
             o->layer = (float)(tex ? layer : -1);
             const int semi = (p->flags & RMK_SPKT_SEMI) != 0;
             o->mode = (float)(md | (t->mode & 4u) | (semi ? 256u : 0u));
-            sg[m] = (uint8_t)(semi ? 1u + RMK_SPKT_BLEND(p->flags) : 0u);
+            o->pad = g->tess[f];
+            o->twin = p->twin;
+            sg[m] = (uint8_t)((semi ? 1u + RMK_SPKT_BLEND(p->flags) : 0u) | (g->tess[f] & 128u));
             m++;
         }
     }
@@ -674,7 +850,7 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
         g->Uniform4fv(g->u_sc[0], ns, c);
     }
     g->Uniform1i(g->u_nsh, ns);
-    g->BindVertexArray(g->vao);
+    g->Uniform1f(g->u_phong, (g->flags & RMK_SFLAG_NO_PHONG) ? 0.0f : 0.6f);
     /* grupos seguidos com a mesma mistura, na ordem; a face semi sai em dois passos (texels opacos, depois os com STP).
      * No espelho da tela larga só as laterais (o centro vem da superfície canônica na apresentação). */
     const uint8_t* sg = g->seg + g->run_first;
@@ -686,24 +862,20 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
         while (i < g->run_n) {
             uint32_t j = i + 1;
             while (j < g->run_n && sg[j] == sg[i]) j++;
+            const int grid = (sg[i] & 128u) != 0;
+            const unsigned bl = sg[i] & 127u;
+            g->BindVertexArray(grid ? g->vao_grid : g->vao);
             inst_attribs(g, g->run_first + i);
-            if (!sg[i]) {
-                opaque_blend(g);
-                g->Uniform1i(g->u_semi, -1);
-                g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
-            } else {
-                opaque_blend(g);
-                g->Uniform1i(g->u_semi, 0);
-                g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
-                set_blend(g, sg[i] - 1u);
-                g->ColorMask(1, 1, 1, 0);
-                g->Uniform1i(g->u_semi, 1);
-                g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
+            for (int pass = 0; pass < (bl ? 2 : 1); pass++) {   /* semi: texels opacos, depois os com STP */
+                if (pass == 0) { opaque_blend(g); g->Uniform1i(g->u_semi, bl ? 0 : -1); }
+                else { set_blend(g, bl - 1u); g->ColorMask(1, 1, 1, 0); g->Uniform1i(g->u_semi, 1); }
+                if (grid) g->DrawElementsInstanced(R_TRIANGLES, GRID_IDX, R_UNSIGNED_SHORT, (const void*)0, (GLsizei_)(j - i));
+                else g->DrawArraysInstanced(R_TRIANGLES, 0, 3, (GLsizei_)(j - i));
             }
+            inst_attribs(g, 0);
             i = j;
         }
     }
-    inst_attribs(g, 0);
     g->Disable(R_BLEND);
     g->BlendEquation(0x8006);
     g->ColorMask(1, 1, 1, 1);

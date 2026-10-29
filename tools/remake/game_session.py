@@ -63,6 +63,10 @@ PLAYER_STATE = (0x80060E30, 0x80060E38)
 # o jogo grava o cartão depois das partidas, então start() guarda uma cópia dos cartões e stop() a devolve.
 UNLOCK = range(0x8004F667, 0x8004F66F)
 CARDS = os.path.join(REPO, 'tools', 'recomp', 'bag2', 'saves')
+# Índice do palco escolhido (byte) e as cópias da partida: 0 = 234, 1 = 243, 2 = 233, 3 = 244, 4 = 236, 5 = 242, 6 = 238,
+# 7 = 237, 8 = 235, 9 = 231, 10 = 232, 11 = 241, 12 = 245 (os dois últimos não estão na tela de palco). Com
+# BAG2_STAGE_IDX=<índice> a rota do 2 jogadores escreve o índice logo depois de confirmar o palco (tools/remake/stage_hidden.py).
+STAGE_IDX = (0x8005FB56, 0x8008A308, 0x8008A350)
 
 
 class Session:
@@ -192,7 +196,14 @@ class Session:
         step('palco')
         self.press(CROSS)
         self.t_match = time.time() - self.t0
-        time.sleep(16.0)
+        idx = os.environ.get('BAG2_STAGE_IDX')
+        if idx:   # palco fora da tela de palco (241 = 11, 245 = 12): o índice em laço logo depois da confirmação
+            t_end = time.time() + 4.0
+            while time.time() < t_end:
+                for a in STAGE_IDX:
+                    self.cmd({'cmd': 'write_ram', 'addr': f'{a:08X}', 'val': f'{int(idx):X}'})
+                time.sleep(0.01)
+        time.sleep(16.0 if not idx else 12.0)
 
     def quit_match(self):
         """Pausa (START) e QUIT (baixo, X): o jogo volta ao menu principal com o cursor em "1player game". Na pausa

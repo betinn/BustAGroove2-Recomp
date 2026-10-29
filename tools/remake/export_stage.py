@@ -145,14 +145,20 @@ def export(c: int, outs_dir: list[str]):
         x, y, cx, cy, bpp = tim_vram(tim_raw[tex])
         tp = (x // 64) | ((y // 256) << 4) | ({4: 0, 8: 1, 16: 2}[bpp] << 7)
         cw = (cx // 16) | ((cy + clut) << 6) if cx >= 0 else 0
-        keys.append((tp, cw, li_))
+        n = 16 if bpp == 4 else 256
+        pal = tims[tex].clut[clut][:n] if tims[tex].clut is not None and bpp != 16 else None
+        keys.append((tp, cw, li_, clut_hash(pal)))
     # e as texturas da geometria do código do overlay (chão, fundo) que o jogo usou e o modelo não
     # (tools/remake/stage_extra_keys.json, de stage_keys.py): página montada da VRAM com os TIMs do palco
-    ex_keys, ex_imgs = extra_layers(c, tims, tim_raw, {(a & 0x19F, b) for a, b, _ in keys})
+    ex_keys, ex_imgs, ex_hash = extra_layers(c, tims, tim_raw, {(a & 0x19F, b) for a, b, _, _ in keys})
+    room = 64 - len(hd)              # limite do asset; extra_layers vem das mais usadas para as menos
+    if len(ex_imgs) > room:
+        print(f'palco {c}: {len(ex_imgs) - room} camadas do código do overlay ficam fora (limite de 64)')
+        ex_keys, ex_imgs, ex_hash = ex_keys[:room], ex_imgs[:room], ex_hash[:room]
     if ex_imgs:
         tag = f'{fnv(repr(ex_keys).encode()):08x}'
         hd += hd_layers(ex_imgs, os.path.join(OUT, 'palcos', f'palco{c}', f'textures_extra_{tag}'))
-        keys += [(a, b, len(rig.layers) + i) for i, (a, b) in enumerate(ex_keys)]
+        keys += [(a, b, len(rig.layers) + i, ex_hash[i]) for i, (a, b) in enumerate(ex_keys)]
         layers = layers + ex_imgs
     assert len(hd) <= 64, f'{c}: {len(hd)} camadas'
     rig.mode = rig.mode | stage_semi(rig, nodes)
@@ -228,8 +234,8 @@ def export(c: int, outs_dir: list[str]):
     for w, npk, nf, f0, sl in prims:
         cs = [list(s) for s in sl] + [[0, 0, 0]] * (2 - len(sl))
         stg += struct.pack('<HBBI', w, npk, nf, f0) + bytes(cs[0] + cs[1]) + b'\0\0'
-    for tp, cw, li_ in keys:
-        stg += struct.pack('<HHB3x', tp, cw, li_)
+    for tp, cw, li_, h in keys:
+        stg += struct.pack('<HHB', tp, cw, li_) + (h & 0xFFFFFF).to_bytes(3, 'little')
     for d in outs_dir:
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f'palco{c}.bin'), 'wb') as fh:
@@ -239,10 +245,19 @@ def export(c: int, outs_dir: list[str]):
     print(f'palco {c}: {len(buf) / 1e6:.1f} MB, {len(mesh_nodes)} nós, {len(owner)} vértices ({len(rig.owner)} antes dos '
           f'vincos), {len(rig.tris)} faces ({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas '
           f'({len(ex_imgs)} do código do overlay), '
-          f'{len(prims)} primitivas, chaves {[(hex(a), hex(b)) for a, b, _ in keys]}', flush=True)
+          f'{len(prims)} primitivas, chaves {[(hex(a), hex(b)) for a, b, _, _ in keys]}', flush=True)
 
 
 EXTRA_KEYS = os.path.join(HERE, 'stage_extra_keys.json')
+
+
+def clut_hash(pal):
+    """24 bits baixos do FNV-1a da CLUT (uint16 little-endian), como o plugin confere um LoadImage na CLUT da chave
+    (src/bag2_stage.c, dyn_rect); 0 = desconhecido."""
+    if pal is None:
+        return 0
+    h = fnv(np.asarray(pal, '<u2').tobytes()) & 0xFFFFFF
+    return h or 1
 
 
 def smooth_alpha(hd, ps1):
@@ -263,14 +278,21 @@ def smooth_alpha(hd, ps1):
 def extra_layers(c, tims, tim_raw, have):
     """Camadas das texturas que só a geometria do código do overlay usa: para cada (tpage, clut) de stage_extra_keys.json
     que o modelo não cobre, a página 256 texels de largura da VRAM montada com os TIMs do palco que caem nela e a CLUT
-    achada no bloco de CLUT de algum TIM do palco. Texturas de fora do palco (HUD, efeitos) ficam de fora. Devolve
+    achada no bloco de CLUT de algum TIM do palco. Quando a página ou a CLUT não estão nos TIMs (montadas pelo overlay em
+    tempo de execução), a página e a CLUT lidas da VRAM na partida (tools/remake/stage_vram_keys.py, fase 6b), se não
+    forem animadas. Texturas do jogo que aparecem em quase todos os palcos (efeitos) e HUD ficam de fora. Devolve
     (chaves, imagens RGBA 256x256 com o STP no alfa)."""
     import json
     if not os.path.exists(EXTRA_KEYS):
-        return [], []
+        return [], [], []
     want = json.load(open(EXTRA_KEYS, encoding='utf-8')).get(str(c), [])
+    vram_dir = os.path.join(OUT, 'palcos', 'vram')
+    common = set()
+    if os.path.exists(os.path.join(vram_dir, 'resumo.json')):
+        common = {tuple(int(x, 16) for x in k.split('/'))
+                  for k in json.load(open(os.path.join(vram_dir, 'resumo.json'), encoding='utf-8'))['comuns']}
     info = [(t,) + tim_vram(r) for t, r in zip(tims, tim_raw)]
-    out_k, out_i = [], []
+    out_k, out_i, out_h = [], [], []
     for tp, cw, _n in sorted(want, key=lambda k: -k[2]):
         tp &= 0x19F
         if (tp, cw) in have or (tp, cw) in out_k:
@@ -302,7 +324,16 @@ def extra_layers(c, tims, tim_raw, have):
                 pal = np.pad(tim.clut[cy - tcy][cx - tcx:cx - tcx + n], (0, n))[:n]
                 break
         if pal is None or not cov.any():
-            continue
+            vf = os.path.join(vram_dir, str(c), f'{tp:03x}_{cw:04x}.npz')
+            if (tp, cw) in common or not os.path.exists(vf):
+                continue
+            z = np.load(vf)
+            if bool(z['animated']):
+                continue
+            raw = z['page'].astype(np.int64)            # halfwords da VRAM: 4 (4 bpp) ou 2 (8 bpp) texels cada
+            idx = np.stack([(raw >> (bpp * i)) & ((1 << bpp) - 1) for i in range(tpx)], axis=-1).reshape(256, 256)
+            pal = z['clut'].astype(np.int64)
+            cov = np.ones((256, 256), bool)
         v = pal[np.clip(idx, 0, len(pal) - 1)].astype(np.int64)
         img = bm.c16_to_rgba(v)
         img[~cov] = 0
@@ -310,7 +341,8 @@ def extra_layers(c, tims, tim_raw, have):
         img[..., 3][stp] = STP_ALPHA
         out_k.append((tp, cw))
         out_i.append(img)
-    return out_k, out_i
+        out_h.append(clut_hash(pal[:16 if bpp == 4 else 256]))
+    return out_k, out_i, out_h
 
 
 def stage_semi(rig, nodes):

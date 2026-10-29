@@ -232,7 +232,8 @@ typedef struct {
     uint8_t corner[2][3];            /* slot do vértice no pacote (0..3) de cada canto de cada face */
     uint8_t pad[2];
 } RmkStagePrim;
-typedef struct { uint16_t tpage, clut; uint8_t layer, pad[3]; } RmkStageKey;   /* textura + CLUT do jogo -> camada */
+typedef struct { uint16_t tpage, clut; uint8_t layer, clut_hash[3]; } RmkStageKey;   /* textura + CLUT do jogo -> camada;
+    clut_hash: 24 bits baixos do FNV-1a da CLUT que a camada usou (16 ou 256 cores, little-endian; 0 = desconhecido) */
 #pragma pack(pop)
 typedef struct {
     uint32_t version, container, n_nodes, n_layers, n_keys, model_bytes;
@@ -254,7 +255,8 @@ typedef struct {
     uint8_t flags;                   /* RMK_SPKT_* */
     uint8_t layer;
     uint8_t col[4][3], tcol[4][3], uv[4][2];
-} RmkStagePkt;                       /* 36 bytes */
+    uint32_t twin;                   /* janela de textura (GP0 E2h, 20 bits) ativa no pacote; 0 = nenhuma */
+} RmkStagePkt;                       /* 40 bytes */
 #pragma pack(pop)
 #define RMK_SPKT_TEX 1u              /* tem textura */
 #define RMK_SPKT_SEMI 2u             /* semitransparente; modo de mistura do PS1 nos bits 4..5 */
@@ -273,8 +275,10 @@ typedef struct {
     float ldir[3][3], lcol[3][3], bk[3];   /* luzes do palco (GTE, câmera), como as dos dançarinos */
     float floor_on;                  /* 1: a sombra macia no chão dos dançarinos já sai (o chão não recebe a do mapa) */
     float floor_n[3], pad1;          /* normal do chão (para cima, câmera) */
-    RmkBone bones[RMK_MAX_NODES];    /* MATRIX câmera x nó de cada nó com mesh */
+    RmkBone bones[RMK_MAX_NODES];    /* MATRIX câmera x nó de cada nó com mesh; nó fora do quadro: identidade com
+                                        t[2] = RMK_STAGE_UNSEEN_Z (longe, e o núcleo sabe que não é pose de verdade) */
 } RmkStageFrame;
+#define RMK_STAGE_UNSEEN_Z 1e6f
 typedef struct { uint32_t magic, serial, n, has_frame; } RmkStageRun;   /* + RmkStageFrame (has_frame) + n pacotes */
 /* RmkStageFrame é seguido de n_free_faces bytes (3 ou 4: vértices de cada face livre, na ordem; completados até um
  * múltiplo de 4) e de float pos[3 * n_free_verts] (câmera do GTE): a geometria do código do overlay (chão, fundo,
@@ -283,6 +287,7 @@ typedef struct { uint32_t n_free_faces, n_free_verts; } RmkStageFree;
 #define RMK_SFLAG_NO_RELIGHT 1u      /* só a cor do jogo com a textura HD (comparação) */
 #define RMK_SFLAG_NO_NMAP 2u
 #define RMK_SFLAG_NO_SHADOW 4u
+#define RMK_SFLAG_NO_PHONG 16u       /* sem Phong nas faces curvas (comparação) */
 #define RMK_SFLAG_NO_LIGHTS 8u       /* sem luzes do palco no quadro (ninguém em cena): sem reiluminação */
 #define RMK_SFLAG_NODE_COLORS 256u   /* depuração: cada nó de uma cor, sem textura nem luz */
 /* Sombra de um dançarino para o palco: mapa de profundidade ortográfico (textura GL) e o espaço dele (câmera). */
@@ -300,6 +305,7 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
                        uint32_t key, const RmkTarget* t, const RmkShadowView* sh, int n_sh);
 const char* rmk_stage_gl_error(const RmkStageGL* g);
 uint64_t rmk_stage_gl_bytes(const RmkStageGL* g);
+uint32_t rmk_stage_gl_curved(const RmkStageGL* g);   /* faces que saem pela grade de Phong */
 void rmk_stage_gl_destroy(RmkStageGL* g);
 
 RmkGL* rmk_gl_create(RmkGetProc get_proc, int gles);

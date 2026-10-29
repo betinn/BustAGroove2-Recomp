@@ -160,7 +160,14 @@ endereço do pacote.
   liberados, 0 = 234 (ponte de aço), 1 = 233 (Sushi Planet), 2 = 242 (parque), 3 = 243 (fábrica), 4 = 232 (templo de
   pedra), 5 = 237 (cenário de papel), 6 = 244 (templo oriental), 7 = 235 (discoteca), 8 = 236 (rua com táxis), 9 = 231
   (navio pirata), 10 = 238 (estúdio de TV); a lista dá a volta depois disso. Com 10 personagens no cartão a lista é mais
-  curta (a posição 10 cai no 242). **241 e 245 não aparecem na tela de palco** (do modo história, não conferidos).
+  curta (a posição 10 cai no 242). **241 e 245 não aparecem na tela de palco** (do modo história).
+- **Índice do palco escolhido** (fase 6b, comparando a RAM das partidas): byte em `0x8005FB56`, com cópias em
+  `0x8008A308` e `0x8008A350` na partida: 0 = 234, 1 = 243, 2 = 233, 3 = 244, 4 = 236, 5 = 242, 6 = 238, 7 = 237,
+  8 = 235, 9 = 231, 10 = 232, 11 = 241 (heliporto), 12 = 245 (estúdio "Dancing Heroes"); 13 não tem palco. A
+  confirmação na tela de palco grava o índice do cursor, então trocar o palco é escrever o índice em laço nos ~4 s
+  depois do X (`BAG2_STAGE_IDX` em `tools/remake/game_session.py`). Com 11 o 2 jogadores joga uma partida normal no
+  241; com 12 o jogo mostra só o palco 245, sem dançarinos, por ~55 s e volta à seleção de personagem (o 245 não é
+  palco de partida neste modo).
 - **Nós do modelo**: o código do overlay põe a matriz no GTE (RT em `gte_ctrl` 0..4, TR em 5..7; em parte dos nós não é a
   de +0x6C do nó) e chama `FUN_80029588(mesh, buffer, nó + 0x2C, ...)`, que transforma com a matriz do GTE (o terceiro
   argumento nem é lido) e escreve **um pacote por primitiva no buffer do nó** (+0xA8, tamanho em +0xA4), na ordem das

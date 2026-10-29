@@ -40,7 +40,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `notes/remake-visual.md` (técnica do remake do HEAT,
   `tools/remake/`, saída em `tools/recomp/logs/remake/`). Logs e capturas: `tools/recomp/logs/`.
 
-## Estado (2026-10-28, fase 6b do remake: pendências da fase 6 dos palcos)
+## Estado (2026-10-29, fase 6b do remake completa: pendências da fase 6 dos palcos)
 - Jogo completo a 60 fps, 56 overlays compilados antecipadamente, 9x interno + PGXP + xBR, widescreen 16:9 nativo
   (menus/FMV em 4:3), tela cheia sem borda. Teclado em `keybinds.ini`; gamepad SDL automático.
 - **Ritmo da música** (`notes/recomp.md` §13): o framework emula o vblank NTSC a 60,000 Hz e o som derivava do
@@ -141,7 +141,13 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   C:/tools/psxrecomp/recompiler/build/psxrecomp-game.exe --work-dir <repo>/tools/recomp/aot/work-static --gcc
   C:/tools/winlibs/mingw64/bin/gcc.exe --out-dir <repo>/tools/recomp/bag2/generated --workers 6` (só os 13 overlays
   de palco mudam; fazer cópia de `generated/` antes) e recompilar. Tempo de GPU do palco e dos dançarinos: `gpu_timers 1` +
-  `tools/remake/stage_gpu_ab.py` (o `render_busy` varia ±5 pontos entre janelas da mesma variante).
+  `tools/remake/stage_gpu_ab.py` (o `render_busy` varia ±5 pontos entre janelas da mesma variante). Segunda rodada
+  (2026-10-29): Phong nas peças curvas, decidido por nó quando ele entra em cena (`classify_tess`; flag 16 do
+  `stage_geo` desliga); 241 e 245 pelo índice do palco (byte `0x8005FB56`, `BAG2_STAGE_IDX` no `game_session.py`,
+  `stage_hidden.py`; o 245 não tem partida: só o palco por ~55 s); texturas das faces livres fora dos TIMs lidas da VRAM
+  (`stage_vram_keys.py` grava em `logs/remake/palcos/vram/`, `export_stage.py` usa); textura animada por retângulo da
+  página (`stage_geo d` lista as marcas) e hash da CLUT na tabela `.stg`; janela de textura (E2h) no shader. Re-exportar
+  um palco: `python tools/remake/export_stage.py <container>` (escreve nas duas pastas `mods/remake/`).
 - **Build-debug e o pacote HD**: `build-debug/mods/texture-packs/SLUS-01159/replacements` é uma junção para a pasta
   de `build/`; conferir "HD textures:" no log antes de medir (ficou quebrada de 2026-10-24 a 2026-10-27). Com o HD
   o renderizador desliga os bancos de textura (`psx_mod_texture_banks_supported()` = 0). O cartão de memória guarda
@@ -157,10 +163,11 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fases 0–6 e 6b feitas (HEAT,
   palco, os dois jogadores, o elenco, a memória e os palcos pelo caminho novo). Próxima: **fase 7, o port para o
   Polygonia** (personagens e palcos juntos; ganchos e memória dos palcos em "Fase 7" do plano); depois 8 (abertura).
-- Fase 6b fechou o render do 236 (+4 na ordem que dava +11), o RTPT em linha (chão do 233, asfalto do 236) e a segunda
-  volta de dumps. Abertos (`notes/remake-visual.md`, "Limites e o que não deu (fase 6b)"): partida na build normal pelo
-  teclado (precisa do computer-use), Phong nos adereços (escolher só as peças curvas), causa do +9/+10 do par HEAT ×
-  COMET com o palco original (o carimbo de GPU inclui espera), 241 e 245 fora da tela de palco.
+- Fase 6b fechou o render do 236 (+2 na ordem que dava +11), o RTPT em linha (chão do 233, asfalto do 236), a segunda
+  volta de dumps, o Phong nas peças curvas, 241 e 245 no jogo, as texturas da VRAM, a janela de textura e a causa do
+  HEAT × COMET (driver, não pixel). 13 palcos a 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a
+  +2. Aberto (`notes/remake-visual.md`, "Limites e o que não deu (fase 6b)"): partida na build normal pelo teclado
+  (computer-use negado nas duas rodadas).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
 ## Testes de palcos e personagens: usar o modo 2 jogadores

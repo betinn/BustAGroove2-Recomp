@@ -298,7 +298,7 @@ static int s_cur = -1;               /* palco cujo overlay está na RAM numa par
 static double s_seen_us;             /* último FUN_80029588 de um nó do palco atual (o jogo está desenhando o palco) */
 static uint32_t s_model;             /* modelo do palco atual na RAM (0 = ainda não achado) */
 static int s_geo_on = 1;
-/* s_geo_flags (declarado antes de bag2_stage_skip_x): RMK_SFLAG_* | 64: confere a posição projetada contra o pacote (estatísticas);
+/* s_geo_flags (declarado antes de bag2_stage_skip_x): RMK_SFLAG_* (16 sem Phong) | 64: confere a posição projetada contra o pacote (estatísticas);
                                         128: só a metade direita da tela (comparação no mesmo quadro);
                                         512: sem as faces livres (só os nós do modelo); 1024: sem o reflexo no chão;
                                         2048: o espelho da tela larga desenha também o centro (comparação) */
@@ -331,7 +331,7 @@ static int s_fv_rec;                 /* registrando (palco pronto e ligado) */
 static uint8_t s_ff_n[GEO_FREE_FACES];   /* faces livres do quadro: nº de vértices de cada uma */
 static float s_ff_pos[3 * RMK_STAGE_MAX_FREE];
 static uint32_t s_nff, s_nffv;
-static int s_twin;                   /* janela de textura (GP0 E2h) ligada no ponto atual da OT */
+static uint32_t s_twin;              /* janela de textura (GP0 E2h, 20 bits) no ponto atual da OT */
 static struct { uint16_t tpage, clut; uint32_t n; } s_miss[48];   /* texturas sem camada HD (stage_geo "k") */
 static uint32_t s_nmiss;
 
@@ -689,28 +689,95 @@ static void geo_side_marker(uint32_t head, uint16_t flags) {
 }
 
 /* Texturas que o jogo muda durante a partida (LoadImage/MoveImage na CLUT ou na página: luzes que piscam pela CLUT,
- * telão): a camada HD do asset é a do disco, então os pacotes delas ficam com o jogo. Uma marca por chave do palco
- * atual; zera quando o palco fica pronto (as cargas da tela de carregamento vêm antes). */
+ * telão): a camada HD do asset é a da CLUT da exportação, então os pacotes delas ficam com o jogo. Uma marca por chave
+ * do palco atual; zera quando o palco fica pronto (as cargas da tela de carregamento vêm antes). Fase 6b: um LoadImage
+ * que cobre a CLUT inteira de uma chave e manda a mesma CLUT da exportação (hash na tabela .stg) não marca: o overlay
+ * do 233, por exemplo, recarrega as CLUTs dos letreiros iguais às do disco. */
 static uint8_t s_dyn[4096];
 static uint32_t s_dyn_n;
-static int geo_key_layer(const RmkStage* t, uint16_t tpage, uint16_t clut) {
+/* Retângulos da VRAM (x0, y0, x1, y1 exclusivos) que o jogo atualizou dentro de páginas de textura do palco depois do
+ * palco pronto (o telão, peças com textura animada): só os pacotes cujo UV cai num deles ficam com o jogo (uma carga
+ * de 16x53 texels no 234 marcava as 11 texturas da página inteira). */
+static struct { int16_t x0, y0, x1, y1; } s_dynr[32];
+static uint32_t s_ndynr, s_dynr_pk;
+static int geo_key_layer(const RmkStage* t, uint16_t tpage, uint16_t clut, const uint8_t uv[4][2], int nv) {
     const uint16_t tp = tpage & 0x19Fu;
-    for (uint32_t i = 0; i < t->n_keys; i++)
-        if (t->keys[i].tpage == tp && t->keys[i].clut == clut) return s_dyn[i] ? -1 : t->keys[i].layer;
+    for (uint32_t i = 0; i < t->n_keys; i++) {
+        if (t->keys[i].tpage != tp || t->keys[i].clut != clut) continue;
+        if (s_dyn[i]) return -1;
+        if (s_ndynr && nv > 0) {
+            const int sh = ((tp >> 7) & 3) == 0 ? 2 : ((tp >> 7) & 3) == 1 ? 1 : 0;   /* texels por halfword da VRAM */
+            int u0 = 255, u1 = 0, v0 = 255, v1 = 0;
+            for (int v = 0; v < nv; v++) {
+                if (uv[v][0] < u0) u0 = uv[v][0];
+                if (uv[v][0] > u1) u1 = uv[v][0];
+                if (uv[v][1] < v0) v0 = uv[v][1];
+                if (uv[v][1] > v1) v1 = uv[v][1];
+            }
+            const int tx = (tp & 0xF) * 64, ty = ((tp >> 4) & 1) * 256;
+            const int x0 = tx + (u0 >> sh), x1 = tx + (u1 >> sh) + 1, y0 = ty + v0, y1 = ty + v1 + 1;
+            for (uint32_t r = 0; r < s_ndynr; r++)
+                if (x0 < s_dynr[r].x1 && s_dynr[r].x0 < x1 && y0 < s_dynr[r].y1 && s_dynr[r].y0 < y1) { s_dynr_pk++; return -1; }
+        }
+        return t->keys[i].layer;
+    }
     return -1;
 }
 
-static void dyn_rect(int x, int y, int w, int h) {
+static uint32_t s_dyn_same;          /* cargas de CLUT iguais às da exportação (não marcaram) */
+static uint32_t s_dyn_why[4];        /* marcas: LoadImage com outra CLUT, LoadImage sem conferir, MoveImage, página */
+static struct { int16_t x, y, w, h; uint16_t tpage, clut; uint8_t why; uint32_t got, want; } s_dyn_log[16];
+static uint32_t s_dyn_log_n;
+/* src: dados do LoadImage na RAM (0 = MoveImage, cópia dentro da VRAM: sem como conferir) */
+static void dyn_rect(int x, int y, int w, int h, uint32_t src) {
     if (s_cur < 0 || s_st[s_cur].state != 2 || !s_st[s_cur].rt_ready || w <= 0 || h <= 0) return;
     const RmkStage* t = &s_st[s_cur].t;
+    int page_rect = 0;               /* a carga cai numa página de alguma chave: guarda o retângulo */
     for (uint32_t i = 0; i < t->n_keys && i < 4096u; i++) {
         if (s_dyn[i]) continue;
-        const int cx = (t->keys[i].clut & 0x3F) * 16, cy = (t->keys[i].clut >> 6) & 0x1FF;
-        const int tx = (t->keys[i].tpage & 0xF) * 64, ty = ((t->keys[i].tpage >> 4) & 1) * 256;
-        const int tw = ((t->keys[i].tpage >> 7) & 3) ? 128 : 64;
-        const int clut_hit = x < cx + 16 && cx < x + w && y <= cy && cy < y + h;
+        const RmkStageKey* k = &t->keys[i];
+        const int cx = (k->clut & 0x3F) * 16, cy = (k->clut >> 6) & 0x1FF;
+        const int tx = (k->tpage & 0xF) * 64, ty = ((k->tpage >> 4) & 1) * 256;
+        const int bpp8 = ((k->tpage >> 7) & 3) != 0, tw = bpp8 ? 128 : 64, nc = bpp8 ? 256 : 16;
+        const int clut_hit = x < cx + nc && cx < x + w && y <= cy && cy < y + h;
         const int page_hit = x < tx + tw && tx < x + w && y < ty + 256 && ty < y + h;
-        if (clut_hit || page_hit) { s_dyn[i] = 1; s_dyn_n++; }
+        if (!clut_hit && !page_hit) continue;
+        if (page_hit && !clut_hit && s_ndynr < 32u) { page_rect = 1; continue; }
+        const uint32_t want = (uint32_t)k->clut_hash[0] | (uint32_t)k->clut_hash[1] << 8 | (uint32_t)k->clut_hash[2] << 16;
+        uint32_t got = 0;
+        int why = page_hit ? 3 : !src ? 2 : 1;
+        if (clut_hit && !page_hit && src && want && x <= cx && cx + nc <= x + w) {
+            const uint32_t a = src + 2u * ((uint32_t)(cy - y) * (uint32_t)w + (uint32_t)(cx - x));
+            uint32_t hsh = 0x811C9DC5u;
+            for (int c = 0; c < nc; c++) {
+                const uint16_t v = psx_mod_read_half(a + 2u * (uint32_t)c);
+                hsh = (hsh ^ (v & 0xFFu)) * 0x01000193u;
+                hsh = (hsh ^ (v >> 8)) * 0x01000193u;
+            }
+            hsh &= 0xFFFFFFu;
+            if (!hsh) hsh = 1u;
+            if (hsh == want) { s_dyn_same++; continue; }
+            got = hsh;
+            why = 0;
+        }
+        s_dyn[i] = 1;
+        s_dyn_n++;
+        s_dyn_why[why]++;
+        if (s_dyn_log_n < 16u) {
+            s_dyn_log[s_dyn_log_n].x = (int16_t)x; s_dyn_log[s_dyn_log_n].y = (int16_t)y;
+            s_dyn_log[s_dyn_log_n].w = (int16_t)w; s_dyn_log[s_dyn_log_n].h = (int16_t)h;
+            s_dyn_log[s_dyn_log_n].tpage = k->tpage; s_dyn_log[s_dyn_log_n].clut = k->clut;
+            s_dyn_log[s_dyn_log_n].why = (uint8_t)why; s_dyn_log[s_dyn_log_n].got = got; s_dyn_log[s_dyn_log_n].want = want;
+            s_dyn_log_n++;
+        }
+    }
+    if (page_rect) {
+        for (uint32_t r = 0; r < s_ndynr; r++)
+            if (s_dynr[r].x0 == x && s_dynr[r].y0 == y && s_dynr[r].x1 == x + w && s_dynr[r].y1 == y + h) return;
+        s_dynr[s_ndynr].x0 = (int16_t)x; s_dynr[s_ndynr].y0 = (int16_t)y;
+        s_dynr[s_ndynr].x1 = (int16_t)(x + w); s_dynr[s_ndynr].y1 = (int16_t)(y + h);
+        s_ndynr++;
+        s_dyn_why[3]++;
     }
 }
 
@@ -718,15 +785,16 @@ static void geo_load_image(struct CPUState* cpu, uint32_t address) {
     (void)address;
     const uint32_t r = cpu->gpr[4];
     if (r < 0x80000000u || r >= 0x801FFFF8u) return;
+    const uint32_t src = cpu->gpr[5] >= 0x80000000u && cpu->gpr[5] < 0x80200000u ? cpu->gpr[5] : 0u;
     dyn_rect((int16_t)psx_mod_read_half(r), (int16_t)psx_mod_read_half(r + 2u), (int16_t)psx_mod_read_half(r + 4u),
-             (int16_t)psx_mod_read_half(r + 6u));
+             (int16_t)psx_mod_read_half(r + 6u), src);
 }
 
 static void geo_move_image(struct CPUState* cpu, uint32_t address) {
     (void)address;
     const uint32_t r = cpu->gpr[4];
     if (r < 0x80000000u || r >= 0x801FFFF8u) return;
-    dyn_rect((int)cpu->gpr[5], (int)cpu->gpr[6], (int16_t)psx_mod_read_half(r + 4u), (int16_t)psx_mod_read_half(r + 6u));
+    dyn_rect((int)cpu->gpr[5], (int)cpu->gpr[6], (int16_t)psx_mod_read_half(r + 4u), (int16_t)psx_mod_read_half(r + 6u), 0u);
 }
 
 /* Lê um pacote de polígono do jogo para `e` (o 2º pacote de um decalque completa o 1º). 0 = não serve. */
@@ -767,7 +835,7 @@ static int read_packet(uint32_t a, uint32_t len, RmkStagePkt* e, int second, uin
         memcpy(e->uv, uv, sizeof uv);
         e->flags |= RMK_SPKT_TEX;
         if (semi) e->flags = (uint8_t)((e->flags & 0x0Fu) | RMK_SPKT_SEMI | ((tpage >> 5) & 3u) << 4);
-        const int l = geo_key_layer(&s_st[s_cur].t, tpage, clut);
+        const int l = geo_key_layer(&s_st[s_cur].t, tpage, clut, uv, nv);
         if (l < 0) { s_gs.key_miss++; note_miss(tpage, clut); }
         e->layer = (uint8_t)(l < 0 ? 0xFF : l);
         *tpage_out = tpage;
@@ -780,12 +848,12 @@ static int read_packet(uint32_t a, uint32_t len, RmkStagePkt* e, int second, uin
     return 1;
 }
 
-/* Pacote de fora dos nós: face livre se todos os vértices batem com os transformados desta OT, sem janela de textura
- * e com a camada HD conhecida (ou sem textura). 1 = em `e`, com os vértices no fim de s_ff_pos. */
+/* Pacote de fora dos nós: face livre se todos os vértices batem com os transformados desta OT e com a camada HD
+ * conhecida (ou sem textura); a janela de textura do ponto da OT vai junto. 1 = em `e`, com os vértices no fim de
+ * s_ff_pos. */
 static int try_free(uint32_t a, uint32_t len, RmkStagePkt* e, uint32_t* tp, int16_t pb[4]) {
     const uint32_t op = rd32(a + 4u) >> 24;
     if ((op & 0xE0u) != 0x20u || !s_nfv) return 0;
-    if (s_twin) { s_gs.free_twin++; return 0; }
     if (s_nff >= GEO_FREE_FACES || s_nffv + 4u > RMK_STAGE_MAX_FREE) return 0;
     int16_t xy[4][2];
     int nv = 0;
@@ -797,6 +865,8 @@ static int try_free(uint32_t a, uint32_t len, RmkStagePkt* e, uint32_t* tp, int1
         if (!fv_find(xy[v][0], xy[v][1], &out[3 * v])) { s_gs.free_nomatch++; return 0; }
     e->prim = (uint16_t)(RMK_SPKT_FREE | s_nffv);
     if (nv == 4) e->flags |= RMK_SPKT_QUAD;
+    e->twin = s_twin;
+    if (s_twin) s_gs.free_twin++;
     s_ff_n[s_nff++] = (uint8_t)nv;
     s_nffv += (uint32_t)nv;
     s_gs.free_faces++;
@@ -804,13 +874,13 @@ static int try_free(uint32_t a, uint32_t len, RmkStagePkt* e, uint32_t* tp, int1
     return 1;
 }
 
-/* GP0 E2h (janela de textura) num pacote de comandos de estado (DR_ENV, DR_TWIN): as faces livres sob janela ligada
- * ficam com o jogo (a camada HD não repete a janela). */
+/* GP0 E2h (janela de textura) num pacote de comandos de estado (DR_ENV, DR_TWIN): vale para os pacotes seguintes da OT
+ * (o shader do palco repete a janela na camada HD). */
 static void track_env(uint32_t a, uint32_t len) {
     if (len > 12u) return;
     for (uint32_t i = 1; i <= len; i++) {
         const uint32_t w = rd32(a + 4u * i);
-        if ((w >> 24) == 0xE2u) s_twin = (w & 0xFFFFFu) != 0;
+        if ((w >> 24) == 0xE2u) s_twin = w & 0xFFFFFu;
         else if ((w >> 24) < 0xE1u || (w >> 24) > 0xE6u) return;
     }
 }
@@ -846,7 +916,7 @@ static void geo_frame(RmkStageFrame* fr, const Stg* s) {
     memset(fr, 0, sizeof *fr);
     fr->magic = RMK_STAGE_FRAME_MAGIC;
     fr->serial = ++s_geo_serial;
-    fr->flags = s_geo_flags & (15u | RMK_SFLAG_NODE_COLORS);
+    fr->flags = s_geo_flags & (15u | RMK_SFLAG_NO_PHONG | RMK_SFLAG_NODE_COLORS);
     fr->n_bones = s->t.n_nodes;
     fr->ofx = s_proj.ofx; fr->ofy = s_proj.ofy; fr->h = s_proj.h;
     fr->relight = s_geo_par[0]; fr->detail = s_geo_par[1]; fr->spec = s_geo_par[2]; fr->ao = s_geo_par[3];
@@ -859,7 +929,7 @@ static void geo_frame(RmkStageFrame* fr, const Stg* s) {
         RmkBone* b = &fr->bones[k];
         memset(b, 0, sizeof *b);
         b->m[0] = b->m[4] = b->m[8] = 1.0f;
-        b->t[2] = 1e6f;
+        b->t[2] = RMK_STAGE_UNSEEN_Z;
     }
     for (int i = 0; i < s_nseen; i++) fr->bones[s_seen[i].k] = s_seen[i].bone;
 }
@@ -906,7 +976,7 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
     /* os vértices transformados (geo_rtp) valem para esta OT; registra para a próxima só com o palco pronto */
     const int ready = s_geo_on && s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready;
     static int ready_prev;
-    if (!(s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready)) { if (ready_prev) memset(s_dyn, 0, sizeof s_dyn); ready_prev = 0; }
+    if (!(s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready)) { if (ready_prev) { memset(s_dyn, 0, sizeof s_dyn); s_dyn_log_n = 0; s_ndynr = 0; } ready_prev = 0; }
     else ready_prev = 1;
     if (!ready || !nseen) { fv_reset(); s_fv_rec = ready; return; }
     Stg* s = &s_st[s_cur];
@@ -994,6 +1064,7 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
                         uint32_t tp = 0;
                         int16_t pb[4] = {32767, 32767, -32768, -32768};
                         int r = read_packet(a, len, &e, second, &tp, pb, NULL, NULL);
+                        e.twin = s_twin;
                         if (r == 1 && (s_geo_flags & 128u) && pb[0] + pb[2] < 512) r = 0;   /* metade esquerda: original */
                         if (r == 1) {
                             for (int q = 0; q < 2; q++) { if (pb[q] < bb[q]) bb[q] = pb[q]; if (pb[q + 2] > bb[q + 2]) bb[q + 2] = pb[q + 2]; }
@@ -1137,7 +1208,9 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
                      s_geo_draws ? s_geo_us / s_geo_draws : 0.0, s_geo_free_n);
     n += snprintf(reply + n, cap - n, " livres: faces=%u vértices=%u sem_par=%u sem_camada=%u janela=%u rtp=%u |",
                   s_gs.free_faces, s_gs.free_verts, s_gs.free_nomatch, s_gs.free_miss, s_gs.free_twin, s_gs.rtp);
-    n += snprintf(reply + n, cap - n, " texturas_animadas=%u", s_dyn_n);
+    n += snprintf(reply + n, cap - n, " texturas_animadas=%u cargas_iguais=%u (outra_clut=%u sem_conferir=%u move=%u "
+                  "retangulos_da_pagina=%u, pacotes neles=%u)", s_dyn_n, s_dyn_same, s_dyn_why[0], s_dyn_why[1], s_dyn_why[2],
+                  s_ndynr, s_dynr_pk);
     {   /* tempo de GPU (com gpu_timers 1): por desenho e no total da janela, canônica e espelho */
         static uint64_t ns0[2], n0[2];
         for (int k = 0; k < 2; k++) {
@@ -1153,12 +1226,14 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
     for (int k = 0; k < RMK_MAX_NODES && n < cap - 160; k++)
         if (s_gs.node_n[k] && s_gs.node_err[k] / s_gs.node_n[k] > 2.0f)
             n += snprintf(reply + n, cap - n, " %d:%.0f/%u", k, s_gs.node_err[k] / s_gs.node_n[k], s_gs.node_n[k]);
-    for (int i = 0; i < s_nst && n < cap - 96; i++) {
+    for (int j = -1; j < s_nst && n < cap - 96; j++) {   /* o palco atual primeiro (a resposta corta o resto) */
+        const int i = j < 0 ? s_cur : j;
+        if (i < 0 || (j >= 0 && i == s_cur)) continue;
         const Stg* s = &s_st[i];
         if (!s->state && !s->loads) continue;
-        n += snprintf(reply + n, cap - n, " %s: estado=%d cargas=%u descargas=%u carga_ms=%.0f gl=%d/%d gpu_mb=%.0f;",
+        n += snprintf(reply + n, cap - n, " %s: estado=%d cargas=%u descargas=%u carga_ms=%.0f gl=%d/%d gpu_mb=%.0f curvas=%u;",
                       s->bin + 12, s->state, s->loads, s->evictions, s->load_ms, s->rt_ready, s->rt_failed,
-                      (double)s->gl_bytes / 1048576.0);
+                      (double)s->gl_bytes / 1048576.0, s->gl && s->rt_ready ? rmk_stage_gl_curved(s->gl) : 0u);
     }
     if (args && args[0] == 'z') { memset(&s_gs, 0, sizeof s_gs); s_geo_draws = 0; s_geo_frames = 0; s_geo_us = 0; }
     return 0;
@@ -1169,6 +1244,15 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
  * espelho da tela larga). Um comando só: o framework guarda até 16. */
 static int stage_geo_cmd(const char* args, char* reply, int cap) {
     if (args && args[0] == 's') return stage_geo_stats_cmd(args + 1, reply, cap);
+    if (args && args[0] == 'd') {   /* as primeiras marcas de textura animada: retângulo, chave, motivo, hashes */
+        int n = snprintf(reply, cap, "marcas=%u:", s_dyn_log_n);
+        for (uint32_t i = 0; i < s_dyn_log_n && n < cap - 80; i++)
+            n += snprintf(reply + n, cap - n, " [%d,%d %dx%d %03X/%04X m%u %06X/%06X]", s_dyn_log[i].x, s_dyn_log[i].y,
+                          s_dyn_log[i].w, s_dyn_log[i].h, s_dyn_log[i].tpage, s_dyn_log[i].clut, s_dyn_log[i].why,
+                          s_dyn_log[i].got, s_dyn_log[i].want);
+        if (args[1] == 'z') s_dyn_log_n = 0;
+        return 0;
+    }
     if (args && args[0] == 'k') {   /* texturas das faces livres sem camada HD: tpage/clut/vezes */
         int n = snprintf(reply, cap, "faltas=%u:", s_nmiss);
         for (uint32_t i = 0; i < s_nmiss && n < cap - 32; i++)

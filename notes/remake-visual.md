@@ -1,4 +1,4 @@
-# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco e a memória 2026-10-28, os palcos 2026-10-28)
+# Remake visual dos personagens e do palco (piloto offline 2026-10-25, no jogo 2026-10-26, desenho de host, detalhe e palco 2026-10-27, o elenco e a memória 2026-10-28, os palcos 2026-10-28, pendências dos palcos 2026-10-29)
 
 Pergunta: dá para modernizar o visual dos personagens **sem artista humano**, partindo das malhas
 originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animação? Feito só com o HEAT
@@ -21,8 +21,9 @@ originais (suavizar, texturas HD, iluminação nova), mantendo a mesma animaçã
    texturas HD de borda suave, mapa de normal, luz por pixel e a sombra dos dançarinos no cenário; chão e fundos do
    código do overlay reconhecidos pelos vértices transformados; pacote HD de todos os palcos (seção "Fase 6 no jogo").
 9. **No jogo, fase 6b** (pendências dos palcos): espelho do 16:9 só nas laterais, RTPT em linha do overlay (chão do
-   Sushi Planet, asfalto do 236), sombra macia no cenário, leitura da textura presa na face, segunda volta de dumps HD
-   (seção "Fase 6b no jogo").
+   Sushi Planet, asfalto do 236), sombra macia no cenário, leitura da textura presa na face, segunda volta de dumps HD;
+   na segunda rodada, Phong nas peças curvas, 241 e 245 no jogo, texturas das faces livres lidas da VRAM, textura
+   animada por retângulo e janela de textura (seção "Fase 6b no jogo").
 
 ## Como reproduzir
 ```
@@ -1145,7 +1146,7 @@ dançarinos) e voltar a 847 MB depois: o palco carrega e descarrega na build nor
   palco com o voo da câmera.
 - Partida na build normal pelo teclado: não conferida (computer-use negado).
 
-## Fase 6b no jogo: pendências da fase 6 (2026-10-28)
+## Fase 6b no jogo: pendências da fase 6 (2026-10-28 e 2026-10-29)
 Pedido: a render do 236 dentro do critério sem perder imagem (prioridade é o upgrade gráfico) e a segunda volta de
 dumps HD. Junto, o que dava para fechar das lacunas da fase 6 sem baixar a qualidade.
 
@@ -1211,29 +1212,141 @@ não foi o HEAT (o cursor da seleção começa no último personagem do cartão 
 HIRO, ROBO-Z GOLD e CHICHI&SALLY; parte dos dumps novos pode ser deles (efeitos de dança), não do palco. Cartões
 devolvidos pela sessão (md5 igual ao do começo).
 
+### Segunda rodada (2026-10-29): o que ainda faltava da fase 6
+Pedido: fechar tudo o que tinha ficado aberto na fase 6 e na primeira volta da 6b.
+- **Phong nas peças curvas** (núcleo `rmk_stage.c`, `classify_tess`): cada face do asset é curva quando os três cantos
+  têm a normal suave entre 3° e 45° da normal da face e a maior aresta tem até 1200 unidades do GTE. A primeira versão,
+  sem o limite de tamanho, inchava os morros e paredões do fundo (nós de 10 a 27 mil unidades, arestas de 4 a 7 mil) e
+  abria frestas contra o céu no 242; as peças de verdade (barril, tronco, braço do monstro do Sushi Planet, helicóptero do
+  241) têm arestas abaixo de ~1100. Aresta presa: a que não é dividida só por faces curvas com os mesmos dois vértices
+  (vizinha plana, borda, vinco) fica reta e o Phong entra a um passo da grade (sem fenda); face curva com as três arestas
+  presas fica plana. As curvas saem numa grade de 16 triângulos (RMK_TESS_L = 4, alfa 0,6, como os personagens), em
+  grupos seguidos com a mesma mistura, então a ordem de pintor não muda. A decisão é **por nó, no primeiro quadro em que
+  ele está em cena, no espaço da câmera**: a matriz do nó traz a escala do modelo, e o limite foi medido offline nas
+  posições do modelo montado. A primeira versão decidia tudo no primeiro quadro; os nós ainda fora de cena vinham com a
+  matriz de espera (identidade, `RMK_STAGE_UNSEEN_Z`), ou seja, no espaço do nó dono, onde as arestas medem outra coisa
+  (decidindo tudo no espaço do nó, 233 dá 266 faces curvas contra 612 na câmera; 242, 236 contra 528), e a conta mudava
+  de uma carga para outra (232: 208 ou 512; 236: 48 a 81). Agora as travas das arestas são refeitas a cada nó novo, numa
+  passada pelas arestas (ordenadas uma vez por asset), e a conta repete entre cargas (232: 210 e 210; 236: 75 e 77,
+  `curvas6d.txt`). Faces curvas por palco, 40 s depois da carga: 234 6, 233 649, 242 539, 243 142, 232 210, 237 269, 244 50, 235 111, 236 75, 231 32, 238 120, 241 66, 245 16. `stage_geo` flag 16 desliga (comparação).
+  Capturas: barril do navio e braço do monstro mais redondos, sem frestas (`zph2_01_09.png`, `zph2_02.png`; com a
+  decisão por nó, `phong6d_<pos>_<s>.png` do 236, 242 e 232: sem Phong, com Phong, cor por nó).
+- **241 e 245 no jogo**: o índice do palco escolhido é o byte 0x8005FB56 (cópias em 0x8008A308 e 0x8008A350; tabela em
+  `notes/formats.md`): 11 = 241 (heliporto), 12 = 245 (estúdio "Dancing Heroes"). A confirmação na tela de palco grava o
+  índice do cursor, então `BAG2_STAGE_IDX` no `game_session.py` escreve o índice em laço nos 4 s depois do X;
+  `stage_hidden.py` faz o A/B por savestate. O 241 vira uma partida normal do 2 jogadores; com o 245 o jogo mostra só o
+  palco, sem dançarinos (a câmera passeia pela cortina e pelos refletores), por ~55 s e volta à seleção de personagem
+  (`x12_t*.png`, `x245_timeline`): não é palco de partida neste modo. O plugin reconhece e desenha os dois
+  (`pausa_x11.png`, `pausa_x12.png`: original, remake, cor por nó).
+- **Texturas das faces livres fora dos TIMs do palco**: `stage_vram_keys.py` lê da VRAM (`vram_peek`) a página e a
+  CLUT de cada textura que o plugin lista sem camada (`stage_geo k`), em três leituras da CLUT 1,5 s uma da outra
+  (mudou = animada) e grava em `logs/remake/palcos/vram/<container>/` (fora do git). Em 13 palcos: 89 texturas; as 8
+  que aparecem em 5 palcos ou mais (página 0x18, CLUTs 0x107D..0x14FC) são do jogo (efeitos), ficam de fora; 15
+  animadas ficam com o jogo. `export_stage.py` monta a camada pela VRAM quando a página ou a CLUT não estão nos TIMs (até
+  64 camadas por palco, as mais usadas primeiro): 234 42 → 56 camadas, 242 35 → 57, 244 34 → 42, 241 22 → 32, 245 8 → 9.
+- **Textura animada por retângulo, não por página inteira**: o plugin marcava como animada toda chave cuja CLUT ou
+  página recebesse um LoadImage/MoveImage depois do palco pronto. No 234, 24 das 27 marcas vinham de uma carga de 16 x 53
+  texels em x = 576 (uma peça com textura animada) que marcava as 11 texturas daquela página inteira. Agora a carga numa
+  página guarda o retângulo (até 32 por palco) e só o pacote cujo UV cai nele fica com o jogo; a carga na CLUT continua
+  marcando a chave. 234: texturas marcadas 27 → 3, faces livres por OT ~17 → ~38, sem camada ~144 → ~24. No 233 as 7
+  marcas são cópias de CLUT por MoveImage (os letreiros piscam de verdade) e ficam. A tabela `.stg` leva também o hash
+  (FNV-1a, 24 bits) da CLUT de cada camada: um LoadImage que manda a mesma CLUT da exportação não marca
+  (`cargas_iguais` em `stage_geo s`; nenhum caso nos 13 palcos, as cargas de CLUT deles são MoveImage); `stage_geo d`
+  lista as primeiras marcas com o motivo.
+- **Janela de textura (GP0 E2h)**: o plugin passa a janela ativa no ponto da OT em cada pacote (`RmkStagePkt.twin`) e o
+  shader repete a fórmula do PS1 na camada HD (texel = (texel & ~(máscara × 8)) | ((deslocamento & máscara) × 8)), com a
+  leitura presa na célula da janela; as faces com janela (238) saem pelo caminho novo.
+- **Texturas animadas** (CLUT ou página trocadas durante a partida): continuam com o jogo, por decisão. O pacote HD do
+  jogo já tem cada variante de CLUT ampliada pelo Real-ESRGAN (os dumps guardam cada combinação vista); o caminho novo
+  precisaria de uma camada por variante (o 235 passaria das 64 camadas) ou de paleta viva sobre índices, que perderia a
+  qualidade do ESRGAN.
+- **Pendência da fase 5 (HEAT × COMET), causa**: `heat_gpu_bound.py` alterna "só o HEAT com remake" e "os dois" em
+  janelas de 8 s na mesma partida, a 9x e a 4x (`video_set`, 1/5 dos pixels), oito blocos. Quando o COMET está em cena
+  a render sobe +7,7/+10,4/+10,1 (9x, 4x, 4x) e o jogo cai na mesma medida (42 → 33 %: o COMET sai da GPU emulada); fora
+  de cena, Δ 0 (+3,1, 0, −0,5, −0,1, +0,9). A 4x a subida é a mesma: **não é preenchimento de pixels na GPU**, como a
+  fase 5 supunha. O callback de desenho de host dos dois dançarinos soma 49–51 ms por janela de 8 s contra 38–44 ms só
+  com o HEAT (+0,1 ponto): o resto é do lado do driver (fila e envio dos comandos do segundo corpo com Phong, sombra
+  própria, chão e reflexo), sem como separar mais sem um perfilador de GPU. O trabalho sai da thread do jogo e entra na
+  de render; 59,9 fps em todos os segundos e 0 underruns nos dois casos.
+
+### Desempenho da segunda rodada (`stage_perf.py ... perf6d`, `logs/remake/palcos/perf6d.txt`, `perf6d_x.txt`, `perf6d_x245.txt`)
+Mesma medição (build-debug, RTX 3070 Ti, 9x + 16:9, pacote HD de 620 substituições, HEAT × COMET, uma sessão por palco,
+duas janelas de 60 s com a ordem trocada de um palco para o outro; base = `stage_geo 0`, tudo = `stage_geo 1`), com tudo
+desta rodada ligado. 241 e 245 pelo índice do palco (`BAG2_STAGE_IDX` 11 e 12). O 245 não tem partida (o palco fica
+~55 s na tela): duas sessões com duas janelas de 20 s, ordem trocada; a primeira tentativa com janelas de 60 s pegou a
+base e o tudo já na seleção de personagem e foi descartada.
+
+| pos. | palco | ordem | base: fps (mín.) | jogo | render (máx.) | tudo: fps (mín.) | jogo | render (máx.) | Δ jogo | Δ render | underruns |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 234 | base primeiro | 59,9 (59,9) | 33 % | 42 % (59) | 59,9 (59,9) | 29 % | 38 % (44) | −4 | −4 | 0/0 |
+| 1 | 233 | tudo primeiro | 59,9 (59,9) | 33 % | 37 % (50) | 59,9 (59,9) | 31 % | 30 % (47) | −2 | −7 | 0/0 |
+| 2 | 242 | base primeiro | 59,9 (59,9) | 35 % | 39 % (54) | 59,9 (59,9) | 31 % | 26 % (46) | −4 | −13 | 0/0 |
+| 3 | 243 | tudo primeiro | 59,9 (59,9) | 31 % | 41 % (48) | 59,9 (59,9) | 28 % | 40 % (46) | −3 | −1 | 0/0 |
+| 4 | 232 | base primeiro | 59,9 (59,9) | 30 % | 46 % (50) | 59,9 (59,9) | 28 % | 44 % (50) | −2 | −2 | 0/0 |
+| 5 | 237 | tudo primeiro | 59,9 (59,9) | 30 % | 45 % (51) | 59,9 (59,9) | 27 % | 46 % (48) | −3 | +1 | 0/0 |
+| 6 | 244 | base primeiro | 59,9 (59,9) | 30 % | 44 % (53) | 59,9 (59,9) | 26 % | 41 % (48) | −4 | −3 | 0/0 |
+| 7 | 235 | tudo primeiro | 59,9 (59,9) | 31 % | 40 % (46) | 59,9 (59,9) | 28 % | 35 % (46) | −3 | −5 | 0/0 |
+| 8 | 236 | base primeiro | 59,9 (59,9) | 32 % | 39 % (51) | 59,9 (59,9) | 27 % | 41 % (48) | −5 | +2 | 0/0 |
+| 9 | 231 | tudo primeiro | 59,9 (59,9) | 30 % | 47 % (52) | 59,9 (59,9) | 28 % | 42 % (45) | −2 | −5 | 0/0 |
+| 10 | 238 | base primeiro | 59,9 (59,9) | 29 % | 38 % (49) | 59,9 (59,9) | 27 % | 33 % (47) | −2 | −5 | 0/0 |
+| — | 241 | base primeiro | 59,9 (59,9) | 35 % | 37 % (45) | 59,9 (59,9) | 31 % | 20 % (24) | −4 | −17 | 0/0 |
+| — | 245 (20 s) | base primeiro | 59,9 (59,9) | 34 % | 35 % (37) | 59,9 (59,9) | 29 % | 28 % (29) | −5 | −7 | 0/0 |
+| — | 245 (20 s) | tudo primeiro | 59,9 (59,9) | 33 % | 36 % (39) | 59,9 (59,9) | 29 % | 30 % (31) | −4 | −6 | 0/0 |
+
+Nenhum segundo abaixo de 59,5, 0 underruns em todas as janelas. Jogo −2 a −5 em todos; render −17 a +2 (o 236, na
+ordem mais pesada, +2: na primeira volta da 6b, +4). O Phong, a janela de textura e as camadas da VRAM não aparecem no
+custo: a GPU emulada anda menos pacotes (as faces que saíram dela) e o palco novo custa menos de 1 ms de GPU. Depois
+da decisão do Phong por nó (que muda as faces curvas de 233, 236 e 242), os três medidos de novo (`perf6e.txt`): 236
+base primeiro jogo 32 → 27 %, render 39 → 41 % (+2); 242 tudo primeiro jogo 35 → 31 %, render 38 → 26 % (−12); 233 base primeiro (na tabela, tudo primeiro) jogo 35 → 29 %, render 32 → 34 % (+2);
+59,9 fps em todos os segundos, 0 underruns.
+
+### Capturas, regressão e memória (segunda rodada)
+- **A/B no mesmo quadro** (`stage_geo_pause.py`, `logs/remake/palcos/palcos_ab.png` e `palco_<pos>_ab.png`): os 11
+  palcos, original à esquerda e remake à direita; nada fora do lugar. Diferenças de propósito: peças curvas redondas,
+  luz e sombra novas, chão do 233 e asfalto do 236 com relevo. As luzes do disco (235) e o telão (238) seguem o jogo.
+- **241 e 245** (`pausa_x11.png`, `pausa_x12.png`): original, remake e cor por nó; o heliporto e o helicóptero do 241 e
+  a cortina, o letreiro e os refletores do 245 saem pelo caminho novo.
+- **Phong por nó** (`phong6d_08_25.png`, `phong6d_02_30.png`, `phong6d_04_25.png`: sem Phong, com Phong, cor por nó;
+  236, 242 e 232): sem fresta nem peça inchada.
+- **Regressão** (`stage_check.py`, `regressao6d.txt`, `logs/remake/palco/chk_*.png`): abertura (FMV), título, menu,
+  seleção de personagem e tela de palco com 0 marcadores e nenhum asset de palco (4:3); partida no 233 em 16:9 com o
+  HUD por cima; no fim da música o 2 jogadores volta à seleção, as trocas param e o asset descarrega (estado 0).
+- **Memória** (`stage_mem.py`, `palcos/mem.txt`, a última sessão do arquivo): GPU dedicada do processo 465 MB na
+  abertura; partida 1,71 GB (234), 1,72 GB (236), 1,68 GB (242), 1,55 GB (233); no menu depois de cada QUIT, 690–694 MB.
+  Os savestates não fazem a memória subir. O 234 sobe de 1,55 para 1,71 GB contra a fase 6 (42 → 56 camadas, as da
+  VRAM); o teto do processo fica o mesmo (1,72 GB, 236).
+- Cartões de memória devolvidos pelas sessões com `BAG2_UNLOCK`: md5 igual ao do começo nos dois.
+
+### Build normal (`build/`, sem servidor TCP)
+Recompilada com o código final (`cmake --build tools\recomp\bag2\build --target psx-runtime`), assets dos 15
+containers iguais nas duas pastas (mesmo tamanho e data). O acesso do computer-use ao exe foi pedido de novo e
+**negado**: nenhuma partida jogada pelo teclado (não conferido). De fora (`palcos/build_normal6d_mem.txt`): com o jogo
+parado no título, a demonstração automática levou a memória de GPU de 805 para 1330 MB e de volta a 842 MB; o palco
+carrega e descarrega na build normal, como na fase 6. Essa amostra foi feita antes da decisão do Phong por nó; a build
+normal foi recompilada de novo depois dela (só `rmk_stage.c` e a ordem da lista do `stage_geo s` mudaram, conferidos
+na build-debug).
+
 ### Limites e o que não deu (fase 6b)
-- **Pendência HEAT × COMET** (render +9/+10 com o palco original): o carimbo de GPU do corpo não separa trabalho da
-  GPU de espera pela CPU. Corpo só do HEAT 1,4 % do tempo; os dois 8,9 % com o palco original e 1,9 % com o palco novo:
-  quando a GPU tem folga, o intervalo entre os dois carimbos inclui o tempo até os comandos chegarem. A causa continua
-  sem confirmação; na configuração do jogo (os dois remakes e o palco novo) a render fica abaixo da base.
-- **Texturas das faces novas** que não são dos TIMs do palco (chaves novas em 7 palcos; só o 238 ganhou camadas): ficam
-  com o pacote HD do jogo, sem a luz nova. Texturas com janela de textura (E2h, 238): com o jogo.
-- **Phong nos adereços**: não feito. Offline (`export_stage.py` + `smooth_normals`), 49–93 % das faces de cada palco
-  ficam numa superfície suave (desvio das normais dos cantos de 4° a 40°, média 22–29°): com Phong essas faces incham
-  (num chão grande com normais tortas o deslocamento seria de dezenas de unidades) e, sem profundidade, a ordem de
-  pintor erraria onde a face inchada cruza outra. Precisa escolher as superfícies (só peças curvas de verdade) antes.
-- **Partida na build normal pelo teclado**: não conferida (usuário fora do PC; computer-use não pedido). A build normal
-  foi recompilada com o código final.
-- 241 e 245 continuam fora da tela de palco (não conferidos); texturas animadas continuam com o jogo. Na montagem final
-  (`palcos_ab.png`, `palco_<pos>_ab.png`) o 235 e o 238 mostram luzes e telão diferentes entre original e remake: são
-  texturas animadas (com o jogo nas duas variantes) e o sorteio diverge depois do savestate; numa segunda captura do
-  235 as duas variantes batem (`z07.png`).
+- **Partida na build normal pelo teclado**: não conferida (computer-use negado nas duas rodadas). A build normal tem
+  o código final e o palco carrega e descarrega nela (memória de GPU na demonstração automática).
+- **Pendência HEAT × COMET**: causa localizada na segunda rodada (não é preenchimento de pixels: a subida é a mesma a
+  9x e a 4x; é do lado do driver, no envio dos comandos do segundo corpo), sem número por etapa sem um perfilador de GPU.
+  Na configuração do jogo (os dois remakes e o palco novo) a render fica abaixo da base.
+- **245** só existe no 2 jogadores como palco sem dançarinos (~55 s); medido em janelas de 20 s.
+- **Texturas animadas** (CLUT ou página trocadas na partida) ficam com o jogo, por decisão (acima); as 8 texturas de
+  efeito que aparecem em 5 palcos ou mais também.
+- **Phong** só nas faces com as três normais dos cantos entre 3° e 45° e arestas até 1200 unidades: as superfícies
+  grandes do fundo ficam planas (a silhueta contra o céu não muda). Uma face só ganha Phong quando o nó dela aparece em
+  cena (antes disso ela nem é desenhada).
 - O tempo de GPU por carimbo vale como limite de cima (inclui espera), o que basta para o palco (menos de 1 ms por
   quadro) e para comparar variantes alternadas na mesma partida.
-- **Um travamento** (build-debug, `stage_geo_pause.py`): logo depois de carregar um savestate no 234 com `stage_geo 0`,
-  o quadro caiu para 24 fps e o jogo parou de responder (o servidor TCP também). A mesma sessão repetida passou nos 11
-  palcos; as outras sessões desta fase (mais de 50 partidas) não travaram. Junto do crash "out of GPU memory" da NVIDIA
-  visto uma vez na fase 6, fica como ocorrência não reproduzida.
+- A/B pelo savestate: peças com movimento aleatório divergem entre as variantes (o sorteio depende do tempo da GPU).
+- **Um travamento** na primeira volta (build-debug, `stage_geo_pause.py`): logo depois de carregar um savestate no 234
+  com `stage_geo 0`, o quadro caiu para 24 fps e o jogo parou de responder (o servidor TCP também). A mesma sessão
+  repetida passou nos 11 palcos; nenhuma das sessões da segunda rodada travou. Junto do crash "out of GPU memory" da
+  NVIDIA visto uma vez na fase 6, fica como ocorrência não reproduzida.
+- Memória de GPU alta nos palcos com muitas camadas (até 1,72 GB no processo): para o Polygonia, camadas menores ou
+  comprimidas.
 
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos

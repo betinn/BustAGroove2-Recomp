@@ -23,11 +23,24 @@ já é construído pensando nele (fase 7).
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | **feito** (2026-10-28): rota do 2 jogadores, COMET e os dois figurinos de 15 personagens; 3 recusados (outro esqueleto) |
 | 5 | Memória do elenco: só quem está em cena fica carregado; lacunas da fase 4 conferidas | **feito** (2026-10-28): descarga, os 18 conferidos, asset v7 |
 | 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **feito** (2026-10-28): os 11 palcos da tela de palco pelo desenho de host, chão e fundos do overlay, pacote HD +92 texturas |
-| 6b | Pendências da fase 6: render do 236, chão por RTPT em linha, segunda volta de dumps HD | **feito** (2026-10-28): espelho do 16:9 só nas laterais, RTPT/RTPS em linha do overlay (chão do 233, asfalto do 236), sombra macia no cenário, sem junta entre ladrilhos; 236 +4 |
+| 6b | Pendências da fase 6: render do 236, chão por RTPT em linha, segunda volta de dumps HD, e na segunda rodada tudo o que faltava | **feito** (2026-10-28 e 2026-10-29): espelho do 16:9 só nas laterais, RTPT/RTPS em linha do overlay (chão do 233, asfalto do 236), sombra macia no cenário, sem junta entre ladrilhos; Phong nas peças curvas, 241 e 245, texturas da VRAM, janela de textura, causa do HEAT × COMET; 13 palcos a 60 fps, 236 +2 |
 | 7 | Port para o Polygonia (Android) | **próxima** |
 | 8 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 6b, 2026-10-28)
+## Onde estamos (fim da fase 6b, segunda rodada, 2026-10-29)
+- Phong nas peças curvas do palco (barril, tronco, braço do monstro, helicóptero): faces com as normais dos cantos
+  entre 3° e 45° e arestas até 1200, decididas por nó quando ele entra em cena; arestas com vizinha plana presas.
+- 241 (heliporto) e 245 (estúdio "Dancing Heroes") no jogo pelo índice do palco (`0x8005FB56`); o 241 é uma partida
+  normal, o 245 só mostra o palco por ~55 s. Os dois saem pelo caminho novo.
+- Texturas das faces livres fora dos TIMs: lidas da VRAM e exportadas como camadas (234 42 → 56, 242 35 → 57);
+  textura animada marcada por retângulo da página (234: 27 → 3 texturas com o jogo); janela de textura no shader (238).
+- HEAT × COMET: a subida da render é a mesma a 9x e a 4x, então não é preenchimento de pixels; é do lado do driver.
+- Desempenho nos 13 palcos: 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a +2. Memória: até
+  1,72 GB de GPU no processo na partida, 692 MB no menu. Regressão sem mudança nos menus e no vídeo.
+- Aberto: a partida na build normal pelo teclado (computer-use negado); a build normal foi recompilada e o palco
+  carrega e descarrega nela (memória de GPU na demonstração automática).
+
+## Onde estávamos (fim da primeira volta da fase 6b, 2026-10-28)
 - No 16:9 o palco desenhava duas vezes o centro da tela (superfície canônica e espelho da tela larga, cujo centro a
   apresentação cobre com a canônica): agora o espelho desenha só as laterais (patch do framework, `center_x`), sem
   mudar a imagem; mapa de normal lido uma vez por pixel. Com a folga, a sombra dos dançarinos no cenário voltou a ter
@@ -293,6 +306,11 @@ segunda volta de dumps HD. Técnica e números em `notes/remake-visual.md`, "Fas
   overlays estáticos regenerados com `aot_overlay_pipeline.py static`); chaves de textura novas por `stage_keys.py`
   e os palcos re-exportados.
 - Pacote HD: `stage_dump2.py` (música quase inteira por palco), 104 dumps, 59 texturas novas (620 substituições).
+- Segunda rodada (2026-10-29), o que faltava: Phong nas peças curvas (`rmk_stage.c`, `classify_tess`, por nó); 241 e
+  245 pelo índice do palco (`BAG2_STAGE_IDX`, `stage_hidden.py`); camadas pela VRAM para as texturas das faces livres
+  (`stage_vram_keys.py` + `export_stage.py`); textura animada por retângulo e hash da CLUT na tabela `.stg`; janela de
+  textura no shader; causa do HEAT × COMET (`heat_gpu_bound.py`). Conferido: medição dos 13 palcos (`perf6d`),
+  capturas A/B, memória, regressão; build normal recompilada (partida pelo teclado não conferida: computer-use negado).
 
 ## Fase 7 — Port para o Polygonia (Android)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.
@@ -301,7 +319,9 @@ O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins
   (buffer e matriz do GTE de cada nó) e de `FUN_8001F278`/`RotTransPers*` (vértices do código do overlay), mais as 20
   instruções RTPT/RTPS em linha dos overlays de palco (fase 6b, endereços em `notes/formats.md`; conferir a palavra da
   instrução, porque o mesmo endereço é outra coisa em outro palco); o núcleo `rmk_stage.c` é o mesmo. O recorte do
-  centro no espelho da tela larga (`RmkTarget.skip_x`) é do renderizador do PSXRecomp: no Polygonia, `skip_x` vazio. Memória: 13–59 camadas 1024² por palco (55–250 MB de asset, até ~630 MB de GPU no 236): no
+  centro no espelho da tela larga (`RmkTarget.skip_x`) é do renderizador do PSXRecomp: no Polygonia, `skip_x` vazio. O
+  adaptador marca os nós fora do quadro com a matriz de espera (`t[2] = RMK_STAGE_UNSEEN_Z`): o Phong de cada nó é
+  decidido no primeiro quadro em que ele vem com matriz de verdade. Memória: 13–59 camadas 1024² por palco (55–250 MB de asset, até ~630 MB de GPU no 236): no
   celular, camadas menores ou comprimidas (ETC2, que o GLES 3.0 tem).
 - Desenho: adaptador para o renderizador do DuckStation (Vulkan e OpenGL ES), reaproveitando o núcleo
   portátil da fase 1 (asset, poses, shaders GLES 3.0). O DuckStation de 2021 tem buffer de profundidade PGXP.
