@@ -5,6 +5,25 @@
 #include "psx_video_timing.h"
 
 #include <stdio.h>
+#ifdef _WIN32
+#include <wchar.h>
+#include <windows.h>
+#endif
+
+/* Pasta de trabalho = pasta do exe. O runtime ancora game.toml, disco, BIOS e cartões na pasta do exe, mas os
+ * plugins do remake abrem mods/remake/*.bin por caminho relativo: aberto por um atalho com outra pasta "Iniciar
+ * em" (ou pela linha de comando de outra pasta), o jogo rodaria sem o remake. Feito no construtor, antes do main. */
+static void bag2_chdir_exe_dir(void) {
+#ifdef _WIN32
+    wchar_t path[MAX_PATH];
+    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return;
+    wchar_t* slash = wcsrchr(path, L'\\');
+    if (!slash) return;
+    *slash = 0;
+    (void)SetCurrentDirectoryW(path);
+#endif
+}
 
 static void bag2_widescreen_activate(void) {
     /* 16:9 fixo: a projeção do GTE é alargada (mais mundo nas laterais), o present abre a janela em
@@ -35,6 +54,7 @@ static int bag2_vblank_cmd(const char* args, char* reply, int cap) {
 }
 
 PSX_MOD_CONSTRUCTOR(bag2_register_plugins) {
+    bag2_chdir_exe_dir();
     (void)psx_mod_register_activation_plugin("bag2.widescreen", bag2_widescreen_activate);
     if (!psx_video_timing_is_pal()) bag2_set_vblank(BAG2_VBLANK_NTSC_240P);
     (void)psx_mod_register_command("vblank_ntsc", bag2_vblank_cmd);

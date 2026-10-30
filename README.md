@@ -18,12 +18,14 @@ versionado). Pastas `vMAJOR.MINOR.PATCH-apelido`, cada uma com `VERSION.txt`.
 | `v1.0.0-estavel` | Build nativa original: resolução 320x240, janela. Backup, não alterar. |
 | `v1.1.0-1080p` | 5x interno (1080p), PGXP (geometria sem tremor, texturas em perspectiva), xBR, FXAA, sem dithering, tela cheia sem borda (F11 alterna). |
 | `v1.2.0-widescreen` | 9x interno (2160 linhas, supersampling para 1080p), sem FXAA, **widescreen 16:9 nativo**: o jogo renderiza mais cena nas laterais, nada esticado; menus, abertura e HUD em 4:3. Plugin em `tools/recomp/bag2/src/bag2_mods.c` + pacote `mods/preloaded/`; [notes/recomp.md](notes/recomp.md) §11. |
-| `v1.3.0-texturas-hd` | **Atual.** v1.2.0 + **pacote de texturas HD** (mod `psx.enhancement.hd-textures`, formato DuckStation): 472 texturas capturadas e ampliadas 4x com Real-ESRGAN (`tools/hd_textures.py --filter esrgan`, alfa preservado) em `mods/texture-packs/SLUS-01159/replacements/`. HUD, menus, retratos, palcos e roupas nítidos; só OpenGL. [notes/recomp.md](notes/recomp.md) §12. |
+| `v1.3.0-texturas-hd` | v1.2.0 + **pacote de texturas HD** (mod `psx.enhancement.hd-textures`, formato DuckStation): 472 texturas capturadas e ampliadas 4x com Real-ESRGAN (`tools/hd_textures.py --filter esrgan`, alfa preservado) em `mods/texture-packs/SLUS-01159/replacements/`. HUD, menus, retratos, palcos e roupas nítidos; só OpenGL. [notes/recomp.md](notes/recomp.md) §12. |
+| `v2.0.0-remake` | **Atual.** v1.3.0 + **remake visual completo**: os 18 personagens nos dois figurinos refeitos (Phong Tessellation, luz por pixel, normal, sombra própria, mãos com dedos, expressão do rosto), a geometria dos 15 palcos refeita, bloom e graduação de cor no tempo da música, sombra macia no chão, 620 texturas HD, ritmo da música no vblank real. Pasta auto-suficiente: dois cliques no exe, disco em `disc/`. [notes/remake-plano.md](notes/remake-plano.md). |
 
 Para jogar:
 1. Tenha o disco original como `.cue` + `.bin` (o repositório não contém o jogo).
-2. Rode `Jogar.bat` na pasta da release (usa o `.cue` da pasta padrão do disco; aceita outro caminho
-   como argumento) ou:
+2. Na `v2.0.0-remake`: dois cliques em `Bust_A_Groove_2_Recompiled.exe` (o disco fica em `disc/` dentro da
+   pasta da release). Nas anteriores: rode `Jogar.bat` na pasta da release (usa o `.cue` da pasta padrão do
+   disco; aceita outro caminho como argumento) ou:
    ```
    Bust_A_Groove_2_Recompiled.exe --game game.toml --disc "<arquivo.cue>"
    ```

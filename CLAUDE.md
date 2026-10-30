@@ -32,9 +32,11 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - Rodar: `tools\recomp\bag2\Jogar.bat` (acha o exe em `build\`) ou
   `Bust_A_Groove_2_Recompiled.exe --game game.toml --disc "<cue>"` dentro de `build/`. Log em stdout.
 - Releases: `releases/vMAJOR.MINOR.PATCH-apelido/` com `VERSION.txt`; tabela e regras em `releases/README.md`.
-  Atual: `v1.3.0-texturas-hd`. Para publicar uma versão nova: copiar `build/` (exe, `assets/`, `bios/`,
-  `mods/bundled/`, `mods/texture-packs/SLUS-01159/replacements/`, `game.toml`, `settings.toml`, `keybinds.ini`,
-  `input.ini`, `Jogar.bat`), escrever `VERSION.txt`, registrar em `releases/README.md` e no `README.md`.
+  Atual: `v2.0.0-remake` (auto-suficiente, ~4 GB, sem `.bat`: dois cliques no exe). Para publicar uma versão nova:
+  copiar de `build/` o exe, `assets/`, `bios/`, `mods/bundled/`, `mods/remake/`,
+  `mods/texture-packs/SLUS-01159/replacements/`, `settings.toml`, `keybinds.ini`, `input.ini`; o disco em `disc/`;
+  o `game.toml` com `disc = "disc/Bust A Groove 2 (USA).cue"` (relativo à pasta do exe); escrever `VERSION.txt`,
+  registrar em `releases/README.md` e no `README.md`. O exe fixa a pasta de trabalho na dele (`src/bag2_mods.c`).
 - Notas técnicas: `notes/recomp.md` (§8 overlays AOT, §10 1080p, §11 widescreen/nitidez, §12 texturas HD, §13 ritmo da música), `notes/formats.md`,
   `notes/model-format.md`, `notes/media-formats.md`, `notes/remake-plano.md` (plano e estado do remake visual),
   `notes/remake-visual.md` (técnica do remake do HEAT,
