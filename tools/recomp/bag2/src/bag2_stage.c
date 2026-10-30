@@ -147,11 +147,21 @@ static void post_frame(RmkPostFrame* f) {
     }
 }
 
+/* Savestate carregado no meio da montagem de um quadro: a OT restaurada pode já ligar o marcador deste quadro, e o
+ * cursor da arena é do host (não volta com o estado). Gravar de novo no mesmo endereço faz o marcador apontar para si
+ * mesmo e o DMA da GPU dá voltas nele. Até a paridade virar, nenhum marcador novo (o quadro sai sem o pós-efeito). */
+static int s_post_block = 0;
+static uint32_t s_post_block_parity;
+
 /* Marcador no slot POST_SLOT da OT do quadro: tag (1 palavra), NOP "HDR", cabeçalho, RmkPostFrame. */
 static void emit_post(void) {
     static uint32_t buf[MARK_BYTES / 4u];
     if (!s_arena) return;
     const uint32_t parity = rd32(FRAME_PARITY) & 1u;
+    if (s_post_block) {
+        if (parity == s_post_block_parity) return;
+        s_post_block = 0;
+    }
     if (parity != s_parity) { s_parity = parity; s_off = 0; }
     if (s_off + MARK_BYTES > MARKS_PER_HALF * MARK_BYTES) return;
     const uint32_t addr = s_arena + parity * MARKS_PER_HALF * MARK_BYTES + s_off;
@@ -317,14 +327,17 @@ static uint32_t s_geo_arena, s_geo_off, s_geo_parity = 0xFFFFFFFFu, s_geo_serial
 static struct { uint32_t ots, runs, pkts, kept, unknown, lines, nopr, semi_flat, overflow, key_miss, seen; double us;
                 double err_sum; uint32_t err_n, err_b[3]; float err_max;
                 float node_err[RMK_MAX_NODES]; uint32_t node_n[RMK_MAX_NODES], dup, overlap, size_bad;
-                uint32_t free_faces, free_verts, free_nomatch, free_miss, free_twin, rtp; } s_gs;   /* estatísticas (stage_geo_stats) */
+                uint32_t free_faces, free_verts, free_nomatch, free_miss, free_twin, rtp, free_sat; } s_gs;   /* estatísticas (stage_geo_stats) */
 /* Pacotes de fora dos nós sem par nos vértices transformados (`stage_geo p`): com textura do palco ou sem textura, e
  * quantos vértices bateram antes do primeiro que faltou (0 = nenhum: geometria que não passa pelas RTP vistas). */
-static struct { uint32_t tex, flat, hit[4]; } s_nm;
+static struct { uint32_t tex, flat, hit[4], sat_nogot, sat_none, sat_far; float far_min; } s_nm;
 static struct { uint16_t tpage; uint8_t layer; uint32_t n; } s_nm_tp[24];
 static uint32_t s_nm_ntp;
 static struct { uint32_t page, n; } s_nm_at[16];   /* onde estão na RAM (páginas de 4 KB) */
 static uint32_t s_nm_nat;
+static struct { int16_t x, y, bx, by; uint32_t a; int d; uint16_t nfv; } s_nm_smp[12];   /* amostras: vértice que
+    faltou e o transformado mais perto (busca em todos) */
+static uint32_t s_nm_nsmp;
 /* Vértices que as funções RTP do executável e o RTPT/RTPS em linha do overlay transformaram para a OT que está sendo
  * montada (o código do overlay monta os pacotes do chão e do fundo com eles): tela (como o GTE: OF + H x / z) ->
  * posição na câmera. Um pacote de fora dos nós cujos vértices batem todos (+-1 pixel) com estes vira face livre do
@@ -556,6 +569,27 @@ static void fv_reset(void) {
     s_nfv = 0;
 }
 
+/* Divisão H/SZ3 do GTE como o hardware a faz (tabela UNR e duas iterações de Newton; psx-spx, "GTE Division
+ * Inaccuracy"): quociente 1.16, saturado em 0x1FFFF quando H >= 2 * SZ3. */
+static int64_t gte_div(uint32_t h, uint32_t sz3) {
+    static uint8_t unr[257];
+    static int init;
+    if (!init) {
+        for (int i = 0; i < 257; i++) { const int v = (0x40000 / (i + 0x100) + 1) / 2 - 0x101; unr[i] = (uint8_t)(v < 0 ? 0 : v); }
+        init = 1;
+    }
+    if (h >= sz3 * 2u) return 0x1FFFF;
+    int z = 0;
+    while (z < 16 && !((sz3 << z) & 0x8000u)) z++;
+    const uint64_t n = (uint64_t)h << z;
+    uint64_t d = (uint64_t)sz3 << z;
+    const uint64_t u = (uint64_t)unr[(d - 0x7FC0u) >> 7] + 0x101u;
+    d = (0x2000080u - d * u) >> 8;
+    d = (0x0000080u + d * u) >> 8;
+    const uint64_t r = (n * d + 0x8000u) >> 16;
+    return r > 0x1FFFFu ? 0x1FFFF : (int64_t)r;
+}
+
 /* Um vértice pela matriz que está no GTE, como RTPS faria; guarda posição e tela. */
 static void fv_add_xyz(const struct CPUState* cpu, float x, float y, float z) {
     if (s_nfv >= FV_MAX) return;
@@ -565,12 +599,25 @@ static void fv_add_xyz(const struct CPUState* cpu, float x, float y, float z) {
     FreeV* f = &s_fv[s_nfv];
     for (int r = 0; r < 3; r++)
         f->p[r] = (m[3 * r] * x + m[3 * r + 1] * y + m[3 * r + 2] * z) / 4096.0f + (float)(int32_t)cpu->gte_ctrl[5 + r];
-    if (f->p[2] < 16.0f) return;
-    const float ofx = (float)(int32_t)cpu->gte_ctrl[24] / 65536.0f, ofy = (float)(int32_t)cpu->gte_ctrl[25] / 65536.0f;
-    const float h = (float)(cpu->gte_ctrl[26] & 0xFFFFu);
-    const float sx = ofx + h * f->p[0] / f->p[2], sy = ofy + h * f->p[1] / f->p[2];
-    if (sx < -1024.0f || sx > 1023.0f || sy < -1024.0f || sy > 1023.0f) return;   /* o GTE satura: não bate */
-    f->sx = (int16_t)lrintf(sx); f->sy = (int16_t)lrintf(sy);
+    /* a tela como o RTPS a calcula (sf = 1, lm = 0), em inteiros: MAC >> 12, IR em 16 bits, SZ3 entre 0 e 0xFFFF, a
+     * divisão H/SZ3 do GTE (gte_div: perto da câmera ou atrás dela satura em 0x1FFFF) e SX/SY em [-1024, 1023]. A conta
+     * em float errava até 3 px longe do centro, e as faces grandes do chão ficavam sem par. O vértice vai com a posição
+     * de verdade (o recorte do GL desenha a face certa onde o PS1 a deformava). */
+    int64_t mac[3];
+    for (int r = 0; r < 3; r++)
+        mac[r] = (((int64_t)(int32_t)cpu->gte_ctrl[5 + r] << 12) + (int64_t)m[3 * r] * (int64_t)x +
+                  (int64_t)m[3 * r + 1] * (int64_t)y + (int64_t)m[3 * r + 2] * (int64_t)z) >> 12;
+    const int64_t ir1 = mac[0] < -0x8000 ? -0x8000 : mac[0] > 0x7FFF ? 0x7FFF : mac[0];
+    const int64_t ir2 = mac[1] < -0x8000 ? -0x8000 : mac[1] > 0x7FFF ? 0x7FFF : mac[1];
+    const uint32_t sz3 = mac[2] < 0 ? 0u : mac[2] > 0xFFFF ? 0xFFFFu : (uint32_t)mac[2];
+    const int64_t q = gte_div(cpu->gte_ctrl[26] & 0xFFFFu, sz3);
+    const int64_t sx = ((int64_t)(int32_t)cpu->gte_ctrl[24] + ir1 * q) >> 16;
+    const int64_t sy = ((int64_t)(int32_t)cpu->gte_ctrl[25] + ir2 * q) >> 16;
+    /* fora de [-1024, 1023] o GTE satura a tela; o vértice fica guardado com a tela saturada (pad = 1) e só serve para o
+     * canto saturado de uma face (fv_find_sat, fv_find_all_sat) */
+    f->sx = (int16_t)(sx < -1024 ? -1024 : sx > 1023 ? 1023 : sx);
+    f->sy = (int16_t)(sy < -1024 ? -1024 : sy > 1023 ? 1023 : sy);
+    f->pad = (uint16_t)(sx < -1024 || sx > 1023 || sy < -1024 || sy > 1023);
     const uint32_t c = fv_cell(f->sx, f->sy);
     f->next = s_fh[c];
     s_fh[c] = (uint16_t)(s_nfv + 1u);
@@ -591,11 +638,99 @@ static int fv_find(int x, int y, float out[3]) {
         for (int dx = -1; dx <= 1; dx++)
             for (uint16_t i = s_fh[fv_cell(x + 2 * dx, y + 2 * dy)]; i; i = s_fv[i - 1u].next) {
                 const FreeV* f = &s_fv[i - 1u];
+                if (f->pad) continue;
                 const int d = abs(f->sx - x) + abs(f->sy - y);
                 if (d < bd) { bd = d; best = (int)i - 1; }
             }
     if (best < 0) return 0;
     memcpy(out, s_fv[best].p, 12);
+    return 1;
+}
+
+/* Canto de face na tela saturada pelo GTE (x ou y em -1024/1023): vários vértices podem saturar no mesmo ponto, então
+ * vale o que tem a tela saturada igual (o eixo saturado exato, o outro a ±2) e está mais perto, no espaço, dos cantos que
+ * já bateram (ref). Um quadrado do chão ou do fundo com um canto longe da tela entra assim com a geometria de verdade. */
+static int fv_sat_coord(int x, int y) { return x <= -1024 || x >= 1023 || y <= -1024 || y >= 1023; }
+static int fv_find_sat(int x, int y, const float ref[3], float out[3]) {
+    const int cx = x <= -1024 || x >= 1023, cy = y <= -1024 || y >= 1023;
+    int best = -1;
+    float bd = 32768.0f * 32768.0f;  /* até 32768 unidades do GTE dos outros cantos */
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            for (uint16_t i = s_fh[fv_cell(x + 2 * dx, y + 2 * dy)]; i; i = s_fv[i - 1u].next) {
+                const FreeV* f = &s_fv[i - 1u];
+                if (!f->pad) continue;
+                if (cx ? f->sx != x : abs(f->sx - x) > 2) continue;
+                if (cy ? f->sy != y : abs(f->sy - y) > 2) continue;
+                const float ex = f->p[0] - ref[0], ey = f->p[1] - ref[1], ez = f->p[2] - ref[2];
+                const float d = ex * ex + ey * ey + ez * ez;
+                if (d < bd) { bd = d; best = (int)i - 1; }
+            }
+    if (best < 0) {   /* estatística: candidato mais perto além do limite? */
+        float fd = 1e30f;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+                for (uint16_t i = s_fh[fv_cell(x + 2 * dx, y + 2 * dy)]; i; i = s_fv[i - 1u].next) {
+                    const FreeV* f = &s_fv[i - 1u];
+                    if (!f->pad || (cx ? f->sx != x : abs(f->sx - x) > 2) || (cy ? f->sy != y : abs(f->sy - y) > 2)) continue;
+                    const float ex = f->p[0] - ref[0], ey = f->p[1] - ref[1], ez = f->p[2] - ref[2];
+                    fd = fminf(fd, ex * ex + ey * ey + ez * ez);
+                }
+        if (fd < 1e30f) { s_nm.sat_far++; if (s_nm.far_min == 0.0f || sqrtf(fd) < s_nm.far_min) s_nm.far_min = sqrtf(fd); }
+        else s_nm.sat_none++;
+        return 0;
+    }
+    memcpy(out, s_fv[best].p, 12);
+    return 1;
+}
+
+/* Face com todos os cantos saturados (um quadrado grande do chão perto da câmera): sem canto normal de referência, vale
+ * a combinação de candidatos de menor soma de distâncias até o canto com menos candidatos (numa grade, o quadrado certo
+ * é o menor). 1 = cantos em out. */
+static int fv_cands(int x, int y, int* idx, int max) {
+    const int cx = x <= -1024 || x >= 1023, cy = y <= -1024 || y >= 1023;
+    int n = 0;
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            for (uint16_t i = s_fh[fv_cell(x + 2 * dx, y + 2 * dy)]; i && n < max; i = s_fv[i - 1u].next) {
+                const FreeV* f = &s_fv[i - 1u];
+                if (!f->pad || (cx ? f->sx != x : abs(f->sx - x) > 2) || (cy ? f->sy != y : abs(f->sy - y) > 2)) continue;
+                int dup = 0;
+                for (int k = 0; k < n && !dup; k++) dup = idx[k] == (int)i - 1;
+                if (!dup) idx[n++] = (int)i - 1;
+            }
+    return n;
+}
+static float fv_d2(int a, int b) {
+    const float ex = s_fv[a].p[0] - s_fv[b].p[0], ey = s_fv[a].p[1] - s_fv[b].p[1], ez = s_fv[a].p[2] - s_fv[b].p[2];
+    return ex * ex + ey * ey + ez * ez;
+}
+static int fv_find_all_sat(const int16_t xy[4][2], int nv, float* out) {
+    int cand[4][8], nc[4], an = 0;
+    for (int v = 0; v < nv; v++) {
+        nc[v] = fv_cands(xy[v][0], xy[v][1], cand[v], 8);
+        if (!nc[v]) { s_nm.sat_none++; return 0; }
+        if (nc[v] < nc[an]) an = v;
+    }
+    float best = 1e30f;
+    int sel[4] = {0, 0, 0, 0}, bsel[4] = {0, 0, 0, 0};
+    for (int ca = 0; ca < nc[an]; ca++) {
+        float cost = 0.0f, dmax = 0.0f;
+        sel[an] = cand[an][ca];
+        for (int v = 0; v < nv; v++) {
+            if (v == an) continue;
+            float bd = 1e30f;
+            for (int c = 0; c < nc[v]; c++) {
+                const float d = fv_d2(cand[v][c], sel[an]);
+                if (d < bd) { bd = d; sel[v] = cand[v][c]; }
+            }
+            cost += sqrtf(bd);
+            dmax = fmaxf(dmax, bd);
+        }
+        if (dmax < 32768.0f * 32768.0f && cost < best) { best = cost; memcpy(bsel, sel, sizeof sel); }
+    }
+    if (best >= 1e30f) { s_nm.sat_far++; return 0; }
+    for (int v = 0; v < nv; v++) memcpy(&out[3 * v], s_fv[bsel[v]].p, 12);
     return 1;
 }
 
@@ -702,6 +837,12 @@ static void geo_side_marker(uint32_t head, uint16_t flags) {
  * do 233, por exemplo, recarrega as CLUTs dos letreiros iguais às do disco. */
 static uint8_t s_dyn[4096];
 static uint32_t s_dyn_n;
+/* Segunda rodada da 6b: CLUT animada por MoveImage com as variantes na tabela .stg (v2): camada atual da chave + 1 (0 =
+ * a da chave), trocada a cada MoveImage de uma origem conhecida; origem desconhecida marca a chave como antes.
+ * KVAR_GAME: paleta desconhecida (savestate carregado), a chave fica com o jogo até a próxima cópia conhecida. */
+#define KVAR_GAME 0xFFu
+static uint8_t s_kvar[4096];
+static uint32_t s_var_n;
 /* Retângulos da VRAM (x0, y0, x1, y1 exclusivos) que o jogo atualizou dentro de páginas de textura do palco depois do
  * palco pronto (o telão, peças com textura animada): só os pacotes cujo UV cai num deles ficam com o jogo (uma carga
  * de 16x53 texels no 234 marcava as 11 texturas da página inteira). */
@@ -726,6 +867,7 @@ static int geo_key_layer(const RmkStage* t, uint16_t tpage, uint16_t clut, const
             for (uint32_t r = 0; r < s_ndynr; r++)
                 if (x0 < s_dynr[r].x1 && s_dynr[r].x0 < x1 && y0 < s_dynr[r].y1 && s_dynr[r].y0 < y1) { s_dynr_pk++; return -1; }
         }
+        if (s_kvar[i]) return s_kvar[i] == KVAR_GAME ? -1 : s_kvar[i] - 1;
         return t->keys[i].layer;
     }
     return -1;
@@ -735,8 +877,9 @@ static uint32_t s_dyn_same;          /* cargas de CLUT iguais às da exportaçã
 static uint32_t s_dyn_why[4];        /* marcas: LoadImage com outra CLUT, LoadImage sem conferir, MoveImage, página */
 static struct { int16_t x, y, w, h; uint16_t tpage, clut; uint8_t why; uint32_t got, want; } s_dyn_log[16];
 static uint32_t s_dyn_log_n;
-/* src: dados do LoadImage na RAM (0 = MoveImage, cópia dentro da VRAM: sem como conferir) */
-static void dyn_rect(int x, int y, int w, int h, uint32_t src) {
+/* src: dados do LoadImage na RAM (0 = MoveImage, cópia dentro da VRAM: sem como conferir); msx, msy: origem do MoveImage
+ * (-1 = LoadImage) */
+static void dyn_rect(int x, int y, int w, int h, uint32_t src, int msx, int msy) {
     if (s_cur < 0 || s_st[s_cur].state != 2 || !s_st[s_cur].rt_ready || w <= 0 || h <= 0) return;
     const RmkStage* t = &s_st[s_cur].t;
     int page_rect = 0;               /* a carga cai numa página de alguma chave: guarda o retângulo */
@@ -750,6 +893,12 @@ static void dyn_rect(int x, int y, int w, int h, uint32_t src) {
         const int page_hit = x < tx + tw && tx < x + w && y < ty + 256 && ty < y + h;
         if (!clut_hit && !page_hit) continue;
         if (page_hit && !clut_hit && s_ndynr < 32u) { page_rect = 1; continue; }
+        if (clut_hit && !page_hit && msx >= 0 && t->n_var && x <= cx && cx + nc <= x + w) {
+            const int sx = msx + (cx - x), sy = msy + (cy - y);   /* a linha de origem que cai na CLUT da chave */
+            uint32_t v = 0;
+            while (v < t->n_var && !(t->var[v].key == i && t->var[v].src_x == sx && t->var[v].src_y == sy)) v++;
+            if (v < t->n_var) { s_kvar[i] = (uint8_t)(t->var[v].layer + 1u); s_var_n++; continue; }
+        }
         const uint32_t want = (uint32_t)k->clut_hash[0] | (uint32_t)k->clut_hash[1] << 8 | (uint32_t)k->clut_hash[2] << 16;
         uint32_t got = 0;
         int why = page_hit ? 3 : !src ? 2 : 1;
@@ -788,20 +937,48 @@ static void dyn_rect(int x, int y, int w, int h, uint32_t src) {
     }
 }
 
+/* Savestate carregado: o marcador do pós-efeito espera o próximo quadro (emit_post). A VRAM volta com as CLUTs do
+ * estado salvo, mas a camada de cada chave com variantes é a da última cópia antes da carga (o plugin não lê a VRAM):
+ * essas chaves ficam com o jogo até a próxima cópia de origem conhecida. Os marcadores da geometria entram na OT todos
+ * de uma vez, na entrada de DrawOTagEnv (logo antes de a OT ir para a GPU): um savestate não cai no meio da troca. */
+static void geo_savestate_loaded(void) {
+    s_post_block = 1;                /* marcador do pós-efeito: só no próximo quadro, do começo da arena (emit_post) */
+    s_post_block_parity = rd32(FRAME_PARITY) & 1u;
+    s_parity = 0xFFFFFFFFu;
+    if (s_cur < 0 || s_st[s_cur].state != 2) return;
+    const RmkStage* t = &s_st[s_cur].t;
+    for (uint32_t v = 0; v < t->n_var; v++)
+        if (t->var[v].key < 4096u) s_kvar[t->var[v].key] = KVAR_GAME;
+}
+
 static void geo_load_image(struct CPUState* cpu, uint32_t address) {
     (void)address;
     const uint32_t r = cpu->gpr[4];
     if (r < 0x80000000u || r >= 0x801FFFF8u) return;
     const uint32_t src = cpu->gpr[5] >= 0x80000000u && cpu->gpr[5] < 0x80200000u ? cpu->gpr[5] : 0u;
     dyn_rect((int16_t)psx_mod_read_half(r), (int16_t)psx_mod_read_half(r + 2u), (int16_t)psx_mod_read_half(r + 4u),
-             (int16_t)psx_mod_read_half(r + 6u), src);
+             (int16_t)psx_mod_read_half(r + 6u), src, -1, -1);
 }
 
+/* MoveImage de uma linha de CLUT (16 ou 256 cores) no palco pronto (`stage_geo v`, tools/remake/stage_clut_vars.py):
+ * destino, origem, tamanho e vezes, distintos */
+static struct { int16_t dx, dy, sx, sy, w, h; uint32_t n; } s_mv[128];
+static uint32_t s_nmv;
 static void geo_move_image(struct CPUState* cpu, uint32_t address) {
     (void)address;
     const uint32_t r = cpu->gpr[4];
     if (r < 0x80000000u || r >= 0x801FFFF8u) return;
-    dyn_rect((int)cpu->gpr[5], (int)cpu->gpr[6], (int16_t)psx_mod_read_half(r + 4u), (int16_t)psx_mod_read_half(r + 6u), 0u);
+    const int16_t mw = (int16_t)psx_mod_read_half(r + 4u), mh = (int16_t)psx_mod_read_half(r + 6u);
+    if (s_cur >= 0 && s_st[s_cur].state == 2 && mh == 1 && (mw == 16 || mw == 256)) {
+        const int16_t dx = (int16_t)cpu->gpr[5], dy = (int16_t)cpu->gpr[6], sx = (int16_t)psx_mod_read_half(r),
+                      sy = (int16_t)psx_mod_read_half(r + 2u), w = mw, h = mh;
+        uint32_t i = 0;
+        while (i < s_nmv && !(s_mv[i].dx == dx && s_mv[i].dy == dy && s_mv[i].sx == sx && s_mv[i].sy == sy)) i++;
+        if (i < s_nmv) s_mv[i].n++;
+        else if (s_nmv < 128u) { s_mv[i].dx = dx; s_mv[i].dy = dy; s_mv[i].sx = sx; s_mv[i].sy = sy; s_mv[i].w = w; s_mv[i].h = h; s_mv[i].n = 1; s_nmv++; }
+    }
+    dyn_rect((int)cpu->gpr[5], (int)cpu->gpr[6], (int16_t)psx_mod_read_half(r + 4u), (int16_t)psx_mod_read_half(r + 6u), 0u,
+             (int16_t)psx_mod_read_half(r), (int16_t)psx_mod_read_half(r + 2u));
 }
 
 /* Lê um pacote de polígono do jogo para `e` (o 2º pacote de um decalque completa o 1º). 0 = não serve. */
@@ -868,24 +1045,56 @@ static int try_free(uint32_t a, uint32_t len, RmkStagePkt* e, uint32_t* tp, int1
     if (read_packet(a, len, e, 0, tp, pb, xy, &nv) != 1) return 0;
     if ((e->flags & RMK_SPKT_TEX) && e->layer == 0xFFu) { s_gs.free_miss++; return 0; }
     float* out = &s_ff_pos[3u * s_nffv];
-    for (int v = 0; v < nv; v++)
-        if (!fv_find(xy[v][0], xy[v][1], &out[3 * v])) {
-            s_gs.free_nomatch++;
-            s_nm.hit[v < 3 ? v : 3]++;
-            {
-                uint32_t i = 0;
-                while (i < s_nm_nat && s_nm_at[i].page != (a >> 12)) i++;
-                if (i < s_nm_nat) s_nm_at[i].n++;
-                else if (s_nm_nat < 16u) { s_nm_at[i].page = a >> 12; s_nm_at[i].n = 1; s_nm_nat++; }
+    /* cantos na tela normal primeiro; os saturados pelo mais perto dos que bateram */
+    int pend = 0, got = 0, bad = -1;
+    float ref[3] = {0.0f, 0.0f, 0.0f};
+    for (int v = 0; v < nv && bad < 0; v++) {
+        if (fv_sat_coord(xy[v][0], xy[v][1])) { pend |= 1 << v; continue; }
+        if (!fv_find(xy[v][0], xy[v][1], &out[3 * v])) { bad = v; break; }
+        for (int k = 0; k < 3; k++) ref[k] += out[3 * v + k];
+        got++;
+    }
+    if (bad < 0 && pend && !got) {
+        s_nm.sat_nogot++;
+        if (!fv_find_all_sat(xy, nv, out)) bad = 0;
+    } else if (bad < 0 && pend) {
+        for (int k = 0; k < 3; k++) ref[k] /= (float)got;
+        for (int v = 0; v < nv && bad < 0; v++)
+            if ((pend >> v) & 1) {
+                if (!fv_find_sat(xy[v][0], xy[v][1], ref, &out[3 * v])) bad = v;
             }
-            if (!(e->flags & RMK_SPKT_TEX)) { s_nm.flat++; return 0; }
-            s_nm.tex++;
-            uint32_t i = 0;
-            while (i < s_nm_ntp && !(s_nm_tp[i].tpage == (*tp & 0x19Fu) && s_nm_tp[i].layer == e->layer)) i++;
-            if (i < s_nm_ntp) s_nm_tp[i].n++;
-            else if (s_nm_ntp < 24u) { s_nm_tp[i].tpage = (uint16_t)(*tp & 0x19Fu); s_nm_tp[i].layer = e->layer; s_nm_tp[i].n = 1; s_nm_ntp++; }
-            return 0;
+    }
+    if (bad >= 0) {
+        const int v = bad;
+        s_gs.free_nomatch++;
+        s_nm.hit[v < 3 ? v : 3]++;
+        /* amostras fora de 0x8008xxxx (lá ficam o fundo 2D e os billboards, que não têm vértice 3D) */
+        if (s_nm_nsmp < 12u && ((a >> 16) & 0x1FFFu) != 0x0008u && (s_gs.free_nomatch & 15u) == 1u) {
+            int bd = 1 << 30, bi = -1;
+            for (uint32_t i = 0; i < s_nfv; i++) {
+                const int d = abs(s_fv[i].sx - xy[v][0]) + abs(s_fv[i].sy - xy[v][1]);
+                if (d < bd) { bd = d; bi = (int)i; }
+            }
+            s_nm_smp[s_nm_nsmp].x = xy[v][0]; s_nm_smp[s_nm_nsmp].y = xy[v][1];
+            s_nm_smp[s_nm_nsmp].bx = bi >= 0 ? s_fv[bi].sx : 0; s_nm_smp[s_nm_nsmp].by = bi >= 0 ? s_fv[bi].sy : 0;
+            s_nm_smp[s_nm_nsmp].d = bd; s_nm_smp[s_nm_nsmp].a = a; s_nm_smp[s_nm_nsmp].nfv = (uint16_t)s_nfv;
+            s_nm_nsmp++;
         }
+        {
+            uint32_t i = 0;
+            while (i < s_nm_nat && s_nm_at[i].page != (a >> 12)) i++;
+            if (i < s_nm_nat) s_nm_at[i].n++;
+            else if (s_nm_nat < 16u) { s_nm_at[i].page = a >> 12; s_nm_at[i].n = 1; s_nm_nat++; }
+        }
+        if (!(e->flags & RMK_SPKT_TEX)) { s_nm.flat++; return 0; }
+        s_nm.tex++;
+        uint32_t i = 0;
+        while (i < s_nm_ntp && !(s_nm_tp[i].tpage == (*tp & 0x19Fu) && s_nm_tp[i].layer == e->layer)) i++;
+        if (i < s_nm_ntp) s_nm_tp[i].n++;
+        else if (s_nm_ntp < 24u) { s_nm_tp[i].tpage = (uint16_t)(*tp & 0x19Fu); s_nm_tp[i].layer = e->layer; s_nm_tp[i].n = 1; s_nm_ntp++; }
+        return 0;
+    }
+    for (int v = 0; v < nv; v++) s_gs.free_sat += (uint32_t)((pend >> v) & 1);
     e->prim = (uint16_t)(RMK_SPKT_FREE | s_nffv);
     if (nv == 4) e->flags |= RMK_SPKT_QUAD;
     e->twin = s_twin;
@@ -999,7 +1208,7 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
     /* os vértices transformados (geo_rtp) valem para esta OT; registra para a próxima só com o palco pronto */
     const int ready = s_geo_on && s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready;
     static int ready_prev;
-    if (!(s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready)) { if (ready_prev) { memset(s_dyn, 0, sizeof s_dyn); s_dyn_log_n = 0; s_ndynr = 0; } ready_prev = 0; }
+    if (!(s_cur >= 0 && s_st[s_cur].state == 2 && s_st[s_cur].rt_ready)) { if (ready_prev) { memset(s_dyn, 0, sizeof s_dyn); memset(s_kvar, 0, sizeof s_kvar); s_dyn_log_n = 0; s_ndynr = 0; } ready_prev = 0; }
     else ready_prev = 1;
     if (!ready || !nseen) { fv_reset(); s_fv_rec = ready; return; }
     Stg* s = &s_st[s_cur];
@@ -1229,8 +1438,10 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
                      s_gs.err_n ? s_gs.err_sum / s_gs.err_n : 0.0, s_gs.err_max, s_gs.err_n, s_gs.err_b[0], s_gs.err_b[1],
                      s_gs.err_b[2], s_geo_draws, s_geo_frames,
                      s_geo_draws ? s_geo_us / s_geo_draws : 0.0, s_geo_free_n);
-    n += snprintf(reply + n, cap - n, " livres: faces=%u vértices=%u sem_par=%u sem_camada=%u janela=%u rtp=%u |",
-                  s_gs.free_faces, s_gs.free_verts, s_gs.free_nomatch, s_gs.free_miss, s_gs.free_twin, s_gs.rtp);
+    n += snprintf(reply + n, cap - n, " livres: faces=%u vértices=%u sem_par=%u sem_camada=%u janela=%u rtp=%u "
+                  "cantos_saturados=%u |", s_gs.free_faces, s_gs.free_verts, s_gs.free_nomatch, s_gs.free_miss,
+                  s_gs.free_twin, s_gs.rtp, s_gs.free_sat);
+    n += snprintf(reply + n, cap - n, " trocas_de_variante=%u", s_var_n);
     n += snprintf(reply + n, cap - n, " texturas_animadas=%u cargas_iguais=%u (outra_clut=%u sem_conferir=%u move=%u "
                   "retangulos_da_pagina=%u, pacotes neles=%u)", s_dyn_n, s_dyn_same, s_dyn_why[0], s_dyn_why[1], s_dyn_why[2],
                   s_ndynr, s_dynr_pk);
@@ -1283,18 +1494,31 @@ static int stage_geo_cmd(const char* args, char* reply, int cap) {
         if (args[1] == 'z') s_nmiss = 0;
         return 0;
     }
+    if (args && args[0] == 'v') {   /* MoveImage no palco pronto: destino<-origem tamanho vezes */
+        int n = snprintf(reply, cap, "move=%u:", s_nmv);
+        for (uint32_t i = 0; i < s_nmv && n < cap - 48; i++)
+            n += snprintf(reply + n, cap - n, " %d,%d<-%d,%d %dx%d/%u", s_mv[i].dx, s_mv[i].dy, s_mv[i].sx, s_mv[i].sy,
+                          s_mv[i].w, s_mv[i].h, s_mv[i].n);
+        if (args[1] == 'z') s_nmv = 0;
+        return 0;
+    }
     if (args && args[0] == 'p') {   /* faces livres sem par: com textura / sem; vértices que bateram; página/camada/vezes */
-        int n = snprintf(reply, cap, "sem_par: textura=%u sem_textura=%u bateram 0=%u 1=%u 2=%u 3=%u:", s_nm.tex, s_nm.flat,
-                         s_nm.hit[0], s_nm.hit[1], s_nm.hit[2], s_nm.hit[3]);
+        int n = snprintf(reply, cap, "sem_par: textura=%u sem_textura=%u bateram 0=%u 1=%u 2=%u 3=%u saturados: todos=%u "
+                         "sem_candidato=%u longe=%u (mín %.0f):", s_nm.tex, s_nm.flat, s_nm.hit[0], s_nm.hit[1], s_nm.hit[2],
+                         s_nm.hit[3], s_nm.sat_nogot, s_nm.sat_none, s_nm.sat_far, s_nm.far_min);
         for (uint32_t i = 0; i < s_nm_ntp && n < cap - 32; i++)
             n += snprintf(reply + n, cap - n, " %03X/%u/%u", s_nm_tp[i].tpage, s_nm_tp[i].layer, s_nm_tp[i].n);
         n += snprintf(reply + n, cap - n, " | RAM:");
         for (uint32_t i = 0; i < s_nm_nat && n < cap - 32; i++)
             n += snprintf(reply + n, cap - n, " %05X000/%u", s_nm_at[i].page, s_nm_at[i].n);
+        n += snprintf(reply + n, cap - n, " | amostras:");
+        for (uint32_t i = 0; i < s_nm_nsmp && n < cap - 64; i++)
+            n += snprintf(reply + n, cap - n, " %06X (%d,%d)~(%d,%d) d%d n%u", s_nm_smp[i].a & 0xFFFFFFu, s_nm_smp[i].x,
+                          s_nm_smp[i].y, s_nm_smp[i].bx, s_nm_smp[i].by, s_nm_smp[i].d, s_nm_smp[i].nfv);
         n += snprintf(reply + n, cap - n, " | nós na OT %d:", s_nseen);
         for (int i = 0; i < s_nseen && n < cap - 40; i++)
             n += snprintf(reply + n, cap - n, " %d:%06X-%06X", s_seen[i].k, s_seen[i].lo & 0xFFFFFFu, s_seen[i].hi & 0xFFFFFFu);
-        if (args[1] == 'z') { memset(&s_nm, 0, sizeof s_nm); s_nm_ntp = 0; s_nm_nat = 0; }
+        if (args[1] == 'z') { memset(&s_nm, 0, sizeof s_nm); s_nm_ntp = 0; s_nm_nat = 0; s_nm_nsmp = 0; }
         return 0;
     }
     float v[8];
@@ -1366,6 +1590,7 @@ PSX_MOD_CONSTRUCTOR(bag2_stage_register) {
     (void)psx_mod_register_command("gpu_timers", gpu_timers_cmd);
     (void)psx_mod_register_command("stage_geo", stage_geo_cmd);
     (void)psx_mod_register_vblank_plugin("bag2.stage_remake", geo_vblank);
+    (void)psx_mod_register_savestate_plugin("bag2.stage_remake", geo_savestate_loaded);
     (void)psx_mod_register_function_entry_plugin("bag2.stage_remake", NODE_FILL_FN, geo_node_fill);
     (void)psx_mod_register_function_entry_plugin("bag2.stage_remake", DRAW_OT_FN, geo_draw_ot);
     (void)psx_mod_register_function_entry_plugin("bag2.stage_remake", F278_FN, geo_rtp);

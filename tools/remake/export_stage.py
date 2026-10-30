@@ -20,8 +20,11 @@ Saída (fora do git, derivada do disco do usuário), em build-debug/ e build/ mo
       por primitiva (na ordem do buffer): u16 palavras do(s) pacote(s) (com a tag), u8 nº de pacotes (1 ou 2: decalque),
                    u8 nº de faces (0..2), u32 primeira face; u8 canto[2][3]: pacote (vértice 0..3 no GP0) de cada canto
                    das duas faces (lido do pacote vivo: cor, UV), u8 pad[2]
-      por chave:   u16 tpage (bits 0..4 e 7..8 do pacote), u16 clut (palavra do pacote), u8 camada, u8 pad[3]
-                   (a camada HD de cada textura e CLUT que o jogo usa, pela posição de cada TIM na VRAM)
+      por chave:   u16 tpage (bits 0..4 e 7..8 do pacote), u16 clut (palavra do pacote), u8 camada, u8 hash[3]
+                   (a camada HD de cada textura e CLUT que o jogo usa, pela posição de cada TIM na VRAM; hash: 24 bits
+                   baixos do FNV-1a da CLUT da camada)
+      versão 2:    u32 n_var; por variante de CLUT animada por MoveImage: u16 chave, i16 x, i16 y da linha de origem
+                   na VRAM, u8 camada, u8 pad (stage_clut_vars.py)
 Uso: python tools/remake/export_stage.py 234 [235 ...]   (sem argumento: todos, 231..245)
 """
 from __future__ import annotations
@@ -160,6 +163,16 @@ def export(c: int, outs_dir: list[str]):
         hd += hd_layers(ex_imgs, os.path.join(OUT, 'palcos', f'palco{c}', f'textures_extra_{tag}'))
         keys += [(a, b, len(rig.layers) + i, ex_hash[i]) for i, (a, b) in enumerate(ex_keys)]
         layers = layers + ex_imgs
+    # variantes de CLUT animada por MoveImage (stage_clut_vars.py): uma camada por linha de origem, todas as de uma CLUT
+    # ou nenhuma (se não couberem no limite de 64, a CLUT fica com o jogo, como antes)
+    var_rows, var_imgs = clut_variants(c, tims, tim_raw, rig, keys, 64 - len(hd))
+    if var_imgs:
+        tag = f'{fnv(repr(var_rows).encode()):08x}'
+        hd += hd_layers(var_imgs, os.path.join(OUT, 'palcos', f'palco{c}', f'textures_var_{tag}'))
+        base = len(layers)
+        var_rows = [(k, sx, sy, base + li_) for k, sx, sy, li_ in var_rows]
+        keys = [(a, b, base - 1 - li_ if li_ < 0 else li_, h) for a, b, li_, h in keys]
+        layers = layers + var_imgs
     assert len(hd) <= 64, f'{c}: {len(hd)} camadas'
     rig.mode = rig.mode | stage_semi(rig, nodes)
     # faces na ordem do buffer de pacotes: (nó, lista na ordem do jogo, primitiva)
@@ -227,7 +240,7 @@ def export(c: int, outs_dir: list[str]):
         buf += np.ascontiguousarray(smooth_alpha(img, ps1), np.uint8).tobytes()
     # ---- tabelas
     stg = bytearray(b'STG1')
-    stg += struct.pack('<6I', 1, c, len(mesh_nodes), len(hd), len(keys), len(model))
+    stg += struct.pack('<6I', 2 if var_rows else 1, c, len(mesh_nodes), len(hd), len(keys), len(model))
     stg += struct.pack('<2I', fnv(ov[:512]), fnv(model[:256]))
     for r in node_rows:
         stg += struct.pack('<4I', *r)
@@ -236,6 +249,10 @@ def export(c: int, outs_dir: list[str]):
         stg += struct.pack('<HBBI', w, npk, nf, f0) + bytes(cs[0] + cs[1]) + b'\0\0'
     for tp, cw, li_, h in keys:
         stg += struct.pack('<HHB', tp, cw, li_) + (h & 0xFFFFFF).to_bytes(3, 'little')
+    if var_rows:
+        stg += struct.pack('<I', len(var_rows))
+        for k, sx, sy, li_ in var_rows:
+            stg += struct.pack('<HhhBB', k, sx, sy, li_, 0)
     for d in outs_dir:
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f'palco{c}.bin'), 'wb') as fh:
@@ -244,7 +261,7 @@ def export(c: int, outs_dir: list[str]):
             fh.write(stg)
     print(f'palco {c}: {len(buf) / 1e6:.1f} MB, {len(mesh_nodes)} nós, {len(owner)} vértices ({len(rig.owner)} antes dos '
           f'vincos), {len(rig.tris)} faces ({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas '
-          f'({len(ex_imgs)} do código do overlay), '
+          f'({len(ex_imgs)} do código do overlay, {len(var_imgs)} variantes de CLUT), '
           f'{len(prims)} primitivas, chaves {[(hex(a), hex(b)) for a, b, _, _ in keys]}', flush=True)
 
 
@@ -343,6 +360,94 @@ def extra_layers(c, tims, tim_raw, have):
         out_i.append(img)
         out_h.append(clut_hash(pal[:16 if bpp == 4 else 256]))
     return out_k, out_i, out_h
+
+
+def key_page(c, tims, tim_raw, rig, key, tp, bpp):
+    """Índices 256x256 da página de uma chave e a cobertura: do TIM da camada do modelo, da página montada com os TIMs do
+    palco (como extra_layers) ou da página lida da VRAM (stage_vram_keys.py). (None, None) se não houver."""
+    if key is not None and 0 <= key[2] < len(rig.layers):
+        tim = tims[rig.layers[key[2]][0]]
+        idx = np.zeros((256, 256), np.int64)
+        cov = np.zeros((256, 256), bool)
+        idx[:tim.idx.shape[0], :tim.idx.shape[1]] = tim.idx
+        cov[:tim.idx.shape[0], :tim.idx.shape[1]] = True
+        return idx, cov
+    tpx = 16 // bpp
+    tx, ty, hw = (tp & 0xF) * 64, ((tp >> 4) & 1) * 256, 256 // tpx
+    idx = np.zeros((256, 256), np.int64)
+    cov = np.zeros((256, 256), bool)
+    for tim, raw in zip(tims, tim_raw):
+        x, y, _cx, _cy, tb = tim_vram(raw)
+        if tb != bpp:
+            continue
+        x0, x1 = max(x, tx), min(x + tim.w // tpx, tx + hw)
+        y0, y1 = max(y, ty), min(y + tim.h, ty + 256)
+        if x0 < x1 and y0 < y1:
+            idx[y0 - ty:y1 - ty, (x0 - tx) * tpx:(x1 - tx) * tpx] = tim.idx[y0 - y:y1 - y, (x0 - x) * tpx:(x1 - x) * tpx]
+            cov[y0 - ty:y1 - ty, (x0 - tx) * tpx:(x1 - tx) * tpx] = True
+    if cov.any():
+        return idx, cov
+    vd = os.path.join(OUT, 'palcos', 'vram', str(c))
+    for fn in sorted(os.listdir(vd)) if os.path.isdir(vd) else []:
+        if fn.startswith(f'{tp:03x}_') and fn.endswith('.npz') and len(fn) == 12:
+            raw = np.load(os.path.join(vd, fn))['page'].astype(np.int64)
+            idx = np.stack([(raw >> (bpp * i)) & ((1 << bpp) - 1) for i in range(tpx)], axis=-1).reshape(256, 256)
+            return idx, np.ones((256, 256), bool)
+    return None, None
+
+
+def page_rgba(idx, cov, pal):
+    v = pal[np.clip(idx, 0, len(pal) - 1)].astype(np.int64)
+    img = bm.c16_to_rgba(v)
+    img[~cov] = 0
+    stp = ((v >> 15) & 1).astype(bool) & (v != 0) & cov
+    img[..., 3][stp] = STP_ALPHA
+    return img
+
+
+def clut_variants(c, tims, tim_raw, rig, keys, room):
+    """CLUT animada por MoveImage (tools/remake/stage_clut_vars.py, vram/<c>/clut_var.json): uma camada por linha de
+    origem do banco de paletas, para cada chave com aquela CLUT; todas as de uma CLUT ou nenhuma (limite `room`). Chaves
+    animadas que ainda não estavam na tabela (página só na VRAM) entram em `keys` com a camada da primeira variante
+    (camada local, -1 - i; export() resolve). Devolve (linhas (chave, x, y, camada local), imagens 256x256)."""
+    import json
+    f = os.path.join(OUT, 'palcos', 'vram', str(c), 'clut_var.json')
+    if not os.path.exists(f) or room <= 0:
+        return [], []
+    vd = os.path.dirname(f)
+    rows, imgs = [], []
+    same = {}   # (página, origem) -> camada local: chaves da mesma página copiando a mesma linha dão a mesma imagem
+    for cw_hex, e in json.load(open(f, encoding='utf-8')).items():
+        cw, bpp = int(cw_hex, 16), 4 if e['w'] == 16 else 8
+        pages = [(i, keys[i][0]) for i, k in enumerate(keys) if k[1] == cw]
+        if not pages:   # página só na VRAM: a chave entra agora
+            pages = [(None, int(fn[:3], 16)) for fn in sorted(os.listdir(vd))
+                     if fn.endswith(f'_{cw:04x}.npz') and len(fn) == 12 and ((int(fn[:3], 16) >> 7) & 3) == (bpp == 8)]
+        cand = []
+        for ki, tp in pages:
+            idx, cov = key_page(c, tims, tim_raw, rig, keys[ki] if ki is not None else None, tp, bpp)
+            if idx is None:
+                continue
+            for sx, sy, row in e['src']:
+                img = None if (tp, sx, sy) in same else page_rgba(idx, cov, np.array(row, np.int64))
+                cand.append((ki, tp, sx, sy, img))
+        need = len({(tp, sx, sy) for _, tp, sx, sy, img in cand if img is not None})
+        if not cand or len(imgs) + need > room:
+            if cand:
+                print(f'palco {c}: CLUT {cw_hex} ({need} camadas novas) fica com o jogo (limite de 64)')
+            continue
+        new_key = {}
+        for ki, tp, sx, sy, img in cand:
+            if ki is None:
+                if tp not in new_key:
+                    keys.append((tp, cw, -1 - (same.get((tp, sx, sy), len(imgs))), 0))
+                    new_key[tp] = len(keys) - 1
+                ki = new_key[tp]
+            if (tp, sx, sy) not in same:
+                same[(tp, sx, sy)] = len(imgs)
+                imgs.append(img)
+            rows.append((ki, sx, sy, same[(tp, sx, sy)]))
+    return rows, imgs
 
 
 def stage_semi(rig, nodes):

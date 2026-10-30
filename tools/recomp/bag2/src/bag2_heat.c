@@ -927,12 +927,29 @@ static void heat_load_image(struct CPUState* cpu, uint32_t address) {
     if (hit >= 0) request_load(hit, "bag2_heat.load_tim");
 }
 
+/* Savestate salvo no meio da montagem de um quadro: a OT restaurada já liga os marcadores (e pacotes GT3) que o
+ * plugin pôs nela antes de salvar, e os cursores das arenas são do host (não voltam com o estado). Gravar de novo
+ * nesses endereços faz um marcador apontar para si mesmo, e o DMA da GPU dava ~262 mil voltas nele (15 s de desenho
+ * de host). Até a paridade do quadro virar, nada novo nas arenas: os personagens e a sombra saem pelo original. */
+static int s_mark_block = 0;
+static uint32_t s_mark_block_parity;
+static int marks_blocked(void) {
+    if (!s_mark_block) return 0;
+    if ((rd32(FRAME_PARITY) & 1u) == s_mark_block_parity) return 1;
+    s_mark_block = 0;
+    return 0;
+}
+
 /* Depois de carregar um savestate a VRAM é outra: as casas voltam ao conteúdo do disco até a próxima cópia, e as
- * páginas de cada personagem são achadas de novo. */
+ * páginas de cada personagem são achadas de novo. As arenas recomeçam do zero no próximo quadro (marks_blocked). */
 static void heat_savestate_loaded(void) {
     s_nvr = 0;
     for (int i = 0; i < MAX_INST; i++) { s_inst[i].n_marks = 0; s_inst[i].pages_ok = 0; }
     s_n_skip = 0;
+    s_mark_block = 1;
+    s_mark_block_parity = rd32(FRAME_PARITY) & 1u;
+    s_mark_parity = 0xFFFFFFFFu;
+    s_last_parity = 0xFFFFFFFFu;
 }
 
 /* ================================================================== desenho de host (fase 1) */
@@ -941,7 +958,7 @@ static void heat_savestate_loaded(void) {
 static uint32_t emit_marker(uint32_t slot, uint16_t flags, const RmkAsset* a, const RmkFrame* fr, const float* pos) {
     static uint32_t buf[(8u + sizeof(PSXModHostDrawHeader) + sizeof(RmkFrame)) / 4u + 3u * 65536u];
     /* pos: vetor completo; vai compacto (corpo + gestos ativos), fr->n_verts vértices */
-    if (!s_marks) return 0;
+    if (!s_marks || marks_blocked()) return 0;
     const uint32_t parity = rd32(FRAME_PARITY) & 1u;
     if (parity != s_mark_parity) { s_mark_parity = parity; s_mark_off = 0; }
     if (s_mark_off + s_mark_bytes > MARKS_PER_HALF * s_mark_bytes) return 0;
@@ -1020,7 +1037,8 @@ static int use_host_path(void) { return !(s_flags & 4) && s_marks; }
 /* Sombra nova no chão: desenho de host, modo 1 ou de carga (nos de comparação o original continua com a sombra
  * dele) e chão lido. */
 static int floor_on(const Inst* in) {
-    return !(s_flags & 256) && use_host_path() && (s_mode == 1 || s_mode >= 4) && s_mode != 7 && in->ground.ok;
+    return !(s_flags & 256) && use_host_path() && (s_mode == 1 || s_mode >= 4) && s_mode != 7 && in->ground.ok &&
+           !marks_blocked();
 }
 
 /* Um personagem pelo desenho de host (shift = deslocamento na tela, para comparação e carga). */
@@ -1690,6 +1708,7 @@ static int draw_char(struct CPUState* cpu, uint32_t root, const TreeMap* tm, int
     if (c->state == 0) request_load(ch, "bag2_heat.load_draw");
     if (c->state != 2) return 0;
     c->drawn = 1;
+    if (marks_blocked()) return 0;   /* quadro do savestate carregado: o original */
     const int host = use_host_path() && !c->rt_failed;
     /* Recursos GL do desenho de host: criados aos poucos, por marcadores de preparo deste personagem; até ficarem
      * prontos, o original continua. */

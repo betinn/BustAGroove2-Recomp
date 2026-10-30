@@ -234,6 +234,9 @@ typedef struct {
 } RmkStagePrim;
 typedef struct { uint16_t tpage, clut; uint8_t layer, clut_hash[3]; } RmkStageKey;   /* textura + CLUT do jogo -> camada;
     clut_hash: 24 bits baixos do FNV-1a da CLUT que a camada usou (16 ou 256 cores, little-endian; 0 = desconhecido) */
+/* .stg v2: CLUT animada por MoveImage (o jogo copia uma linha de um banco de paletas na CLUT da chave): a camada de cada
+ * origem (src_x, src_y) da cópia */
+typedef struct { uint16_t key; int16_t src_x, src_y; uint8_t layer, pad; } RmkStageVar;
 #pragma pack(pop)
 typedef struct {
     uint32_t version, container, n_nodes, n_layers, n_keys, model_bytes;
@@ -242,6 +245,8 @@ typedef struct {
     uint32_t n_prims;
     RmkStagePrim* prims;
     RmkStageKey* keys;
+    uint32_t n_var;                  /* v2 */
+    RmkStageVar* var;
 } RmkStage;
 int rmk_stage_load(RmkStage* s, const char* path);   /* 1 = ok */
 void rmk_stage_free(RmkStage* s);

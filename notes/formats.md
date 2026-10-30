@@ -181,6 +181,20 @@ endereço do pacote.
   têm): RTPT (`0x4A280030`) em 0x801DB2B0, 2FC, 304, 31C, 348, 354, 374, 3A0, 40C, 0x801E0304, 035C, 1E0C, 1E64, 1ED0,
   2868, 28C0, 3440, 3498; RTPS (`0x4A180001`) em 0x801DB3BC e 3DC (o mesmo endereço é outra instrução em outro palco).
   Os vértices estão em V0..V2 do GTE na hora da instrução, com a matriz e o deslocamento do GTE (RT, TR, OFX, OFY, H).
+- **Tela saturada e vértice perto da câmera** (terceira rodada da 6b): os quadrados grandes do chão e do fundo têm cantos
+  com SX/SY saturados em -1024/1023, e os perto da câmera (SZ3 <= H/2) saem com o quociente da divisão saturado em
+  0x1FFFF (tela = OF + IR × 1,99998). Para reconhecer o pacote, a tela tem de ser a do GTE exata: MAC >> 12, IR em 16
+  bits, a divisão UNR do hardware (tabela de 257 entradas, duas iterações de Newton) e o arredondamento dela; a conta em
+  float erra até 3 px longe do centro. Canto saturado: vários vértices caem no mesmo ponto, vale o mais perto no espaço
+  dos cantos que bateram, ou, com todos saturados, a combinação de menor perímetro.
+- **O que o overlay monta sem vértice 3D** (pacotes em `0x80080000..0x8008FFFF`): painéis de fundo 2D com rolagem pela
+  câmera (céu e cidade do 233, XY de uma tabela menos a rolagem), billboards de brilho (função do executável em
+  `0x8002DE40`: RotTransPers só do centro e um quadrado na tela do tamanho de 1/z) e sprites de um módulo carregado em
+  `0x8009xxxx` (`setSprt`, posição fixa na tela).
+- **CLUT animada por MoveImage**: o jogo copia uma linha de um banco de paletas na VRAM (por exemplo 1008,32..39 para a
+  CLUT em 960,48 no 232) para a CLUT da chave no tempo da música; a página não muda. Bancos medidos na música inteira
+  (origens distintas por CLUT, `stage_clut_vars.py`): 232 8, 8 e 2; 233 2 em cada uma de 7 CLUTs; 234 9 em cada uma de
+  3; 235 6 em cada uma de 6 e 2 em cada uma de 2; 242 14 em cada uma de 2; 231, 236, 237, 238, 243 e 244 nenhuma.
 - **Envio da OT**: o laço principal (`main`) chama `DrawOTagEnv(ot, env)` (0x800486AC) quando a OT do quadro está pronta
   (30 Hz) e espera o `DrawSync` chamando `rand()`; então o tempo que a GPU emulada leva para andar a OT muda o sorteio
   (peças com movimento aleatório, como a gaiola do 234, divergem entre duas variantes depois de um savestate).

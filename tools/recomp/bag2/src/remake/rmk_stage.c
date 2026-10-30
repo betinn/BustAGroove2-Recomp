@@ -40,6 +40,7 @@ uint32_t rmk_fnv1a(const uint8_t* p, uint32_t n) {
 void rmk_stage_free(RmkStage* s) {
     free(s->prims);
     free(s->keys);
+    free(s->var);
     memset(s, 0, sizeof *s);
 }
 
@@ -48,7 +49,8 @@ int rmk_stage_load(RmkStage* s, const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) return 0;
     uint32_t magic = 0, h[8];
-    int ok = fread(&magic, 4, 1, f) == 1 && magic == RMK_STAGE_TAB_MAGIC && fread(h, 4, 8, f) == 8 && h[0] == 1u;
+    int ok = fread(&magic, 4, 1, f) == 1 && magic == RMK_STAGE_TAB_MAGIC && fread(h, 4, 8, f) == 8 &&
+             (h[0] == 1u || h[0] == 2u);
     if (ok) {
         s->version = h[0]; s->container = h[1]; s->n_nodes = h[2]; s->n_layers = h[3]; s->n_keys = h[4];
         s->model_bytes = h[5]; s->ov_hash = h[6]; s->model_hash = h[7];
@@ -65,6 +67,14 @@ int rmk_stage_load(RmkStage* s, const char* path) {
         s->keys = (RmkStageKey*)malloc(sizeof(RmkStageKey) * (s->n_keys ? s->n_keys : 1u));
         ok = s->prims && s->keys && fread(s->prims, sizeof(RmkStagePrim), s->n_prims, f) == s->n_prims &&
              fread(s->keys, sizeof(RmkStageKey), s->n_keys, f) == s->n_keys;
+    }
+    if (ok && s->version >= 2u) {    /* variantes de CLUT animada */
+        ok = fread(&s->n_var, 4, 1, f) == 1 && s->n_var < 4096u;
+        if (ok && s->n_var) {
+            s->var = (RmkStageVar*)malloc(sizeof(RmkStageVar) * s->n_var);
+            ok = s->var && fread(s->var, sizeof(RmkStageVar), s->n_var, f) == s->n_var;
+            for (uint32_t i = 0; ok && i < s->n_var; i++) ok = s->var[i].key < s->n_keys && s->var[i].layer < s->n_layers;
+        }
     }
     /* o buffer de cada nó tem exatamente as palavras das primitivas (o adaptador confere de novo na RAM) */
     for (uint32_t i = 0; ok && i < s->n_nodes; i++) {

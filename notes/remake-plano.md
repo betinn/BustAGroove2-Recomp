@@ -23,11 +23,25 @@ já é construído pensando nele (fase 7).
 | 4 | Dois jogadores (segundo personagem pelo mesmo pipeline) e depois os outros 16 | **feito** (2026-10-28): rota do 2 jogadores, COMET e os dois figurinos de 15 personagens; 3 recusados (outro esqueleto) |
 | 5 | Memória do elenco: só quem está em cena fica carregado; lacunas da fase 4 conferidas | **feito** (2026-10-28): descarga, os 18 conferidos, asset v7 |
 | 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **feito** (2026-10-28): os 11 palcos da tela de palco pelo desenho de host, chão e fundos do overlay, pacote HD +92 texturas |
-| 6b | Pendências da fase 6: render do 236, chão por RTPT em linha, segunda volta de dumps HD, e na segunda rodada tudo o que faltava | **feito** (2026-10-28 e 2026-10-29): espelho do 16:9 só nas laterais, RTPT/RTPS em linha do overlay (chão do 233, asfalto do 236), sombra macia no cenário, sem junta entre ladrilhos; Phong nas peças curvas, 241 e 245, texturas da VRAM, janela de textura, causa do HEAT × COMET; 13 palcos a 60 fps, 236 +2 |
+| 6b | Pendências da fase 6: render do 236, chão por RTPT em linha, segunda volta de dumps HD, e na segunda rodada tudo o que faltava | **feito** (2026-10-28 e 2026-10-29): espelho do 16:9 só nas laterais, RTPT/RTPS em linha do overlay (chão do 233, asfalto do 236), sombra macia no cenário, sem junta entre ladrilhos; Phong nas peças curvas, 241 e 245, texturas da VRAM, janela de textura, causa do HEAT × COMET; na terceira rodada, cantos saturados com a projeção exata do GTE e paletas animadas por camada (cobertura 80–98 %); 13 palcos a 60 fps, render até +2 |
 | 7 | Port para o Polygonia (Android) | **próxima** |
 | 8 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 6b, segunda rodada, 2026-10-29)
+## Onde estamos (fim da fase 6b, terceira rodada, 2026-10-29)
+- Faces sem par: a tela dos vértices livres agora é a do GTE exata e os cantos saturados (tela em ±1024, vértice perto
+  da câmera) são resolvidos pelo vizinho no espaço; sem par por OT 234 45 → 9, 243 38 → 3, 235 73 → 42. O que sobra é
+  2D (painéis do fundo do 233, billboards de brilho, sprites): fica com o jogo.
+- Paletas animadas por MoveImage: uma camada por linha de origem, tabela `.stg` v2, troca de camada a cada cópia; 232,
+  233 e 235 sem textura animada com o jogo (232 sem camada 141 → 9 por OT). 242 e 234 não cabem nas 64 camadas.
+- Cobertura 80–98 % dos pacotes do palco por quadro (antes 65–95 %). Desempenho nos 13 palcos: 59,9 fps em todos os
+  segundos, 0 underruns, jogo −1 a −5, render −13 a +2.
+- Travamento de 10–18 s depois de carregar savestate (desde a primeira volta da 6b): savestate salvo no meio da
+  montagem do quadro + cursor da arena de marcadores do host = marcador apontando para si mesmo na OT (o DMA da GPU
+  dava 262 mil voltas). Corrigido nos dois plugins: nenhum marcador novo no quadro da carga.
+- Aberto: a partida na build normal pelo teclado. Detalhes em `notes/remake-visual.md`, "Terceira rodada" e "Limites
+  e o que não deu (fase 6b)".
+
+## Onde estávamos (fim da fase 6b, segunda rodada, 2026-10-29)
 - Phong nas peças curvas do palco (barril, tronco, braço do monstro, helicóptero): faces com as normais dos cantos
   entre 3° e 45° e arestas até 1200, decididas por nó quando ele entra em cena; arestas com vizinha plana presas.
 - 241 (heliporto) e 245 (estúdio "Dancing Heroes") no jogo pelo índice do palco (`0x8005FB56`); o 241 é uma partida

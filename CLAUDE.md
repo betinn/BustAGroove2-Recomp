@@ -149,6 +149,17 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   página (`stage_geo d` lista as marcas) e hash da CLUT na tabela `.stg`; janela de textura (E2h) no shader; `stage_geo
   p` diz de onde vêm as faces livres sem par (página/camada, endereço na RAM, nós da OT). Re-exportar
   um palco: `python tools/remake/export_stage.py <container>` (escreve nas duas pastas `mods/remake/`).
+  Terceira rodada (2026-10-29): a tela dos vértices livres é a do GTE exata (`gte_div`, divisão UNR com a tabela do
+  hardware) e os cantos saturados (tela em ±1024, divisão saturada perto da câmera) são resolvidos pelo vizinho no espaço
+  (`fv_find_sat`, `fv_find_all_sat`); paletas animadas por MoveImage com uma camada por linha de origem: `python
+  tools/remake/stage_clut_vars.py [posições]` grava `vram/<c>/clut_var.json` (dados do jogo), o `export_stage.py` monta
+  as camadas (limite de 64 por palco, todas as variantes de uma CLUT ou nenhuma) e a tabela `.stg` v2; o plugin troca a
+  camada a cada MoveImage (`stage_geo v` lista as cópias) e, depois de carregar savestate, deixa essas chaves com o jogo
+  até a próxima cópia. O que sobra sem par é 2D (painéis do 233, billboards de brilho, sprites). Savestate salvo no
+  meio do quadro: a OT restaurada já liga os marcadores de host postos antes de salvar, e o cursor das arenas é do
+  host; por isso `bag2_heat.c` (`marks_blocked`) e `bag2_stage.c` (`emit_post`) não ligam marcador novo no quadro da
+  carga (antes, marcador apontando para si mesmo: 10–18 s de travamento). Qualquer plugin novo que ligue marcador no
+  meio do quadro precisa da mesma regra.
 - **Build-debug e o pacote HD**: `build-debug/mods/texture-packs/SLUS-01159/replacements` é uma junção para a pasta
   de `build/`; conferir "HD textures:" no log antes de medir (ficou quebrada de 2026-10-24 a 2026-10-27). Com o HD
   o renderizador desliga os bancos de textura (`psx_mod_texture_banks_supported()` = 0). O cartão de memória guarda
@@ -168,8 +179,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   volta de dumps, o Phong nas peças curvas, 241 e 245 no jogo, as texturas da VRAM, a janela de textura e a causa do
   HEAT × COMET (driver, não pixel). 13 palcos a 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a
   +2. Aberto (`notes/remake-visual.md`, "Limites e o que não deu (fase 6b)"): partida na build normal pelo teclado
-  (computer-use negado nas duas rodadas); cobertura de 65–95 % dos pacotes do palco por quadro (o resto: texturas
-  animadas, efeitos e faces do overlay em 0x8008xxxx/0x800Dxxxx com projeção que o plugin não vê, até ~80 por OT no 233 e no 235).
+  (computer-use negado nas duas primeiras rodadas; na terceira o usuário estava remoto); cobertura de 80–98 % dos pacotes do palco por quadro depois da terceira
+  rodada (o resto: faces 2D do overlay em 0x8008xxxx, 76 por OT no 233; as paletas animadas do 242 e do 234, que não
+  cabem nas 64 camadas; texturas cuja página muda, como a água do 231; efeitos).
 - Upscaler melhor (xBRZ/ESRGAN) mantendo alfa discreto (0/143/255) — ver §12 sobre franjas.
 
 ## Testes de palcos e personagens: usar o modo 2 jogadores

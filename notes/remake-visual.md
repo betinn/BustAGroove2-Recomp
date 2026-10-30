@@ -1016,7 +1016,9 @@ esrgan` (incremental) ampliou **92 texturas novas** (370 já estavam, 258 recort
   pacote do framework dá escada).
 - **Tabela `.stg`**: por nó, o deslocamento do MeshHeader no modelo e o tamanho do buffer de pacotes; por primitiva, as
   palavras dos pacotes, as faces do asset e o slot do pacote de cada canto (quad: v2, v3, v1, v0 nos slots A..D, como nos
-  personagens); a camada HD de cada (página, CLUT) que o jogo usa, pela posição dos TIMs na VRAM.
+  personagens); a camada HD de cada (página, CLUT) que o jogo usa, pela posição dos TIMs na VRAM. Versão 2 (fase 6b,
+  terceira rodada): no fim, `n_var` (u32) e uma entrada por variante de paleta, `<HhhBB` = chave, origem x e y do
+  MoveImage na VRAM, camada, 0; o plugin aceita as versões 1 e 2.
 - **Texturas do código do overlay** (`tools/remake/stage_keys.py` -> `tools/remake/stage_extra_keys.json`, só coordenadas
   da VRAM): o plugin lista as faces livres que ficaram sem camada; o exportador monta a página 256 texels da VRAM com os
   TIMs do palco que caem nela e a CLUT achada no bloco de algum TIM (texturas de fora do palco, como HUD, ficam fora).
@@ -1256,7 +1258,8 @@ Pedido: fechar tudo o que tinha ficado aberto na fase 6 e na primeira volta da 6
 - **Janela de textura (GP0 E2h)**: o plugin passa a janela ativa no ponto da OT em cada pacote (`RmkStagePkt.twin`) e o
   shader repete a fórmula do PS1 na camada HD (texel = (texel & ~(máscara × 8)) | ((deslocamento & máscara) × 8)), com a
   leitura presa na célula da janela; as faces com janela (238) saem pelo caminho novo.
-- **Texturas animadas** (CLUT ou página trocadas durante a partida): continuam com o jogo, por decisão. O pacote HD do
+- **Texturas animadas** (CLUT ou página trocadas durante a partida): continuam com o jogo, por decisão (na terceira
+  rodada, abaixo, as de CLUT que cabem passaram para o caminho novo). O pacote HD do
   jogo já tem cada variante de CLUT ampliada pelo Real-ESRGAN (os dumps guardam cada combinação vista); o caminho novo
   precisaria de uma camada por variante (o 235 passaria das 64 camadas) ou de paleta viva sobre índices, que perderia a
   qualidade do ESRGAN.
@@ -1326,50 +1329,165 @@ carrega e descarrega na build normal, como na fase 6. Essa amostra foi feita ant
 normal foi recompilada de novo depois dela (só `rmk_stage.c` e a ordem da lista do `stage_geo s` mudaram, conferidos
 na build-debug).
 
+### Terceira rodada (2026-10-29): faces sem par e paletas animadas
+Pedido: fechar o que a tabela de cobertura ainda deixava com o jogo. Eram dois grupos grandes: faces com textura do
+palco cujos vértices o plugin não reconhecia ("sem par") e texturas de paleta animada. Investigado com `stage_geo p` (de
+onde vêm as faces sem par: com ou sem textura, quantos cantos bateram, página e camada, endereço na RAM, amostras com o
+vértice transformado mais perto) e `wtrace_arm` (quem escreve os pacotes).
+- **Cantos saturados e projeção exata do GTE.** No fundo e no chão (234, 236, 243, 235) os pacotes vinham de vértices
+  que o plugin já via (`FUN_8001F278`, o RTPT em linha), mas: os quadrados grandes têm cantos com a tela saturada em
+  -1024/1023 (o plugin descartava esses vértices); os vértices perto da câmera saem com o quociente da divisão saturado
+  (tela = OF + IR × 1,99998; o plugin descartava z < 16); e a conta em float da tela errava até 3 px longe do centro.
+  Agora a tela é a do GTE exata (MAC >> 12, IR em 16 bits, a divisão UNR do hardware com a tabela de 257 entradas,
+  `gte_div`), o vértice saturado fica guardado com a tela saturada e o canto saturado de uma face é resolvido pelo
+  candidato mais perto, no espaço, dos cantos que bateram (`fv_find_sat`) ou, com todos os cantos saturados, pela
+  combinação de menor perímetro (`fv_find_all_sat`; numa grade, o quadrado certo é o menor). O caminho novo desenha a
+  face com a geometria de verdade, inclusive com vértice atrás da câmera (o shader recorta em w = z), onde o PS1
+  deformava. Faces sem par por OT (janela "tudo" de 60 s, `perf6d` → `perf6f`): 234 45 → 9, 243 38 → 3, 235 73 → 42, 242
+  23 → 17, 236 28 → 24; pacotes trocados por OT: 234 253 → 289, 243 423 → 458, 235 432 → 494. Capturas com e sem, e cor
+  por nó (`sat6e_<pos>_<s>.png`): sem triângulo errado nem buraco.
+- **O que sobra sem par é 2D**, em `0x80080000..0x8008FFFF`: os painéis de fundo do 233 (céu e cidade: XY de uma tabela
+  menos a rolagem pela câmera, código do overlay em `0x801E25AC`), billboards de brilho (função do executável em
+  `0x8002DE40`: RotTransPers só do centro e um quadrado na tela do tamanho de 1/z: halos, estrelas) e sprites de um
+  módulo carregado em `0x8009xxxx` (`setSprt` 28 × 17 em posição fixa). Sem vértice 3D não há o que reiluminar, e brilho
+  é luz própria: ficam com o jogo, com o pacote HD. Ganchos de teste nas outras quatro funções do executável que fazem
+  RTPT/RTPS (RotAverage3/4 em `0x8004621C`/`0x8004627C`, o RTPT de `0x80047BDC` e `FUN_80035F60`) dispararam (4 vezes
+  mais vértices) sem mudar nada e foram desfeitos. No 241 e no 245 (`stage_hidden`, `sempar6f_x.txt`) é o mesmo caso: no
+  245 todas as faces sem par estão em `0x8008xxxx` (página 00D, camada 8); no 241, 82 % ali e o resto em
+  `0x800B9000`/`0x800C7000`, com o vértice transformado mais perto a 3–10 px (outra projeção do overlay, não
+  investigada).
+- **Paletas animadas por MoveImage.** A maior parte das texturas animadas troca só a CLUT: no tempo da música o jogo
+  copia uma linha de um banco de paletas na VRAM para a CLUT da chave (as setas dos painéis de pedra do 232, os
+  letreiros do 233, as luzes da discoteca do 235). `tools/remake/stage_clut_vars.py` lista as cópias da partida
+  (`stage_geo v`) e lê cada linha de origem da VRAM (`vram/<c>/clut_var.json`); `export_stage.py` monta uma camada por
+  (página, linha de origem) e grava na tabela `.stg` versão 2 a camada de cada (chave, origem); o plugin troca a camada
+  da chave a cada MoveImage de uma origem conhecida (`dyn_rect`, `s_kvar`; origem desconhecida marca a chave como
+  antes). Cada camada custa ~10 MB de GPU (1024² com mipmaps e mapa de normal), então entra o que cabe no limite de 64
+  por palco, todas as variantes de uma CLUT ou nenhuma (a captura cobre a música inteira: uma origem que falte faz a
+  chave voltar ao jogo): 232 18 linhas em 18 camadas (44 no palco), 233 14 em 11 (54), 235 40 em 10 (54; seis CLUTs da
+  mesma página copiam as mesmas seis linhas, uma camada por página e linha). Faces sem camada por OT: 232 141 → 9;
+  texturas animadas com o jogo: 232 3 → 0, 233 7 → 0, 235 8 → 0. Trocas de camada por segundo na partida: 232 254, 233
+  33, 235 9. Ficam com o jogo: as paletas do 242 (14 linhas em cada uma das duas CLUTs, sobre 57 camadas) e do 234 (9 em
+  cada uma de 3, sobre 56), que não cabem, e as texturas cuja página muda (a água do 231; tiras que rolam no 234 e no
+  242).
+
+### Desempenho e cobertura da terceira rodada (`perf6f.txt`, `perf6f_x.txt`, `perf6f_x245.txt`)
+Mesma medição da segunda rodada (build-debug, 9x + 16:9, pacote HD, HEAT × COMET, uma sessão por palco, duas janelas de
+60 s com a ordem trocada; 245 em duas sessões com janelas de 20 s), com tudo da terceira rodada ligado:
+
+| pos. | palco | ordem | base: fps (mín.) | jogo | render (máx.) | tudo: fps (mín.) | jogo | render (máx.) | Δ jogo | Δ render | underruns |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 234 | base primeiro | 59,9 (59,9) | 33 % | 41 % (60) | 59,9 (59,9) | 29 % | 39 % (44) | −4 | −2 | 0/0 |
+| 1 | 233 | tudo primeiro | 59,9 (59,8) | 32 % | 38 % (51) | 59,9 (59,9) | 31 % | 30 % (48) | −1 | −8 | 0/0 |
+| 2 | 242 | base primeiro | 59,9 (59,9) | 36 % | 39 % (53) | 59,9 (59,9) | 31 % | 26 % (39) | −5 | −13 | 0/0 |
+| 3 | 243 | tudo primeiro | 59,9 (59,9) | 31 % | 41 % (47) | 59,9 (59,9) | 27 % | 40 % (46) | −4 | −1 | 0/0 |
+| 4 | 232 | base primeiro | 59,9 (59,9) | 30 % | 46 % (52) | 59,9 (59,9) | 26 % | 39 % (45) | −4 | −7 | 0/0 |
+| 5 | 237 | tudo primeiro | 59,9 (59,9) | 31 % | 44 % (50) | 59,9 (59,9) | 27 % | 46 % (50) | −4 | +2 | 0/0 |
+| 6 | 244 | base primeiro | 59,9 (59,9) | 30 % | 44 % (54) | 59,9 (59,9) | 26 % | 41 % (49) | −4 | −3 | 0/0 |
+| 7 | 235 | tudo primeiro | 59,9 (59,9) | 31 % | 39 % (44) | 59,9 (59,9) | 28 % | 34 % (49) | −3 | −5 | 0/0 |
+| 8 | 236 | base primeiro | 59,9 (59,9) | 32 % | 39 % (50) | 59,9 (59,9) | 27 % | 41 % (49) | −5 | +2 | 0/0 |
+| 9 | 231 | tudo primeiro | 59,9 (59,9) | 30 % | 47 % (53) | 59,9 (59,9) | 28 % | 43 % (49) | −2 | −4 | 0/0 |
+| 10 | 238 | base primeiro | 59,9 (59,9) | 29 % | 38 % (49) | 59,9 (59,9) | 27 % | 34 % (47) | −2 | −4 | 0/0 |
+| — | 241 | base primeiro | 59,9 (59,9) | 35 % | 36 % (42) | 59,9 (59,9) | 31 % | 23 % (30) | −4 | −13 | 0/0 |
+| — | 245 (20 s) | base primeiro | 59,9 (59,9) | 32 % | 37 % (39) | 59,9 (59,9) | 28 % | 35 % (37) | −4 | −2 | 0/0 |
+| — | 245 (20 s) | tudo primeiro | 59,9 (59,9) | 33 % | 36 % (37) | 59,9 (59,9) | 29 % | 29 % (32) | −4 | −7 | 0/0 |
+
+Nenhum segundo abaixo de 59,5, 0 underruns em todas as janelas. Jogo −1 a −5 em todos; render −13 a +2 (237 e 236 +2,
+dentro do critério). A projeção exata do GTE e a busca dos cantos saturados rodam na thread do jogo e não aparecem no
+custo (a GPU emulada anda menos pacotes); a troca de camada é um índice por pacote.
+
+Cobertura (pacotes por OT na janela "tudo"; "trocados / total" = trocados ÷ (trocados + sem par + sem camada), a mesma
+conta da tabela da segunda rodada):
+
+| palco | trocados | sem par | sem camada | cantos saturados | trocas de variante / s | texturas animadas | trocados / total |
+|---|---|---|---|---|---|---|---|
+| 234 | 289 | 9 | 42 | 110 | 0 | 3 | 85 % |
+| 233 | 613 | 76 | 9 | 4 | 33 | 0 | 88 % |
+| 242 | 499 | 17 | 54 | 21 | 0 | 2 | 87 % |
+| 243 | 458 | 3 | 7 | 122 | 0 | 0 | 98 % |
+| 232 | 412 | 0 | 9 | 44 | 254 | 0 | 98 % |
+| 237 | 397 | 9 | 8 | 4 | 0 | 0 | 96 % |
+| 244 | 297 | 18 | 8 | 8 | 0 | 0 | 92 % |
+| 235 | 494 | 42 | 10 | 50 | 9 | 0 | 90 % |
+| 236 | 542 | 24 | 7 | 13 | 0 | 0 | 95 % |
+| 231 | 167 | 3 | 38 | 1 | 0 | 0 | 80 % |
+| 238 | 301 | 0 | 41 | 5 | 0 | 0 | 88 % |
+| 241 | 565 | 42 | 10 | 0 | 0 | 1 | 92 % |
+| 245 | 588 | 69 | 10 | 0 | 0 | 1 | 88 % |
+
+"Cantos saturados" são as faces que só saíram pelo caminho novo com a busca nova (antes, sem par). O 233 continua com
+76 sem par por OT: são os painéis 2D do fundo. "Sem camada" que resta: 234 e 242 (as paletas que não cabem), 231 (a
+página da água), 238 (os efeitos da página 0x18) e, em todos, as texturas de efeito que aparecem em 5 palcos ou mais.
+
+### Capturas, regressão e memória (terceira rodada)
+- **A/B no mesmo quadro** (`stage_geo_pause.py`, `palcos_ab.png`, refeito depois da correção abaixo): nada fora do
+  lugar, fora o telão do 235 (em "Limites"); as setas do 232 e os letreiros do 233 com a paleta certa em HD. Depois de
+  carregar um savestate, as chaves com paleta animada ficam com o jogo até a próxima cópia (o plugin não lê a VRAM; sem
+  isso, a primeira captura do 235 saiu com os painéis da parede apagados, a paleta de antes da carga). Tela dividida no
+  mesmo quadro, sem savestate (`stage_geo 1 128`): os painéis da parede (EW / I♥ME), a fileira de luzes e o piso do 235
+  batem entre original e remake.
+- **Travamento depois de carregar savestate (corrigido).** Nas sessões longas da build-debug (vários palcos e
+  savestates), 4 de 6 travaram: logo depois de carregar um savestate, 0,3–20 fps e a thread de render a 100 % por 10–18
+  s (ou até o servidor TCP desistir), com a memória privada subindo 1,5–3 GB. Com o pacote do palco desligado, 10 palcos
+  e 30 cargas sem travar. Três dos quatro savestates que travaram foram salvos com o PC em `0x80012xxx–0x80013xxx`
+  (código de GTE no meio da montagem do quadro; os outros, na espera do VSync); salvando até cair nessa faixa, o
+  travamento aparece em ~1 de cada 10 cargas. A pilha das threads pelo gdb no travamento mostra a render presa no bloom
+  (`stage_host_draw` → `bloom_and_comp`) esperando o driver, e o tempo de GPU por peça (`gpu_timers 1`) mostra a causa:
+  o desenho de host dos dançarinos chamado **262 218 vezes** num quadro (normal ~120; 15 s somados). O plugin dos
+  personagens e o pós-efeito do palco ligam marcadores na OT no meio do quadro, com um cursor da arena que é do host e
+  só zera quando a paridade do quadro vira; depois de carregar um estado salvo no meio do quadro, a OT restaurada já
+  liga os marcadores que o plugin pôs nela antes de salvar, e o plugin gravava um marcador novo no mesmo endereço,
+  apontando para a cabeça do slot, que era ele mesmo: o DMA da GPU dava voltas até o limite. Correção (`bag2_heat.c`
+  `marks_blocked`, `bag2_stage.c` `emit_post`): no quadro em que o savestate foi carregado, nenhum marcador novo (os
+  dançarinos e a sombra saem pelo original, o quadro fica sem o pós-efeito) e as arenas recomeçam do zero no quadro
+  seguinte. Os marcadores da geometria do palco entram todos na entrada de DrawOTagEnv e não têm o problema. Conferido:
+  50 cargas de savestates salvos nessa faixa (235, 242 e 232), todas a 59–62 quadros/s; antes, ~1 travamento a cada 10
+  cargas. Depois da correção, o A/B dos 11 palcos numa sessão só (`pausa6h.txt`, 11 savestates e 33 cargas) passou sem
+  travar.
+- **Regressão** (`stage_check.py`, `regressao6f.txt`): abertura, título, menu, seleção e tela de palco com 0
+  marcadores e nenhum asset de palco; partida no 233 em 16:9 com o HUD por cima; no fim da música o asset descarrega.
+- **241 e 245** (`stage_hidden.py`, `ocultos6f.txt`, `pausa_x11.png`, `pausa_x12.png`): os dois pelo caminho novo.
+- **Memória** (`stage_mem.py`, `mem6f_run.txt`): GPU dedicada do processo 465 MB na abertura; partida 1,71 GB (234),
+  1,72 GB (236), 1,68 GB (242), 1,67 GB (233: 460 → 577 MB do asset, as camadas das paletas), 1,65 GB (235); no menu
+  depois de cada QUIT, 691–701 MB. Savestates não fazem a memória subir; a subida de 1,5–3 GB da memória privada
+  vista no 235 era do travamento (acima).
+- Cartões de memória: md5 igual ao do começo nos dois.
+- **Build normal** (`build/`) recompilada com o código final; a partida pelo teclado segue não conferida (o usuário
+  estava fora do PC).
+
 ### Limites e o que não deu (fase 6b)
-- **Partida na build normal pelo teclado**: não conferida (computer-use negado nas duas rodadas). A build normal tem
-  o código final e o palco carrega e descarrega nela (memória de GPU na demonstração automática).
-- **Pendência HEAT × COMET**: causa localizada na segunda rodada (não é preenchimento de pixels: a subida é a mesma a
-  9x e a 4x; é do lado do driver, no envio dos comandos do segundo corpo), sem número por etapa sem um perfilador de GPU.
+- **Partida na build normal pelo teclado**: não conferida (computer-use negado nas duas primeiras rodadas; na terceira
+  o usuário estava remoto). A build normal tem o código final e o palco carrega e descarrega nela (memória de GPU na demonstração automática).
+- **Pendência HEAT × COMET**: causa localizada na segunda rodada (não é preenchimento de pixels: a subida é a mesma a 9x
+  e a 4x; é do lado do driver, no envio dos comandos do segundo corpo), sem número por etapa sem um perfilador de GPU.
   Na configuração do jogo (os dois remakes e o palco novo) a render fica abaixo da base.
 - **245** só existe no 2 jogadores como palco sem dançarinos (~55 s); medido em janelas de 20 s.
-- **Texturas animadas** (CLUT ou página trocadas na partida) ficam com o jogo, por decisão (acima); as 8 texturas de
-  efeito que aparecem em 5 palcos ou mais também.
-- **Cobertura: o que ainda fica com o jogo** (pacote HD, sem a luz nova), pacotes por OT na janela "tudo" do `perf6d`:
-
-  | palco | trocados | sem par | sem camada | trocados / total |
-  |---|---|---|---|---|
-  | 234 | 253 | 45 | 42 | 74 % |
-  | 233 | 597 | 79 | 9 | 87 % |
-  | 242 | 502 | 23 | 52 | 87 % |
-  | 243 | 423 | 38 | 7 | 90 % |
-  | 232 | 263 | 0 | 141 | 65 % |
-  | 237 | 395 | 11 | 8 | 95 % |
-  | 244 | 294 | 21 | 11 | 90 % |
-  | 235 | 432 | 73 | 10 | 84 % |
-  | 236 | 538 | 28 | 7 | 94 % |
-  | 231 | 172 | 3 | 40 | 80 % |
-  | 238 | 299 | 2 | 41 | 87 % |
-
-  "Sem camada" são as texturas animadas e os efeitos: no 232 as três CLUTs que o jogo copia por MoveImage na partida
-  (008/0A3E, 008/0ABE, 00D/0C3C); no 231 a página que o jogo recarrega (8 retângulos, 00B/0D3F); no 238 só os efeitos
-  da página 0x18. "Sem par" (`stage_geo p`: página e camada, vértices que bateram, endereço na RAM) são faces com textura do próprio
-  palco montadas pelo overlay em `0x80080000..0x80086FFF` (céu e letreiros) e `0x800D0000..0x800D6FFF` (fundo e chão),
-  com vértices que não saem de nenhuma transformação do GTE que o plugin vê: nem as funções da libgte já com gancho,
-  nem o RTPT/RTPS em linha, nem os outros RTPT/RTPS do executável (RotAverage3/4 em 0x8004621C/0x8004627C, o RTPT de
-  0x80047BDC e FUN_80035F60: com gancho de teste em todos, 4 vezes mais vértices e o mesmo número sem par, então o
-  gancho foi desfeito). Provável projeção pela CPU no overlay ou divisão de polígono na tela; fechar isso pede ler o
-  código de cada overlay.
+- **Texturas animadas**: as de CLUT por MoveImage saem pelo caminho novo onde cabem (terceira rodada: 232, 233,
+  235); ficam com o jogo as paletas do 242 e do 234 (passariam de 64 camadas), as de página (a água do 231, tiras
+  do 234 e do 242) e as 8 texturas de efeito que aparecem em 5 palcos ou mais.
+- **Cobertura: o que ainda fica com o jogo** (pacote HD, sem a luz nova), pacotes por OT na janela "tudo" do `perf6f`
+  (terceira rodada; na segunda, `perf6d`, eram 65–95 %): tabela em "Desempenho e cobertura da terceira rodada". "Sem
+  camada": no 234 e no 242 as paletas animadas que não cabem nas 64 camadas (3 e 2 CLUTs); no 231 a página que o jogo
+  recarrega (a água, 8 retângulos, 00B/0D3F); no 238 os efeitos da página 0x18; nos outros, as texturas de efeito
+  comuns. "Sem par" (`stage_geo p`: página e camada, vértices que bateram, endereço na RAM): faces 2D que o overlay
+  monta em `0x80080000..0x8008FFFF` sem vértice 3D (painéis do fundo do 233, billboards de brilho, sprites; no 245
+  todas) e, no 241, um resto em `0x800B9000`/`0x800C7000` com outra projeção. As do fundo e do chão em
+  `0x800D0000..0x800D6FFF` que a segunda rodada listava aqui eram cantos saturados e saíram na terceira.
+- **Travamento depois de carregar savestate** (achado e corrigido na terceira rodada): ver "Capturas, regressão e
+  memória (terceira rodada)". O travamento da primeira volta (234, 24 fps e o jogo parado logo depois de carregar um
+  savestate) era o mesmo; o crash "out of GPU memory" da NVIDIA visto uma vez na fase 6 continua não reproduzido.
+- **Telão do 235** (em alguns trechos da música a parede do fundo mostra o próprio palco): o jogo copia uma parte da
+  imagem da tela para a textura da parede (cópia VRAM → VRAM, ~40 por segundo na partida contando as de CLUT e rosto).
+  O palco e os dançarinos do remake são desenho de host, só no FBO de alta resolução, e não entram na cópia: no
+  remake o telão mostra só o que o jogo ainda desenha (os anéis do HUD) sobre o escuro. Vem da fase 1 (dançarinos) e da
+  fase 6 (palco); visto na terceira rodada (A/B e tela dividida, `stage_geo 1 128`). Consertar pede tirar o telão do
+  FBO de alta resolução no lugar da cópia (fica para o port, junto dos ganchos).
 - **Phong** só nas faces com as três normais dos cantos entre 3° e 45° e arestas até 1200 unidades: as superfícies
   grandes do fundo ficam planas (a silhueta contra o céu não muda). Uma face só ganha Phong quando o nó dela aparece em
   cena (antes disso ela nem é desenhada).
 - O tempo de GPU por carimbo vale como limite de cima (inclui espera), o que basta para o palco (menos de 1 ms por
   quadro) e para comparar variantes alternadas na mesma partida.
 - A/B pelo savestate: peças com movimento aleatório divergem entre as variantes (o sorteio depende do tempo da GPU).
-- **Um travamento** na primeira volta (build-debug, `stage_geo_pause.py`): logo depois de carregar um savestate no 234
-  com `stage_geo 0`, o quadro caiu para 24 fps e o jogo parou de responder (o servidor TCP também). A mesma sessão
-  repetida passou nos 11 palcos; nenhuma das sessões da segunda rodada travou. Junto do crash "out of GPU memory" da
-  NVIDIA visto uma vez na fase 6, fica como ocorrência não reproduzida.
 - Memória de GPU alta nos palcos com muitas camadas (até 1,72 GB no processo): para o Polygonia, camadas menores ou
   comprimidas.
 
