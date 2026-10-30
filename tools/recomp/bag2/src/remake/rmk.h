@@ -159,6 +159,8 @@ typedef struct {
     float bbox[4];                   /* retângulo do desenho na tela do PS1 */
     int skip_x[2];                   /* colunas [x0, x1) do alvo que não aparecem (no espelho da tela larga, o centro
                                         que a apresentação cobre com a superfície canônica); x1 <= x0 = nenhuma */
+    int pass, scale;                 /* passo do desenho de host (0 canônico, 1 espelho) e pixels do alvo por pixel do
+                                        PS1 (o palco captura o telão do fbo no passo 0) */
 } RmkTarget;
 
 /* O retângulo box (x, y, w, h, pixels do alvo) sem as colunas skip_x: até 2 retângulos em r; devolve quantos. */
@@ -230,13 +232,20 @@ typedef struct {
     uint8_t n_pk, n_faces;           /* pacotes (2 = decalque: base sem textura + textura) e faces do asset (0..2) */
     uint32_t face0;                  /* primeira face (as n_faces seguidas) */
     uint8_t corner[2][3];            /* slot do vértice no pacote (0..3) de cada canto de cada face */
-    uint8_t pad[2];
+    uint8_t prefix;                  /* 1: DR_TPAGE de 2 palavras (tag + E1h) antes do pacote (listas semitransparentes sem
+                                        textura; FUN_8001FF34): o pacote fica com o jogo, só a contagem muda */
+    uint8_t pad;
 } RmkStagePrim;
 typedef struct { uint16_t tpage, clut; uint8_t layer, clut_hash[3]; } RmkStageKey;   /* textura + CLUT do jogo -> camada;
     clut_hash: 24 bits baixos do FNV-1a da CLUT que a camada usou (16 ou 256 cores, little-endian; 0 = desconhecido) */
-/* .stg v2: CLUT animada por MoveImage (o jogo copia uma linha de um banco de paletas na CLUT da chave): a camada de cada
- * origem (src_x, src_y) da cópia */
-typedef struct { uint16_t key; int16_t src_x, src_y; uint8_t layer, pad; } RmkStageVar;
+/* .stg v2/v3: CLUT animada por MoveImage (o jogo copia uma linha de um banco de paletas na CLUT da chave): a variante de
+ * cada origem (src_x, src_y) da cópia. kind 0: camada própria (`layer`); kind 1 (v3, fase 6c): afim, a camada base da
+ * chave com rgb' = k·rgb + b no shader (k em 8.8, b em 1/4096 da escala cheia): quase toda paleta animada é só um
+ * escurecimento ou um deslocamento de cor da paleta base, e assim não custa camada nem memória. O pacote leva a variante
+ * afim como camada n_layers + índice. */
+typedef struct { uint16_t key; int16_t src_x, src_y; uint8_t layer, kind; int16_t k[3], b[3]; } RmkStageVar;   /* 20 B */
+#define RMK_STAGE_VAR_LAYER 0u
+#define RMK_STAGE_VAR_AFFINE 1u
 #pragma pack(pop)
 typedef struct {
     uint32_t version, container, n_nodes, n_layers, n_keys, model_bytes;
@@ -263,6 +272,13 @@ typedef struct {
     uint32_t twin;                   /* janela de textura (GP0 E2h, 20 bits) ativa no pacote; 0 = nenhuma */
 } RmkStagePkt;                       /* 40 bytes */
 #pragma pack(pop)
+/* Telão (fase 6c): pacote com página de 16 bpp dentro dos buffers de tela (x < 512): no 235 a parede do fundo lê o
+ * próprio quadro (POLY_FT4 com tpage = GetTPage(2, X, Y), X em {0..256}, Y 0 ou 256). O pacote leva a camada
+ * RMK_STAGE_LAYER_FB | (Y == 256 ? 8 : 0) | X / 64; o núcleo copia a faixa 512 x 256 do buffer Y do fbo para uma textura
+ * na primeira sequência do quadro que a usa (semântica do PS1: o que estiver na VRAM nesse ponto da OT) e desenha a
+ * face com ela, sem luz. */
+#define RMK_STAGE_LAYER_FB 0xE0u     /* 0xE0..0xEF */
+#define RMK_STAGE_LAYER_IS_FB(l) (((l) & 0xF0u) == RMK_STAGE_LAYER_FB)
 #define RMK_SPKT_TEX 1u              /* tem textura */
 #define RMK_SPKT_SEMI 2u             /* semitransparente; modo de mistura do PS1 nos bits 4..5 */
 #define RMK_SPKT_QUAD 4u             /* face livre de 4 vértices (os 4 slots do pacote) */
@@ -300,7 +316,7 @@ typedef struct { uint32_t tex; float u[3], v[3], d[3], c[4]; } RmkShadowView;
 typedef struct RmkStageGL RmkStageGL;
 RmkStageGL* rmk_stage_gl_create(RmkGetProc get_proc, int gles);
 /* Recursos aos poucos (uma camada por chamada), como rmk_gl_prepare. 1 = pronto. */
-int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a);
+int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s);
 /* Quadro novo: posições dos vértices pelas matrizes dos nós e normais (uma vez por quadro). */
 void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* fr, const RmkStageFree* fv,
                         const uint8_t* face_n, const float* free_pos);

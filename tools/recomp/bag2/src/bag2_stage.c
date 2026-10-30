@@ -324,7 +324,7 @@ static uint32_t s_seen_gen;
 static RmkProj s_proj;
 static uint32_t s_neg[8], s_neg_i; /* meshes que não são do palco (cache para não testar de novo) */
 static uint32_t s_geo_arena, s_geo_off, s_geo_parity = 0xFFFFFFFFu, s_geo_serial;
-static struct { uint32_t ots, runs, pkts, kept, unknown, lines, nopr, semi_flat, overflow, key_miss, seen; double us;
+static struct { uint32_t ots, runs, pkts, kept, unknown, lines, nopr, semi_flat, overflow, key_miss, seen, prefix, dyn_kept; double us;
                 double err_sum; uint32_t err_n, err_b[3]; float err_max;
                 float node_err[RMK_MAX_NODES]; uint32_t node_n[RMK_MAX_NODES], dup, overlap, size_bad;
                 uint32_t free_faces, free_verts, free_nomatch, free_miss, free_twin, rtp, free_sat; } s_gs;   /* estatísticas (stage_geo_stats) */
@@ -842,14 +842,23 @@ static uint32_t s_dyn_n;
  * KVAR_GAME: paleta desconhecida (savestate carregado), a chave fica com o jogo até a próxima cópia conhecida. */
 #define KVAR_GAME 0xFFu
 static uint8_t s_kvar[4096];
-static uint32_t s_var_n;
+static uint32_t s_var_n, s_var_aff;   /* trocas de variante; delas, as afins (.stg v3) */
 /* Retângulos da VRAM (x0, y0, x1, y1 exclusivos) que o jogo atualizou dentro de páginas de textura do palco depois do
  * palco pronto (o telão, peças com textura animada): só os pacotes cujo UV cai num deles ficam com o jogo (uma carga
  * de 16x53 texels no 234 marcava as 11 texturas da página inteira). */
 static struct { int16_t x0, y0, x1, y1; } s_dynr[32];
 static uint32_t s_ndynr, s_dynr_pk;
+/* Telão (fase 6c): pacotes com página de 16 bpp dentro dos buffers de tela (x < 512, y 0 ou 256) leem o próprio quadro
+ * (o 235 mostra o palco na parede do fundo). Saem pelo caminho novo com a cópia do fbo (RMK_STAGE_LAYER_FB + buffer e
+ * coluna da página; flag 4096 desliga, A/B). */
+static uint32_t s_fb_pkts;
 static int geo_key_layer(const RmkStage* t, uint16_t tpage, uint16_t clut, const uint8_t uv[4][2], int nv) {
     const uint16_t tp = tpage & 0x19Fu;
+    if ((tp & 0x180u) == 0x100u && (tp & 0xFu) < 8u) {
+        if (s_geo_flags & 4096u) return -1;
+        s_fb_pkts++;
+        return (int)(RMK_STAGE_LAYER_FB | ((tp & 0x10u) ? 8u : 0u) | (tp & 7u));
+    }
     for (uint32_t i = 0; i < t->n_keys; i++) {
         if (t->keys[i].tpage != tp || t->keys[i].clut != clut) continue;
         if (s_dyn[i]) return -1;
@@ -897,7 +906,13 @@ static void dyn_rect(int x, int y, int w, int h, uint32_t src, int msx, int msy)
             const int sx = msx + (cx - x), sy = msy + (cy - y);   /* a linha de origem que cai na CLUT da chave */
             uint32_t v = 0;
             while (v < t->n_var && !(t->var[v].key == i && t->var[v].src_x == sx && t->var[v].src_y == sy)) v++;
-            if (v < t->n_var) { s_kvar[i] = (uint8_t)(t->var[v].layer + 1u); s_var_n++; continue; }
+            if (v < t->n_var) {   /* tipo afim: camada n_layers + índice (o núcleo aplica k e b na camada base) */
+                const int aff = t->var[v].kind == RMK_STAGE_VAR_AFFINE;
+                s_kvar[i] = aff ? (uint8_t)(t->n_layers + v + 1u) : (uint8_t)(t->var[v].layer + 1u);
+                s_var_n++;
+                s_var_aff += (uint32_t)aff;
+                continue;
+            }
         }
         const uint32_t want = (uint32_t)k->clut_hash[0] | (uint32_t)k->clut_hash[1] << 8 | (uint32_t)k->clut_hash[2] << 16;
         uint32_t got = 0;
@@ -962,21 +977,23 @@ static void geo_load_image(struct CPUState* cpu, uint32_t address) {
 
 /* MoveImage de uma linha de CLUT (16 ou 256 cores) no palco pronto (`stage_geo v`, tools/remake/stage_clut_vars.py):
  * destino, origem, tamanho e vezes, distintos */
-static struct { int16_t dx, dy, sx, sy, w, h; uint32_t n; } s_mv[128];
+static struct { int16_t dx, dy, sx, sy, w, h; uint32_t n; uint8_t ot; } s_mv[128];
 static uint32_t s_nmv;
+/* ot: 0 = MoveImage (libgpu), 1 = pacote GP0 80h ligado na OT pelo código do jogo (o telão do 235) */
+static void note_copy(int16_t dx, int16_t dy, int16_t sx, int16_t sy, int16_t w, int16_t h, uint8_t ot) {
+    uint32_t i = 0;
+    while (i < s_nmv && !(s_mv[i].dx == dx && s_mv[i].dy == dy && s_mv[i].sx == sx && s_mv[i].sy == sy && s_mv[i].ot == ot)) i++;
+    if (i < s_nmv) s_mv[i].n++;
+    else if (s_nmv < 128u) { s_mv[i].dx = dx; s_mv[i].dy = dy; s_mv[i].sx = sx; s_mv[i].sy = sy; s_mv[i].w = w; s_mv[i].h = h; s_mv[i].n = 1; s_mv[i].ot = ot; s_nmv++; }
+}
 static void geo_move_image(struct CPUState* cpu, uint32_t address) {
     (void)address;
     const uint32_t r = cpu->gpr[4];
     if (r < 0x80000000u || r >= 0x801FFFF8u) return;
     const int16_t mw = (int16_t)psx_mod_read_half(r + 4u), mh = (int16_t)psx_mod_read_half(r + 6u);
-    if (s_cur >= 0 && s_st[s_cur].state == 2 && mh == 1 && (mw == 16 || mw == 256)) {
-        const int16_t dx = (int16_t)cpu->gpr[5], dy = (int16_t)cpu->gpr[6], sx = (int16_t)psx_mod_read_half(r),
-                      sy = (int16_t)psx_mod_read_half(r + 2u), w = mw, h = mh;
-        uint32_t i = 0;
-        while (i < s_nmv && !(s_mv[i].dx == dx && s_mv[i].dy == dy && s_mv[i].sx == sx && s_mv[i].sy == sy)) i++;
-        if (i < s_nmv) s_mv[i].n++;
-        else if (s_nmv < 128u) { s_mv[i].dx = dx; s_mv[i].dy = dy; s_mv[i].sx = sx; s_mv[i].sy = sy; s_mv[i].w = w; s_mv[i].h = h; s_mv[i].n = 1; s_nmv++; }
-    }
+    if (s_cur >= 0 && s_st[s_cur].state == 2)
+        note_copy((int16_t)cpu->gpr[5], (int16_t)cpu->gpr[6], (int16_t)psx_mod_read_half(r), (int16_t)psx_mod_read_half(r + 2u),
+                  mw, mh, 0);
     dyn_rect((int)cpu->gpr[5], (int)cpu->gpr[6], (int16_t)psx_mod_read_half(r + 4u), (int16_t)psx_mod_read_half(r + 6u), 0u,
              (int16_t)psx_mod_read_half(r), (int16_t)psx_mod_read_half(r + 2u));
 }
@@ -1020,7 +1037,14 @@ static int read_packet(uint32_t a, uint32_t len, RmkStagePkt* e, int second, uin
         e->flags |= RMK_SPKT_TEX;
         if (semi) e->flags = (uint8_t)((e->flags & 0x0Fu) | RMK_SPKT_SEMI | ((tpage >> 5) & 3u) << 4);
         const int l = geo_key_layer(&s_st[s_cur].t, tpage, clut, uv, nv);
-        if (l < 0) { s_gs.key_miss++; note_miss(tpage, clut); }
+        if (l < 0) {
+            s_gs.key_miss++;
+            note_miss(tpage, clut);
+            /* textura sem camada (página que o jogo recarrega, CLUT marcada, chave desconhecida): o pacote fica com o
+             * jogo também nas faces do modelo (fase 6c; antes caía na camada da face no asset, parada: o vidro do
+             * helicóptero do 241 saía cinza em vez do reflexo que o jogo rola na página). Flag 8192 = como antes. */
+            if (!(s_geo_flags & 8192u)) return -3;
+        }
         e->layer = (uint8_t)(l < 0 ? 0xFF : l);
         *tpage_out = tpage;
         if (!second) memcpy(e->col, e->tcol, sizeof e->col);
@@ -1236,6 +1260,11 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
             if (i < 0) {             /* de fora dos nós: geometria do overlay (face livre) ou estado da GPU */
                 const uint32_t op = rd32(a + 4u) >> 24;
                 if (op >= 0xE1u && op <= 0xE6u) track_env(a, len);
+                else if (op == 0x80u && len == 3u) {   /* cópia VRAM->VRAM ligada na OT (stage_geo v, com "o") */
+                    const uint32_t sxy = rd32(a + 8u), dxy = rd32(a + 12u), wh = rd32(a + 16u);
+                    note_copy((int16_t)(dxy & 0xFFFFu), (int16_t)(dxy >> 16), (int16_t)(sxy & 0xFFFFu), (int16_t)(sxy >> 16),
+                              (int16_t)(wh & 0xFFFFu), (int16_t)(wh >> 16), 1);
+                }
                 else if (!(s_geo_flags & 512u) && (op & 0xE0u) == 0x20u && (in_run || used + n < GEO_PKTS_PER_HALF)) {
                     if (in_run && n >= GEO_RUN_CAP) {
                         const uint32_t m = close_run(s, run_prev, p, n, &fr, first, bb, 0u);
@@ -1271,6 +1300,7 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
                         if (q == 0xFFFFu) continue;
                         const RmkStagePrim* pq = &s->t.prims[s->t.nodes[sn->k].prim0 + q];
                         if (pq->n_pk == 2 && (rd32(0x80000000u | (sn->buf + 4u * (w - b))) >> 24) + 1u == b) lp = q;
+                        else if (pq->prefix && b == 2u) lp = q;   /* o G3/G4 depois do DR_TPAGE da primitiva */
                         break;
                     }
                 }
@@ -1279,7 +1309,8 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
                     const uint32_t gp = s->t.nodes[sn->k].prim0 + lp;
                     const int second = in_run && n && s_pk[n - 1].prim == gp;
                     const RmkStagePrim* pr = &s->t.prims[gp];
-                    if (pr->n_pk == 1 && len + 1u != pr->words) s_gs.size_bad++;   /* não é o pacote desta primitiva */
+                    if (pr->prefix) s_gs.prefix++;   /* E1 + G3/G4 semitransparente sem textura: fica com o jogo */
+                    else if (pr->n_pk == 1 && len + 1u != pr->words) s_gs.size_bad++;   /* não é o pacote desta primitiva */
                     else if (!pr->n_faces) { cls = 2; s_gs.nopr++; }   /* degenerada: o jogo não desenha nada */
                     else if (!second && used + n >= GEO_PKTS_PER_HALF) s_gs.overflow++;
                     else {
@@ -1305,6 +1336,7 @@ static void geo_draw_ot(struct CPUState* cpu, uint32_t address) {
                             if (e.flags & RMK_SPKT_TEX) run_tpage = tp | 0x10000u;
                             if (s_geo_flags & 64u) check_projection(s, &fr, a, &e);
                         } else if (r == -2) s_gs.semi_flat++;
+                        else if (r == -3) s_gs.dyn_kept++;
                         else if (!(s_geo_flags & 128u)) s_gs.lines++;
                     }
                 }
@@ -1373,7 +1405,7 @@ static void geo_host_draw(const PSXModHostDrawTarget* t, const void* payload, ui
     }
     if (!s->rt_ready && !s->rt_failed) {
         s->rt_prepares++;
-        if (rmk_stage_gl_prepare(s->gl, s->full)) {
+        if (rmk_stage_gl_prepare(s->gl, s->full, &s->t)) {
             s->rt_ready = 1;
             s->gl_bytes = rmk_stage_gl_bytes(s->gl);
             RmkAsset* a = s->full;   /* as camadas estão na GPU: a cópia de CPU sai (malha e faces ficam) */
@@ -1413,6 +1445,7 @@ static void geo_host_draw(const PSXModHostDrawTarget* t, const void* payload, ui
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     rt.bbox[0] = rt.bbox[1] = 0.0f; rt.bbox[2] = rt.bbox[3] = 0.0f;
     bag2_stage_skip_x(t, rt.skip_x);
+    rt.pass = t->pass; rt.scale = t->scale;
     RmkShadowView sh[2];
     const int nsh = bag2_heat_shadow_views(sh, 2);
     /* a mesma sequência no espelho da tela larga: a chave (endereço do payload no fluxo não serve) é o primeiro pacote */
@@ -1441,7 +1474,7 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
     n += snprintf(reply + n, cap - n, " livres: faces=%u vértices=%u sem_par=%u sem_camada=%u janela=%u rtp=%u "
                   "cantos_saturados=%u |", s_gs.free_faces, s_gs.free_verts, s_gs.free_nomatch, s_gs.free_miss,
                   s_gs.free_twin, s_gs.rtp, s_gs.free_sat);
-    n += snprintf(reply + n, cap - n, " trocas_de_variante=%u", s_var_n);
+    n += snprintf(reply + n, cap - n, " trocas_de_variante=%u (afins=%u) telao=%u", s_var_n, s_var_aff, s_fb_pkts);
     n += snprintf(reply + n, cap - n, " texturas_animadas=%u cargas_iguais=%u (outra_clut=%u sem_conferir=%u move=%u "
                   "retangulos_da_pagina=%u, pacotes neles=%u)", s_dyn_n, s_dyn_same, s_dyn_why[0], s_dyn_why[1], s_dyn_why[2],
                   s_ndynr, s_dynr_pk);
@@ -1455,8 +1488,8 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
                           (unsigned long long)c, k, (double)a / 1e6);
         }
     }
-    n += snprintf(reply + n, cap - n, " dup=%u sobrepostos=%u tamanho_errado=%u nós com erro:", s_gs.dup, s_gs.overlap,
-                  s_gs.size_bad);
+    n += snprintf(reply + n, cap - n, " dup=%u sobrepostos=%u tamanho_errado=%u prefixo=%u textura_com_o_jogo=%u nós com erro:",
+                  s_gs.dup, s_gs.overlap, s_gs.size_bad, s_gs.prefix, s_gs.dyn_kept);
     for (int k = 0; k < RMK_MAX_NODES && n < cap - 160; k++)
         if (s_gs.node_n[k] && s_gs.node_err[k] / s_gs.node_n[k] > 2.0f)
             n += snprintf(reply + n, cap - n, " %d:%.0f/%u", k, s_gs.node_err[k] / s_gs.node_n[k], s_gs.node_n[k]);
@@ -1469,7 +1502,7 @@ static int stage_geo_stats_cmd(const char* args, char* reply, int cap) {
                       s->bin + 12, s->state, s->loads, s->evictions, s->load_ms, s->rt_ready, s->rt_failed,
                       (double)s->gl_bytes / 1048576.0, s->gl && s->rt_ready ? rmk_stage_gl_curved(s->gl) : 0u);
     }
-    if (args && args[0] == 'z') { memset(&s_gs, 0, sizeof s_gs); s_geo_draws = 0; s_geo_frames = 0; s_geo_us = 0; }
+    if (args && args[0] == 'z') { memset(&s_gs, 0, sizeof s_gs); s_geo_draws = 0; s_geo_frames = 0; s_geo_us = 0; s_fb_pkts = 0; }
     return 0;
 }
 
@@ -1494,11 +1527,15 @@ static int stage_geo_cmd(const char* args, char* reply, int cap) {
         if (args[1] == 'z') s_nmiss = 0;
         return 0;
     }
-    if (args && args[0] == 'v') {   /* MoveImage no palco pronto: destino<-origem tamanho vezes */
+    if (args && args[0] == 'v') {   /* MoveImage no palco pronto: destino<-origem tamanho vezes ("v<n>": a partir da
+                                       entrada n; "vt": só as de origem na área da tela, x < 640, ou pacotes 80h da OT) */
+        const uint32_t from = (args[1] >= '0' && args[1] <= '9') ? (uint32_t)atoi(args + 1) : 0u;
+        const int tela = args[1] == 't';
         int n = snprintf(reply, cap, "move=%u:", s_nmv);
-        for (uint32_t i = 0; i < s_nmv && n < cap - 48; i++)
-            n += snprintf(reply + n, cap - n, " %d,%d<-%d,%d %dx%d/%u", s_mv[i].dx, s_mv[i].dy, s_mv[i].sx, s_mv[i].sy,
-                          s_mv[i].w, s_mv[i].h, s_mv[i].n);
+        for (uint32_t i = from; i < s_nmv && n < cap - 48; i++)
+            if (!tela || s_mv[i].sx < 640 || s_mv[i].ot)
+            n += snprintf(reply + n, cap - n, " %d,%d<-%d,%d %dx%d/%u%s", s_mv[i].dx, s_mv[i].dy, s_mv[i].sx, s_mv[i].sy,
+                          s_mv[i].w, s_mv[i].h, s_mv[i].n, s_mv[i].ot ? "o" : "");
         if (args[1] == 'z') s_nmv = 0;
         return 0;
     }

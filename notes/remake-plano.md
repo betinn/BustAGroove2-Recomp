@@ -24,10 +24,25 @@ já é construído pensando nele (fase 7).
 | 5 | Memória do elenco: só quem está em cena fica carregado; lacunas da fase 4 conferidas | **feito** (2026-10-28): descarga, os 18 conferidos, asset v7 |
 | 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **feito** (2026-10-28): os 11 palcos da tela de palco pelo desenho de host, chão e fundos do overlay, pacote HD +92 texturas |
 | 6b | Pendências da fase 6: render do 236, chão por RTPT em linha, segunda volta de dumps HD, e na segunda rodada tudo o que faltava | **feito** (2026-10-28 e 2026-10-29): espelho do 16:9 só nas laterais, RTPT/RTPS em linha do overlay (chão do 233, asfalto do 236), sombra macia no cenário, sem junta entre ladrilhos; Phong nas peças curvas, 241 e 245, texturas da VRAM, janela de textura, causa do HEAT × COMET; na terceira rodada, cantos saturados com a projeção exata do GTE e paletas animadas por camada (cobertura 80–98 %); 13 palcos a 60 fps, render até +2 |
+| 6c | Os três itens que faltavam da fase 6: faces do 241, paletas animadas do 242/234, telão do 235; partida pelo teclado na build normal | **feito** (2026-10-30): 241 era um nó do modelo (prefixo `DR_TPAGE` nas listas 18..23/30/31, `packet_words`); paletas como variantes afins no shader (`.stg` v3: 242 58 camadas, 234 63, 0 texturas animadas com o jogo); telão do 235 = amostragem do buffer de tela, resolvido com a cópia do fbo no núcleo; 2 jogadores pelo teclado conferido |
 | 7 | Port para o Polygonia (Android) | **próxima** |
 | 8 | Abertura em vídeo ampliada por IA | futuro |
 
-## Onde estamos (fim da fase 6b, terceira rodada, 2026-10-29)
+## Onde estamos (fim da fase 6c, 2026-10-30)
+- Partida pelo teclado na build normal conferida (1P no 235, 2P HEAT × COMET no 233) com o computer-use; para o 2
+  jogadores num teclado só: `p2_device = "keyboard"` e teclas próprias em `[player2]` (só na `build/`).
+- 241: as faces sem par fora de `0x8008xxxx` eram o nó 5 do modelo, recusado porque o exportador não contava o
+  `DR_TPAGE` de 2 palavras das listas semitransparentes sem textura (`PREFIX`); `geo_buf_mismatch` 2/OT → 0, sem par
+  41,8 → 31,9 por OT (o que sobra é o 2D do overlay). 236 e 238 re-exportados com a mesma correção.
+- Paletas animadas: variantes afins (`k·rgb + b` sobre uma camada âncora, `.stg` v3, tabela 2 × n_var no shader); 242 e
+  234 sem textura animada com o jogo, com 58 e 63 camadas (eram 57 e 56).
+- Telão do 235: não há cópia VRAM→VRAM; os painéis leem o buffer de tela (página de 16 bpp em x < 512) e o renderizador
+  amostra a VRAM nativa, sem o desenho de host; o núcleo copia a faixa do fbo na primeira sequência do quadro que a lê e
+  desenha os painéis com ela (emissivo). Números, A/B e desempenho em `notes/remake-visual.md`, "Fase 6c no jogo".
+- Próxima: fase 7 (port para o Polygonia): levar junto a camada FB (no DuckStation a VRAM é uma textura só: o telão sai
+  sozinho) e as variantes afins (só tabela e shader).
+
+## Onde estávamos (fim da fase 6b, terceira rodada, 2026-10-29)
 - Faces sem par: a tela dos vértices livres agora é a do GTE exata e os cantos saturados (tela em ±1024, vértice perto
   da câmera) são resolvidos pelo vizinho no espaço; sem par por OT 234 45 → 9, 243 38 → 3, 235 73 → 42. O que sobra é
   2D (painéis do fundo do 233, billboards de brilho, sprites): fica com o jogo.
@@ -328,6 +343,11 @@ segunda volta de dumps HD. Técnica e números em `notes/remake-visual.md`, "Fas
   (`stage_vram_keys.py` + `export_stage.py`); textura animada por retângulo e hash da CLUT na tabela `.stg`; janela de
   textura no shader; causa do HEAT × COMET (`heat_gpu_bound.py`). Conferido: medição dos 13 palcos (`perf6d`),
   capturas A/B, memória, regressão; build normal recompilada (partida pelo teclado não conferida: computer-use negado).
+
+## Fase 6c — Os três itens que faltavam da fase 6 (feita em 2026-10-30)
+Pedido: partida na build normal pelo teclado (computer-use), faces sem par do 241, paletas animadas do 242/234 fora
+das 64 camadas, telão do 235. Técnica e números em `notes/remake-visual.md`, "Fase 6c no jogo"; formato em
+`notes/formats.md` ("Palcos: conteúdo e desenho": prefixo `DR_TPAGE`, `.stg` v3, camada do telão).
 
 ## Fase 7 — Port para o Polygonia (Android)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.

@@ -1456,8 +1456,8 @@ página da água), 238 (os efeitos da página 0x18) e, em todos, as texturas de 
   estava fora do PC).
 
 ### Limites e o que não deu (fase 6b)
-- **Partida na build normal pelo teclado**: não conferida (computer-use negado nas duas primeiras rodadas; na terceira
-  o usuário estava remoto). A build normal tem o código final e o palco carrega e descarrega nela (memória de GPU na demonstração automática).
+- **Partida na build normal pelo teclado**: conferida na fase 6c (abaixo). Antes: não conferida (computer-use negado
+  nas duas primeiras rodadas; na terceira o usuário estava remoto). A build normal tem o código final e o palco carrega e descarrega nela (memória de GPU na demonstração automática).
 - **Pendência HEAT × COMET**: causa localizada na segunda rodada (não é preenchimento de pixels: a subida é a mesma a 9x
   e a 4x; é do lado do driver, no envio dos comandos do segundo corpo), sem número por etapa sem um perfilador de GPU.
   Na configuração do jogo (os dois remakes e o palco novo) a render fica abaixo da base.
@@ -1472,7 +1472,9 @@ página da água), 238 (os efeitos da página 0x18) e, em todos, as texturas de 
   comuns. "Sem par" (`stage_geo p`: página e camada, vértices que bateram, endereço na RAM): faces 2D que o overlay
   monta em `0x80080000..0x8008FFFF` sem vértice 3D (painéis do fundo do 233, billboards de brilho, sprites; no 245
   todas) e, no 241, um resto em `0x800B9000`/`0x800C7000` com outra projeção. As do fundo e do chão em
-  `0x800D0000..0x800D6FFF` que a segunda rodada listava aqui eram cantos saturados e saíram na terceira.
+  `0x800D0000..0x800D6FFF` que a segunda rodada listava aqui eram cantos saturados e saíram na terceira. **Fase 6c**: o
+  resto do 241 era o nó 5 do modelo recusado por tamanho de buffer (listas com prefixo `DR_TPAGE`), não outra projeção;
+  as paletas do 242 e do 234 entraram como variantes afins; o telão do 235 sai pela cópia do fbo. Ver "Fase 6c no jogo".
 - **Travamento depois de carregar savestate** (achado e corrigido na terceira rodada): ver "Capturas, regressão e
   memória (terceira rodada)". O travamento da primeira volta (234, 24 fps e o jogo parado logo depois de carregar um
   savestate) era o mesmo; o crash "out of GPU memory" da NVIDIA visto uma vez na fase 6 continua não reproduzido.
@@ -1490,6 +1492,119 @@ página da água), 238 (os efeitos da página 0x18) e, em todos, as texturas de 
 - A/B pelo savestate: peças com movimento aleatório divergem entre as variantes (o sorteio depende do tempo da GPU).
 - Memória de GPU alta nos palcos com muitas camadas (até 1,72 GB no processo): para o Polygonia, camadas menores ou
   comprimidas.
+
+## Fase 6c no jogo: os três itens que faltavam da fase 6 (2026-10-30)
+Pedido: a partida na build normal pelo teclado e os três itens abertos nos "Limites" da fase 6b: as faces sem par do 241
+fora de `0x8008xxxx`, as paletas animadas do 242 e do 234 (não cabiam nas 64 camadas) e o telão do 235. Análise em
+paralelo por agentes de leitura (um por item, com um cético conferindo o das paletas); medições, edições e builds em
+série. Logs em `tools/recomp/logs/remake/palcos/` (`telao_copias*.txt`, `paletas6g.txt`, `fase6c_241_235.txt`,
+`export6g*.txt`, `pausa6c*.txt`, `regressao6c.txt`, `perf6c*.txt`).
+
+### Partida na build normal pelo teclado (computer-use)
+Conferida com o computer-use autorizado no exe da `build/`: uma partida de 1 jogador no 235 (HIRO × HIRO, sorteio) e
+uma de **2 jogadores** no 233 (HEAT × COMET), as duas pelo teclado, com o palco e os dançarinos pelo remake e o jogo liso
+(capturas em `logs/remake/palcos/teclado/`). Dois detalhes do teclado: `keybinds.ini` dá as mesmas teclas aos dois
+jogadores e a porta 2 vem desligada (`p2_device` ausente): com `[controller] p2_device = "keyboard"` no `game.toml` da
+build e as mesmas teclas, cada toque no menu conta duas vezes (os dois pads movem o cursor); com teclas próprias em
+`[player2]` do `keybinds.ini` da build (I/K/J/L, N = cruz, M = círculo, P = start) o 2 jogadores funciona num teclado só.
+Nada disso foi para o repositório (`keybinds.ini` e a cópia do `game.toml` ficam em `build/`; o `game.toml` da fonte não
+mudou). Toque de ~0,15–0,25 s por tecla; X (0,25 s) no menu confirma também o personagem se a seleção carrega rápido.
+
+### 241: as faces "sem par" eram um nó do modelo (`packet_words`)
+Os 18 % de faces sem par do 241 em `0x800B9000`/`0x800C7000` não eram outra projeção do overlay: são os 20 GT4 da lista
+27 do **nó 5 do modelo do palco**, escritos por `FUN_80029588` nos dois buffers do nó (`+0xA8`/`+0xAC`, paridade em
+`0x8006EE90`). O plugin recusava o nó (e o nó 1) porque `geo_node_fill` exige que o tamanho do buffer na RAM (`nó+0xA4`)
+bata com o da tabela `.stg`, e o exportador contava a lista 30 como G3 de 28 bytes quando o jogo aloca 36: as listas
+semitransparentes sem textura (`PREFIX` = 18..23, 30, 31; `FUN_8001FF34`) têm um `DR_TPAGE` de 2 palavras (tag + E1h,
+o modo de mistura) antes do pacote. Como só 241, 236 e 238 usam essas listas, a fórmula nunca tinha sido flagrada. A
+numerologia fechou antes do teste: as amostras do `stage_geo p` ocupavam exatamente 20 × 52 bytes, e a distância entre as
+duas cópias era o total da tabela mais 32 × 8 bytes dos prefixos. Correção: `packet_words` soma as 2 palavras
+(`export_stage.py`), a primitiva ganha a marca `prefix` na tabela (`RmkStagePrim.prefix`, antes `pad[0]`) e o plugin
+conta esses pacotes em `prefixo=` em vez de `tamanho_errado`/`desconhecidos` (o E1 e o G3/G4 ficam com o jogo, como já
+ficavam: `read_packet` devolve −2 para semitransparente sem textura). Re-exportados 241, 236 e 238; sem gancho novo,
+sem regenerar nada. No jogo (`fase6c_241_235.txt`, 60 s, HEAT × COMET): `bag2_stage.geo_buf_mismatch` 2 por OT → **0**;
+faces sem par com textura 41,8 por OT (`sempar6f_x`) → **31,9** (57 422 em 1 799 OTs), todas em `0x80081000`,
+`0x80082000` e `0x80086000` (o 2D do overlay); as páginas `800B9000`/`800C7000` e a entrada `00B/0` sumiram do
+`stage_geo p`. O A/B por savestate mostrou então o efeito colateral: o vidro da cabine do helicóptero (os 20 GT4 do nó 5,
+TIM 3, CLUT 3 cinza) saía cinza e opaco no remake, enquanto o jogo mostra um reflexo colorido que rola — o jogo recarrega
+essa região da página 00B a cada quadro (retângulo em `s_dynr`). `read_packet` devolvia a camada da face no asset
+(parada) para qualquer pacote de face do modelo sem camada, inclusive os que `geo_key_layer` recusava de propósito
+(página recarregada, CLUT marcada, chave desconhecida); só as faces livres ficavam com o jogo. Agora o pacote sem
+camada fica com o jogo também nas faces do modelo (`read_packet` → −3, `stage_geo s` `textura_com_o_jogo=`; flag 8192
+volta ao comportamento antigo para A/B): o vidro volta a ser o do jogo, como na segunda rodada. Conferido pelos
+contadores (`textura_com_o_jogo` 1 604 e 1 995 pacotes em duas partidas do 241; 0 no 234, onde a regra não muda nada);
+nas três capturas tentadas depois da correção (`vidro6c_*`, `vidro6d_*`, `vidro6e_*`) a câmera não voltou a mostrar o
+para-brisa de frente, então a imagem do vidro certo é a da segunda rodada (`pausa_x11.png`), não uma nova.
+
+### Paletas animadas do 242 e do 234: variantes afins (`.stg` v3)
+As 64 camadas são um limite do núcleo (`RMK_MAX_LAYERS`, `layer_page`), não do GL, e cada camada 1024² custa 10,67 MB
+(cor + mapa de normal, com mipmaps). A proposta era camadas de variante em 512²; a análise dos `clut_var.json` mostrou
+algo melhor: quase toda linha do banco de paletas é uma **transformação afim da paleta base** (`rgb' = k·rgb + b` por
+canal: escurecer as luzes, somar vermelho), que o shader aplica sobre a camada HD já existente sem camada nova nem
+memória. `export_stage.py` (`clut_variants`, `affine_fit`, `affine_from`): para cada CLUT animada escolhe a **âncora**
+(a CLUT do TIM da chave, se tiver cor, ou uma linha do banco) que dá o menor resíduo máximo sobre todas as linhas e
+páginas, exigindo a mesma cobertura (cor 0 = transparente: o alfa e o STP vêm da camada âncora); com resíduo até
+`AFFINE_TOL` (1,5/31, `BAG2_AFFINE_TOL`) as linhas viram variantes do tipo 1 (âncora de linha = 1 camada por página,
+dedup por (página, paleta)); senão camadas como antes (tipo 0, todas as de uma CLUT ou nenhuma). Tabela `.stg` versão 3:
+20 bytes por variante (chave, origem, camada, tipo, k em 8.8, b em 1/4096). Núcleo (`rmk_stage.c`): a variante afim
+viaja no pacote como camada `n_layers + índice` (u8; a carga exige `n_layers + n_var < 0xE0`), `pkt_layer` devolve a
+camada âncora e o índice vai nos bits 9+ do modo; os k e b ficam numa textura 2 × n_var RGBA32F (unidade 11,
+`texelFetch`); o mapa de normal e o STP são os da âncora. Plugin (`dyn_rect`): `s_kvar` guarda `n_layers + v + 1` para
+o tipo 1; `stage_geo s` mostra `trocas_de_variante=… (afins=…)`. Depois de carregar savestate a regra é a mesma
+(`KVAR_GAME` até a próxima cópia). Conferido pelo cético: a CLUT do TIM do 0C3C/0C7C é toda zero (camada base vazia),
+por isso a âncora tem de poder ser uma linha do banco; e o 09BE contra o TIM fica em 1,04–2,21/31, contra a melhor linha
+em 1,28. Resultado (`export6g.txt`): 242 = 57 → **58 camadas** (1 âncora; 09BE 14 variantes afins, resíduo 1,28/31; 0D3F
+14 afins exatas sobre o TIM); 234 = 56 → **63** (1 âncora para 0C3C/0C7C, 18 afins exatas; 0C7D em 6 camadas, resíduo
+afim 1,75 > 1,5). No jogo (`paletas6g.txt`, ~100 s de música): texturas animadas com o jogo 242 2 → **0**, 234 3 → **0**,
+`marcas=0`; trocas de variante 5 380 (242, todas afins) e 10 339 (234, 7 104 afins); GPU do asset do 242 609 → 620 MB.
+Os 232, 233 e 235 continuam com as camadas da terceira rodada (lá o ajuste afim não passa: resíduos 3–12/31); o `.stg`
+v2 deles carrega como antes (tipo 0). A opção 512² ficou de fora: não foi preciso.
+
+### Telão do 235: amostragem direta do buffer de tela, não cópia
+Medido com o plugin registrando **todas** as cópias VRAM→VRAM da partida (`stage_geo v` agora lista MoveImage de
+qualquer tamanho e pacotes GP0 80h ligados na OT; `vt` filtra origem na tela; `v<n>` pagina): em 130 s do 235 nenhuma
+cópia tem origem na área da tela; as ~40 por segundo são linhas de CLUT (16 × 1) e as expressões do rosto. A análise do
+overlay (`overlays_static_0046.c`) achou o mecanismo: o construtor dos painéis monta 2 POLY_FT4 (duas metades de 128
+texels) com `tpage = GetTPage(2 /* 16 bpp */, 0, X, Y)`, `clut = 0`, `v0 = 61`, 128 × 117 texels, `X = (rand() % 5) << 6`
+e `Y` 0 ou 256 — **a textura é o próprio buffer de tela** (512 × 240 duplo em y 0/256), como a tela de TV de muitos
+jogos de PS1; o modo liga ~8,5 s a cada 34 s (`(quadro >> 9) & 3 == 0`, contador `0x8006EE78`). O renderizador do
+PSXRecomp amostra as texturas em `s_raw_tex`, o espelho 1x da VRAM nativa do rasterizador de software, que nunca recebe
+o desenho de host: por isso o telão saía escuro, só com os anéis do HUD. Solução (sem patch no framework, sem marcador
+novo): `geo_key_layer` reconhece página de 16 bpp dentro da tela (`x < 512`) e dá ao pacote a camada
+`RMK_STAGE_LAYER_FB | buffer << 3 | coluna` (0xE0..0xEF); os quads chegam como faces livres (vértices por
+`RotTransPers4`, já ganchado) e o núcleo, na **primeira sequência do quadro que lê a tela**, no passo 0 (fbo canônico),
+copia a faixa 512 × 256 daquele buffer do fbo para uma textura (`fb_capture`: `glBlitFramebuffer`, até 4 pixels por
+texel, unidade 12, religa `t->fbo`) e desenha a face com ela, modulada pela cor do pacote e **sem luz** (bit 17 do modo,
+emissivo). É a semântica do PS1: o que estiver na VRAM naquele ponto da OT, no 235 o quadro anterior inteiro, com o
+palco e os dançarinos do remake em alta resolução. Flag 4096 do `stage_geo` devolve o telão ao jogo (A/B). Tela dividida
+no mesmo quadro (`stage_geo 1 128`, `telao6c_split_*.png` nos trechos com o modo ligado): à direita a parede mostra o
+quadro anterior em alta resolução (HEAT e COMET ampliados); à esquerda, com o jogo, a parede escura com os anéis e o
+chão em 1x. `telao=1032` pacotes em 150 s (`stage_geo s`).
+
+### Desempenho e conferências (fase 6c)
+Mesma medição das rodadas anteriores (build-debug, 9x + 16:9, pacote HD, HEAT × COMET, uma sessão por palco, duas
+janelas de 60 s com a ordem trocada; `stage_perf.py`, os três últimos blocos de `perf6c.txt` e `perf6c_x241.txt`; o 241
+pelo índice do palco):
+
+| palco | ordem | base: fps (mín.) | jogo | render (máx.) | tudo: fps (mín.) | jogo | render (máx.) | Δ jogo | Δ render | underruns |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 242 (paletas afins) | base primeiro | 59,9 (59,9) | 37 % | 38 % (50) | 59,9 (59,9) | 33 % | 25 % (32) | −4 | −13 | 0/0 |
+| 234 (paletas afins + 6 camadas) | tudo primeiro | 59,9 (59,9) | 33 % | 41 % (53) | 59,9 (59,9) | 32 % | 33 % (42) | −1 | −8 | 0/0 |
+| 235 (telão pelo fbo) | base primeiro | 59,9 (59,9) | 33 % | 34 % (45) | 59,9 (59,9) | 30 % | 31 % (43) | −3 | −3 | 0/0 |
+| 241 (nó 5) | base primeiro | 59,9 (59,9) | 37 % | 33 % (44) | 59,9 (59,9) | 32 % | 22 % (37) | −5 | −11 | 0/0 |
+
+Nenhum segundo abaixo de 59,5, 0 underruns; jogo e render abaixo da base nos quatro (a cópia do telão, 512 × 256 a 4
+pixels por texel, uma vez por quadro só nos trechos com o modo ligado, não aparece no `render_busy`). Segunda leva,
+depois da regra dos pacotes sem camada (`perf6c_b.txt`, `perf6c_x241b.txt`, base primeiro nos dois): 234 base jogo 34 % /
+render 39 % (57) → tudo 29 % / 38 % (43), Δ −5/−1; 241 base 36 % / 33 % (42) → tudo 32 % / 20 % (26), Δ −4/−13; 59,9 fps
+em todos os segundos, 0 underruns.
+- **A/B por savestate** (`stage_geo_pause.py`, `pausa6c*.txt`): 242 (`pausa_02.png`), 234 (`pausa_00.png`), 235
+  (`pausa_07.png`) e 241 (`pausa_11.png`, índice 11) original × remake no mesmo quadro: nada fora do lugar; no 235 o
+  telão aparece nas duas metades (no original o chão em 1x, no remake o quadro anterior em alta resolução); no 241 a
+  primeira leva mostrou o vidro cinza do helicóptero (corrigido acima; a segunda leva é `pausa_11*` refeita).
+- **Regressão** (`stage_check.py`, `regressao6c.txt`): abertura, título, menu e seleção com 0 marcadores e nenhum
+  asset de palco; partida no 234 em 16:9 com o HUD por cima; no fim da música o asset descarrega (estado 0).
+- Cartões de memória: md5 `8a250fe6206a1537011166866b509ebd` nos dois antes e depois.
 
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos

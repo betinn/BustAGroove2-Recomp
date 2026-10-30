@@ -57,6 +57,10 @@ typedef ptrdiff_t GLsizeiptr_;
 #define R_LEQUAL 0x0203
 #define R_DEPTH_BUFFER_BIT 0x0100
 #define R_FRAMEBUFFER 0x8D40
+#define R_READ_FRAMEBUFFER 0x8CA8
+#define R_DRAW_FRAMEBUFFER 0x8CA9
+#define R_COLOR_ATTACHMENT0 0x8CE0
+#define R_COLOR_BUFFER_BIT 0x4000
 #define R_DEPTH_ATTACHMENT 0x8D00
 #define R_DEPTH_COMPONENT 0x1902
 #define R_DEPTH_COMPONENT24 0x81A6
@@ -77,6 +81,7 @@ typedef ptrdiff_t GLsizeiptr_;
     X(void, BindTexture, (GLenum_ t, GLuint_ x)) \
     X(void, BindVertexArray, (GLuint_ a)) \
     X(void, BindFramebuffer, (GLenum_ t, GLuint_ f)) \
+    X(void, BlitFramebuffer, (GLint_ sx0, GLint_ sy0, GLint_ sx1, GLint_ sy1, GLint_ dx0, GLint_ dy0, GLint_ dx1, GLint_ dy1, uint32_t m, GLenum_ f)) \
     X(GLenum_, CheckFramebufferStatus, (GLenum_ t)) \
     X(void, DrawBuffers, (GLsizei_ n, const GLenum_* b)) \
     X(void, FramebufferTexture2D, (GLenum_ t, GLenum_ a, GLenum_ tt, GLuint_ x, GLint_ l)) \

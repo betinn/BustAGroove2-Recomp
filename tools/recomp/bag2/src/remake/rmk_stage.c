@@ -17,7 +17,7 @@
  * só nos texels com STP quando há textura, como no jogo.
  *
  * Estado GL que rmk_stage_gl_draw muda (quem chama restaura): programa, VAO, buffer de vértices, unidade ativa e
- * texturas das unidades 8, 9, 10, 14 e 15 (com objetos de amostragem nas 14 e 15), profundidade (desligada), cull
+ * texturas das unidades 8, 9, 10, 11, 12, 14 e 15 (com objetos de amostragem nas 14 e 15), profundidade (desligada), cull
  * (desligado), blend (função, equação e cor), stencil (desligado), máscara de cor, recorte (o do alvo). */
 #include "rmk.h"
 
@@ -50,7 +50,7 @@ int rmk_stage_load(RmkStage* s, const char* path) {
     if (!f) return 0;
     uint32_t magic = 0, h[8];
     int ok = fread(&magic, 4, 1, f) == 1 && magic == RMK_STAGE_TAB_MAGIC && fread(h, 4, 8, f) == 8 &&
-             (h[0] == 1u || h[0] == 2u);
+             (h[0] >= 1u && h[0] <= 3u);
     if (ok) {
         s->version = h[0]; s->container = h[1]; s->n_nodes = h[2]; s->n_layers = h[3]; s->n_keys = h[4];
         s->model_bytes = h[5]; s->ov_hash = h[6]; s->model_hash = h[7];
@@ -68,12 +68,25 @@ int rmk_stage_load(RmkStage* s, const char* path) {
         ok = s->prims && s->keys && fread(s->prims, sizeof(RmkStagePrim), s->n_prims, f) == s->n_prims &&
              fread(s->keys, sizeof(RmkStageKey), s->n_keys, f) == s->n_keys;
     }
-    if (ok && s->version >= 2u) {    /* variantes de CLUT animada */
+    if (ok && s->version >= 2u) {    /* variantes de CLUT animada (v2: 8 bytes, só camada; v3: 20 bytes, com o tipo) */
         ok = fread(&s->n_var, 4, 1, f) == 1 && s->n_var < 4096u;
         if (ok && s->n_var) {
-            s->var = (RmkStageVar*)malloc(sizeof(RmkStageVar) * s->n_var);
-            ok = s->var && fread(s->var, sizeof(RmkStageVar), s->n_var, f) == s->n_var;
-            for (uint32_t i = 0; ok && i < s->n_var; i++) ok = s->var[i].key < s->n_keys && s->var[i].layer < s->n_layers;
+            s->var = (RmkStageVar*)calloc(s->n_var, sizeof(RmkStageVar));
+            ok = s->var != NULL;
+            for (uint32_t i = 0; ok && i < s->n_var; i++) {
+                RmkStageVar* v = &s->var[i];
+                if (s->version >= 3u) ok = fread(v, sizeof *v, 1, f) == 1;
+                else {
+                    uint8_t r8[8];
+                    ok = fread(r8, 1, 8, f) == 8;
+                    memcpy(&v->key, r8, 2); memcpy(&v->src_x, r8 + 2, 2); memcpy(&v->src_y, r8 + 4, 2);
+                    v->layer = r8[6]; v->kind = RMK_STAGE_VAR_LAYER;
+                    v->k[0] = v->k[1] = v->k[2] = 256; v->b[0] = v->b[1] = v->b[2] = 0;
+                }
+                ok = ok && v->key < s->n_keys && v->layer < s->n_layers && v->kind <= RMK_STAGE_VAR_AFFINE;
+            }
+            /* a variante afim viaja no pacote como camada n_layers + índice (u8; 0xE0.. são o telão, 0xFF nenhuma) */
+            ok = ok && s->n_layers + s->n_var < RMK_STAGE_LAYER_FB;
         }
     }
     /* o buffer de cada nó tem exatamente as palavras das primitivas (o adaptador confere de novo na RAM) */
@@ -103,6 +116,12 @@ struct RmkStageGL {
 #undef X
     int gles, step, ready, failed, has_nmap;
     GLuint_ prog, vao, tri_vbo, inst_vbo, tex, nmap, geo[GEO_RING], smp_shadow;
+    GLuint_ vtab;                    /* variantes afins (.stg v3): 2 texels RGBA32F por variante, k e b (unidade 11) */
+    uint32_t n_var;
+    GLuint_ fb_tex, fb_fbo;          /* telão: a faixa 512 x 256 de um buffer de tela copiada do fbo (unidade 12) */
+    int fb_k;                        /* pixels por texel da cópia (até 4) */
+    uint32_t fb_serial;              /* quadro da última cópia */
+    int fb_y;                        /* buffer copiado (0 ou 256) */
     GLuint_ vao_grid, grid_vbo, grid_ibo;   /* grade de Phong (RMK_TESS_L) para as faces curvas */
     uint8_t* tess;                   /* por face do asset: 128 curva (Phong) | arestas presas (bit k = a oposta ao canto k) */
     uint8_t* curv;                   /* por face: 1 curva (decidido com o nó dela em cena), 0 plana ou nó ainda não visto */
@@ -120,7 +139,7 @@ struct RmkStageGL {
     float relight, detail, spec, ao, shadow, pulse, floor_on, floor_n[3];
     uint32_t flags;
     GLint_ u_geo, u_geo_w, u_ndc, u_proj, u_tex, u_nmap, u_nmap_on, u_semi, u_ldir, u_lcol, u_bk, u_w, u_w2, u_floor;
-    GLint_ u_sh[2], u_su[1], u_sv[1], u_sd[1], u_sc[1], u_nsh, u_phong;
+    GLint_ u_sh[2], u_su[1], u_sv[1], u_sd[1], u_sc[1], u_nsh, u_phong, u_var, u_fb;
     uint64_t bytes;
     char err[512];
 };
@@ -185,6 +204,8 @@ static const char* FS =
     "precision mediump sampler2DShadow;\n"
     "uniform mediump sampler2DArray u_tex;\n"
     "uniform mediump sampler2DArray u_nmap;\n"
+    "uniform highp sampler2D u_var;   /* variantes afins da paleta: texel (0, v) = k, (1, v) = b (texelFetch) */\n"
+    "uniform mediump sampler2D u_fb;   /* telão: a faixa 512 x 256 do buffer de tela que o pacote lê */\n"
     "uniform float u_nmap_on;\n"
     "uniform int u_semi;    /* -1 face opaca; 0 face semi, texels sem STP; 1 face semi, só os texels com STP */\n"
     "uniform vec3 u_ldir[3], u_lcol[3], u_bk;\n"
@@ -250,6 +271,8 @@ static const char* FS =
     "       junta escura entre ladrilhos); a leitura fica no retângulo de UV da face */\n"
     "    vec3 uc = vec3(v_twin != 0u ? twin_uv(v_uv) : clamp(v_uv, v_uvr.xy, v_uvr.zw), float(v_layer));\n"
     "    vec4 t = textureGrad(u_tex, uc, gx, gy);\n"
+    "    int vv = (v_mode >> 9) & 255;   /* paleta animada afim (bits 9+ do modo): rgb' = k * rgb + b na camada base */\n"
+    "    if (vv > 0) t.rgb = clamp(t.rgb * texelFetch(u_var, ivec2(0, vv - 1), 0).rgb + texelFetch(u_var, ivec2(1, vv - 1), 0).rgb, 0.0, 1.0);\n"
     "    nm = textureGrad(u_nmap, uc, gx, gy);\n"
     "    stp = stp && nm.a > 0.5;\n"
     "    /* alfa = campo suave de cobertura (borda em 0,5): borda com antisserrilhado, misturada na ordem de pintor */\n"
@@ -257,8 +280,14 @@ static const char* FS =
     "    float cv = smoothstep(0.5 - fw, 0.5 + fw, t.a);\n"
     "    if (md == 2) { if (cv < 0.004) discard; base = t.rgb * v_over; tex_a = 1.0; cover = cv; }\n"
     "    else { base = mix(base, t.rgb * v_over, cv); tex_a = cv; }\n"
+    "  } else if (md > 0 && v_layer == -2) {   /* telão: o quadro na VRAM, modulado pela cor do pacote; a página de 16\n"
+    "       bpp tem 256 texels de largura a partir da coluna X = 64 * (bits 18..20 do modo) da faixa de 512 */\n"
+    "    vec2 q = clamp(v_uv, v_uvr.xy, v_uvr.zw);\n"
+    "    q.x = (float((v_mode >> 18) & 7) * 64.0 + q.x * 256.0) / 512.0;\n"
+    "    base = texture(u_fb, q).rgb * v_over; tex_a = 1.0; stp = false;\n"
     "  }\n"
     "  if (u_semi >= 0 && stp != (u_semi == 1)) discard;\n"
+    "  if ((v_mode & 131072) != 0) { frag = vec4(clamp(base, 0.0, 1.0), cover); return; }   /* emissivo: sem luz */\n"
     "  vec3 alb = pow(clamp(base, 0.0, 1.0), vec3(2.2));\n"
     "  vec3 v = normalize(-v_pos);\n"
     "  vec3 n0 = normalize(v_nrm);\n"
@@ -297,6 +326,9 @@ uint64_t rmk_stage_gl_bytes(const RmkStageGL* g) { return g ? g->bytes : 0u; }
 uint32_t rmk_stage_gl_curved(const RmkStageGL* g) { return g ? g->n_tess : 0u; }
 
 void rmk_stage_gl_destroy(RmkStageGL* g) {
+    if (g && g->vtab) { g->DeleteTextures(1, &g->vtab); g->vtab = 0; }
+    if (g && g->fb_fbo) { g->DeleteFramebuffers(1, &g->fb_fbo); g->fb_fbo = 0; }
+    if (g && g->fb_tex) { g->DeleteTextures(1, &g->fb_tex); g->fb_tex = 0; }
     if (!g) return;
     if (g->DeleteTextures) {
         const GLuint_ tx[2] = {g->tex, g->nmap};
@@ -453,7 +485,7 @@ static void classify_tess(RmkStageGL* g, const RmkAsset* a, uint64_t done) {
     g->n_tess = nt;
 }
 
-static int build(RmkStageGL* g, const RmkAsset* a) {
+static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     GLuint_ vs = compile(g, R_VERTEX_SHADER, VS), fs = vs ? compile(g, R_FRAGMENT_SHADER, FS) : 0;
     if (!vs || !fs) return 0;
     g->prog = g->CreateProgram();
@@ -473,7 +505,7 @@ static int build(RmkStageGL* g, const RmkAsset* a) {
     }
 #define U(name) g->name = g->GetUniformLocation(g->prog, #name)
     U(u_geo); U(u_geo_w); U(u_ndc); U(u_proj); U(u_tex); U(u_nmap); U(u_nmap_on); U(u_semi); U(u_bk); U(u_w); U(u_w2);
-    U(u_nsh); U(u_floor); U(u_phong);
+    U(u_nsh); U(u_floor); U(u_phong); U(u_var); U(u_fb);
 #undef U
     g->u_ldir = g->GetUniformLocation(g->prog, "u_ldir[0]");
     g->u_lcol = g->GetUniformLocation(g->prog, "u_lcol[0]");
@@ -573,20 +605,43 @@ static int build(RmkStageGL* g, const RmkAsset* a) {
     g->SamplerParameteri(g->smp_shadow, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
     g->SamplerParameteri(g->smp_shadow, R_TEXTURE_COMPARE_MODE, R_COMPARE_REF_TO_TEXTURE);
     g->SamplerParameteri(g->smp_shadow, R_TEXTURE_COMPARE_FUNC, R_LEQUAL);
+    /* variantes afins da paleta (.stg v3): k e b de cada uma numa textura 2 x n_var RGBA32F, lida por texelFetch */
+    {
+        const uint32_t nv = s && s->n_var ? s->n_var : 1u;
+        float* tab = (float*)calloc((size_t)nv * 8u, sizeof(float));
+        if (!tab) return 0;
+        for (uint32_t v = 0; v < nv; v++) {
+            float* k = tab + 8u * v;
+            k[0] = k[1] = k[2] = 1.0f; k[3] = 1.0f; k[7] = 1.0f;
+            if (s && v < s->n_var)
+                for (int c = 0; c < 3; c++) { k[c] = (float)s->var[v].k[c] / 256.0f; k[4 + c] = (float)s->var[v].b[c] / 4096.0f; }
+        }
+        g->n_var = s ? s->n_var : 0u;
+        g->GenTextures(1, &g->vtab);
+        g->ActiveTexture(R_TEXTURE0 + 11);
+        g->BindTexture(R_TEXTURE_2D, g->vtab);
+        g->TexImage2D(R_TEXTURE_2D, 0, R_RGBA32F, 2, (GLsizei_)nv, 0, R_RGBA, R_FLOAT, tab);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MIN_FILTER, R_NEAREST);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MAG_FILTER, R_NEAREST);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+        g->BindTexture(R_TEXTURE_2D, 0);
+        free(tab);
+    }
     const uint64_t layer = (uint64_t)a->tex_size * a->tex_size * 4u * (a->n_layers ? a->n_layers : 1u);
     g->bytes += layer * 4u / 3u + (uint64_t)ns * ns * 4u * (a->n_layers ? a->n_layers : 1u) * 4u / 3u +
                 (uint64_t)GEO_RING * g->geo_w * g->geo_h * 16u + sizeof(SInst) * g->n_inst_cap;
     return g->GetError() == 0;
 }
 
-int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a) {
+int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     if (!g || g->failed) return 0;
     if (g->ready) return 1;
     while (g->GetError() != 0) {}
     g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
     g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
     if (g->step == 0) {
-        if (!build(g, a)) {
+        if (!build(g, a, s)) {
             if (!g->err[0]) snprintf(g->err, sizeof g->err, "palco: recursos GL, erro 0x%X", g->GetError());
             g->failed = 1;
             return 0;
@@ -691,6 +746,20 @@ void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* f
 
 /* Instâncias da sequência, a partir dos pacotes vivos: as faces de cada primitiva, com cor/UV do slot do pacote de
  * cada canto. Devolve quantas. */
+/* Camada do pacote: índice do asset ou, a partir de n_layers, uma variante da tabela; a afim devolve a camada base da
+ * chave e o índice + 1 em *vv (vai nos bits 9+ do modo para o shader). -1 = sem textura. */
+#define SMODE_EMISSIVE 131072u       /* bit 17 do modo: sem luz (o telão); bits 18..20: coluna da página (telão) */
+static int pkt_layer(const RmkAsset* a, const RmkStage* s, int layer, unsigned* vv) {
+    *vv = 0;
+    if (layer < 0) return -1;
+    if (RMK_STAGE_LAYER_IS_FB((unsigned)layer)) { *vv = ((unsigned)layer & 7u) << 9; return -2; }   /* telão: u_fb; coluna nos bits 18..20 */
+    if (layer < (int)a->n_layers) return layer;
+    const uint32_t v = (uint32_t)layer - a->n_layers;
+    if (!s || v >= s->n_var || v >= 255u || s->var[v].kind != RMK_STAGE_VAR_AFFINE || s->var[v].layer >= a->n_layers) return -1;
+    *vv = v + 1u;
+    return (int)s->var[v].layer;
+}
+
 static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, const RmkStagePkt* pk, uint32_t n) {
     uint32_t m = 0;
     SInst* out = g->inst + g->inst_used;
@@ -703,7 +772,8 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
             static const uint8_t tri[2][3] = {{0, 1, 2}, {1, 3, 2}};
             if (b + nv > g->n_free) continue;
             const int tex = (p->flags & RMK_SPKT_TEX) != 0;
-            const int layer = tex && p->layer != 0xFFu && p->layer < a->n_layers ? p->layer : -1;
+            unsigned vv = 0;
+            const int layer = tex && p->layer != 0xFFu ? pkt_layer(a, s, p->layer, &vv) : -1;
             const int semi = (p->flags & RMK_SPKT_SEMI) != 0;
             for (uint32_t k = 0; k < nv - 2u && m < room; k++) {
                 SInst* o = &out[m];
@@ -718,7 +788,7 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
                 const int nc = (g->flags & RMK_SFLAG_NODE_COLORS) != 0;
                 o->layer = (float)(nc ? -1 : layer);
                 o->twin = p->twin;
-                o->mode = (float)(nc || layer < 0 ? 0u : (2u | (semi ? 256u : 0u)));
+                o->mode = (float)(nc || layer == -1 ? 0u : (2u | (semi ? 256u : 0u) | (vv << 9) | (layer == -2 ? SMODE_EMISSIVE : 0u)));
                 sg[m] = (uint8_t)(semi && !nc ? 1u + RMK_SPKT_BLEND(p->flags) : 0u);
                 m++;
             }
@@ -749,14 +819,15 @@ static uint32_t build_run(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, c
                 o->layer = -1.0f; o->mode = 0.0f; sg[m] = 0; m++;
                 continue;
             }
-            int layer = p->layer != 0xFFu ? p->layer : t->layer;
-            if (layer >= (int)a->n_layers) layer = -1;
+            unsigned vv = 0;
+            int layer = pkt_layer(a, s, p->layer != 0xFFu ? p->layer : t->layer, &vv);
             unsigned md = t->mode & 3u;
             if (!tex) md = 0u;                      /* pacote sem textura: só a cor */
             else if (md == 0u) md = 2u;
             o->layer = (float)(tex ? layer : -1);
             const int semi = (p->flags & RMK_SPKT_SEMI) != 0;
-            o->mode = (float)(md | (t->mode & 4u) | (semi ? 256u : 0u));
+            o->mode = (float)(md | (t->mode & 4u) | (semi ? 256u : 0u) | (tex && layer >= 0 ? vv << 9 : 0u) |
+                              (tex && layer == -2 ? SMODE_EMISSIVE : 0u));
             o->pad = g->tess[f];
             o->twin = p->twin;
             sg[m] = (uint8_t)((semi ? 1u + RMK_SPKT_BLEND(p->flags) : 0u) | (g->tess[f] & 128u));
@@ -799,9 +870,55 @@ static void set_blend(RmkStageGL* g, unsigned mode) {
     }
 }
 
+/* Telão (fase 6c): a faixa 512 x 256 de um buffer de tela (VRAM x 0..511, y fb_y..fb_y+255) copiada do fbo canônico
+ * para uma textura, na primeira sequência do quadro que a lê: é o que as faces com página de 16 bpp dentro da tela
+ * leem (no PS1, a textura é o próprio buffer de tela: no 235, o quadro anterior inteiro). Até 4 pixels por texel. */
+static int run_fb_y(const RmkStagePkt* pk, uint32_t n) {   /* buffer de tela que a sequência lê (-1 = nenhum) */
+    for (uint32_t i = 0; i < n; i++)
+        if ((pk[i].flags & RMK_SPKT_TEX) && RMK_STAGE_LAYER_IS_FB(pk[i].layer)) return (pk[i].layer & 8u) ? 256 : 0;
+    return -1;
+}
+
+static void fb_capture(RmkStageGL* g, const RmkTarget* t, int fb_y) {
+    const int S = t->scale, k = S >= 4 ? 4 : S, W = 512 * k, H = 256 * k;
+    if (!g->fb_tex || g->fb_k != k) {
+        if (g->fb_fbo) { g->DeleteFramebuffers(1, &g->fb_fbo); g->fb_fbo = 0; }
+        if (g->fb_tex) { g->DeleteTextures(1, &g->fb_tex); g->fb_tex = 0; }
+        g->GenTextures(1, &g->fb_tex);
+        g->ActiveTexture(R_TEXTURE0 + 12);
+        g->BindTexture(R_TEXTURE_2D, g->fb_tex);
+        g->TexImage2D(R_TEXTURE_2D, 0, R_RGBA8, W, H, 0, R_RGBA, R_UNSIGNED_BYTE, NULL);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MIN_FILTER, R_LINEAR);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_MAG_FILTER, R_LINEAR);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
+        g->TexParameteri(R_TEXTURE_2D, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+        g->GenFramebuffers(1, &g->fb_fbo);
+        g->BindFramebuffer(R_FRAMEBUFFER, g->fb_fbo);
+        g->FramebufferTexture2D(R_FRAMEBUFFER, R_COLOR_ATTACHMENT0, R_TEXTURE_2D, g->fb_tex, 0);
+        const int ok = g->CheckFramebufferStatus(R_FRAMEBUFFER) == R_FRAMEBUFFER_COMPLETE;
+        g->BindFramebuffer(R_FRAMEBUFFER, t->fbo);
+        if (!ok) { g->DeleteFramebuffers(1, &g->fb_fbo); g->DeleteTextures(1, &g->fb_tex); g->fb_fbo = g->fb_tex = 0; g->fb_serial = g->serial; return; }
+        g->fb_k = k;
+        g->bytes += (uint64_t)W * H * 4u;
+    }
+    const int y0 = fb_y * S;
+    g->Disable(R_SCISSOR_TEST);
+    g->BindFramebuffer(R_READ_FRAMEBUFFER, t->fbo);
+    g->BindFramebuffer(R_DRAW_FRAMEBUFFER, g->fb_fbo);
+    g->BlitFramebuffer(0, y0, 512 * S, y0 + 256 * S, 0, 0, W, H, R_COLOR_BUFFER_BIT, R_LINEAR);
+    g->BindFramebuffer(R_FRAMEBUFFER, t->fbo);
+    g->fb_serial = g->serial;
+    g->fb_y = fb_y;
+}
+
 void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, const RmkStagePkt* pk, uint32_t n,
                        uint32_t key, const RmkTarget* t, const RmkShadowView* sh, int n_sh) {
     if (!g || !g->ready || !g->have_frame || !n) return;
+    /* telão: a cópia do buffer de tela na primeira sequência do quadro que o lê (o que a VRAM tem neste ponto da OT) */
+    if (t->pass == 0 && t->scale > 0 && g->fb_serial != g->serial) {
+        const int fy = run_fb_y(pk, n);
+        if (fy >= 0) fb_capture(g, t, fy);
+    }
     g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
     if (key != g->run_key) {   /* sequência nova; o espelho da tela larga repete a anterior */
         const uint32_t m = build_run(g, a, s, pk, n);
@@ -828,9 +945,15 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
     g->ActiveTexture(R_TEXTURE0 + 10);
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
+    g->ActiveTexture(R_TEXTURE0 + 11);
+    g->BindTexture(R_TEXTURE_2D, g->vtab);
+    g->ActiveTexture(R_TEXTURE0 + 12);
+    g->BindTexture(R_TEXTURE_2D, g->fb_tex);
     g->Uniform1i(g->u_geo, 8);
     g->Uniform1i(g->u_tex, 9);
     g->Uniform1i(g->u_nmap, 10);
+    g->Uniform1i(g->u_var, 11);
+    g->Uniform1i(g->u_fb, 12);
     g->Uniform1i(g->u_geo_w, g->geo_w);
     g->Uniform1f(g->u_nmap_on, (g->has_nmap && !(g->flags & RMK_SFLAG_NO_NMAP)) ? 1.0f : 0.0f);
     g->Uniform4f(g->u_ndc, t->ndc[0], t->ndc[1], t->ndc[2], t->ndc[3]);

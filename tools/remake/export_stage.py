@@ -19,12 +19,18 @@ Saída (fora do git, derivada do disco do usuário), em build-debug/ e build/ mo
                    u32 primeira primitiva (índice global)
       por primitiva (na ordem do buffer): u16 palavras do(s) pacote(s) (com a tag), u8 nº de pacotes (1 ou 2: decalque),
                    u8 nº de faces (0..2), u32 primeira face; u8 canto[2][3]: pacote (vértice 0..3 no GP0) de cada canto
-                   das duas faces (lido do pacote vivo: cor, UV), u8 pad[2]
+                   das duas faces (lido do pacote vivo: cor, UV), u8 prefixo (1 = DR_TPAGE de 2 palavras antes do
+                   pacote: listas PREFIX, semitransparentes sem textura, que ficam com o jogo), u8 pad
       por chave:   u16 tpage (bits 0..4 e 7..8 do pacote), u16 clut (palavra do pacote), u8 camada, u8 hash[3]
                    (a camada HD de cada textura e CLUT que o jogo usa, pela posição de cada TIM na VRAM; hash: 24 bits
                    baixos do FNV-1a da CLUT da camada)
       versão 2:    u32 n_var; por variante de CLUT animada por MoveImage: u16 chave, i16 x, i16 y da linha de origem
                    na VRAM, u8 camada, u8 pad (stage_clut_vars.py)
+      versão 3:    u32 n_var; por variante: u16 chave, i16 x, i16 y da origem, u8 camada, u8 tipo (0 = camada própria,
+                   1 = afim: a camada base da chave com rgb' = k·rgb + b no shader), i16 k[3] (8.8), i16 b[3] (fração
+                   da escala cheia em 1/4096). Fase 6c: quase toda paleta animada é uma transformação afim da paleta
+                   base (escurecer, somar vermelho): tipo 1 não custa camada nem memória; tipo 0 só quando o ajuste
+                   passa de AFFINE_TOL (unidades de 5 bits; BAG2_AFFINE_TOL) e couber no limite de 64 camadas.
 Uso: python tools/remake/export_stage.py 234 [235 ...]   (sem argumento: todos, 231..245)
 """
 from __future__ import annotations
@@ -60,9 +66,16 @@ def fnv(b: bytes) -> int:
     return h
 
 
+# listas semitransparentes sem textura: o jogo (FUN_8001FF34) põe antes do pacote um DR_TPAGE de 2 palavras (tag + E1h,
+# com o modo de mistura); sem contar essas 2 palavras o buffer do nó não bate com a tabela e o plugin ignora o nó
+# (fase 6c: os 20 GT4 do nó 5 do 241 ficavam "sem par"; 236 e 238 também usam as listas 30/31, 21 e 23)
+PREFIX = {18, 19, 20, 21, 22, 23, 30, 31}
+
+
 def packet_words(li: int) -> tuple[int, int]:
     """(palavras com as tags, nº de pacotes) da primitiva da lista `li` no buffer do nó: F/G conforme GOURAUD, T se tem
-    textura; decalque = base sem textura + o mesmo com textura (conferido nas RAMs do inventário, fase 6)."""
+    textura; decalque = base sem textura + o mesmo com textura (conferido nas RAMs do inventário, fase 6); as listas
+    PREFIX levam o DR_TPAGE de 2 palavras na frente (um pacote só na tabela: o plugin deixa esses com o jogo)."""
     n = 4 if bm.L[li][1] else 3
     g = li in bm.GOURAUD
 
@@ -70,7 +83,7 @@ def packet_words(li: int) -> tuple[int, int]:
         return 1 + (n if g else 1) + n + (n if tex else 0)
     if li in OVER:
         return size(False) + size(True), 2
-    return size(li in TEXTURED), 1
+    return size(li in TEXTURED) + (2 if li in PREFIX else 0), 1
 
 
 def mesh_offsets(model: bytes, nodes) -> dict[int, int]:
@@ -144,35 +157,41 @@ def export(c: int, outs_dir: list[str]):
     hd = hd_layers(stp_layers(rig, tims, layers), os.path.join(OUT, 'palcos', f'palco{c}', 'textures'))
     # camada de cada (tpage, clut) que o jogo usa: posição de cada TIM na VRAM
     keys = []
+    pal_of = {}                      # chave -> paleta base (a CLUT com que a camada HD foi feita), para o ajuste afim
     for li_, (tex, clut) in enumerate(rig.layers):
         x, y, cx, cy, bpp = tim_vram(tim_raw[tex])
         tp = (x // 64) | ((y // 256) << 4) | ({4: 0, 8: 1, 16: 2}[bpp] << 7)
         cw = (cx // 16) | ((cy + clut) << 6) if cx >= 0 else 0
         n = 16 if bpp == 4 else 256
         pal = tims[tex].clut[clut][:n] if tims[tex].clut is not None and bpp != 16 else None
+        if pal is not None:
+            pal_of[len(keys)] = np.asarray(pal, np.int64)
         keys.append((tp, cw, li_, clut_hash(pal)))
     # e as texturas da geometria do código do overlay (chão, fundo) que o jogo usou e o modelo não
     # (tools/remake/stage_extra_keys.json, de stage_keys.py): página montada da VRAM com os TIMs do palco
-    ex_keys, ex_imgs, ex_hash = extra_layers(c, tims, tim_raw, {(a & 0x19F, b) for a, b, _, _ in keys})
+    ex_keys, ex_imgs, ex_hash, ex_pal = extra_layers(c, tims, tim_raw, {(a & 0x19F, b) for a, b, _, _ in keys})
     room = 64 - len(hd)              # limite do asset; extra_layers vem das mais usadas para as menos
     if len(ex_imgs) > room:
         print(f'palco {c}: {len(ex_imgs) - room} camadas do código do overlay ficam fora (limite de 64)')
-        ex_keys, ex_imgs, ex_hash = ex_keys[:room], ex_imgs[:room], ex_hash[:room]
+        ex_keys, ex_imgs, ex_hash, ex_pal = ex_keys[:room], ex_imgs[:room], ex_hash[:room], ex_pal[:room]
     if ex_imgs:
         tag = f'{fnv(repr(ex_keys).encode()):08x}'
         hd += hd_layers(ex_imgs, os.path.join(OUT, 'palcos', f'palco{c}', f'textures_extra_{tag}'))
+        for i, pal in enumerate(ex_pal):
+            pal_of[len(keys) + i] = pal
         keys += [(a, b, len(rig.layers) + i, ex_hash[i]) for i, (a, b) in enumerate(ex_keys)]
         layers = layers + ex_imgs
-    # variantes de CLUT animada por MoveImage (stage_clut_vars.py): uma camada por linha de origem, todas as de uma CLUT
-    # ou nenhuma (se não couberem no limite de 64, a CLUT fica com o jogo, como antes)
-    var_rows, var_imgs = clut_variants(c, tims, tim_raw, rig, keys, 64 - len(hd))
+    # variantes de CLUT animada por MoveImage (stage_clut_vars.py): afim sobre a camada base quando a paleta é uma
+    # transformação k·rgb + b da paleta base (tipo 1, sem camada nova); senão uma camada por paleta distinta, todas as
+    # de uma CLUT ou nenhuma (se não couberem no limite de 64, a CLUT fica com o jogo, como antes)
+    var_rows, var_imgs = clut_variants(c, tims, tim_raw, rig, keys, 64 - len(hd), pal_of)
     if var_imgs:
-        tag = f'{fnv(repr(var_rows).encode()):08x}'
+        tag = f'{fnv(repr([r[:4] for r in var_rows if r[4] == 0]).encode()):08x}'
         hd += hd_layers(var_imgs, os.path.join(OUT, 'palcos', f'palco{c}', f'textures_var_{tag}'))
-        base = len(layers)
-        var_rows = [(k, sx, sy, base + li_) for k, sx, sy, li_ in var_rows]
-        keys = [(a, b, base - 1 - li_ if li_ < 0 else li_, h) for a, b, li_, h in keys]
         layers = layers + var_imgs
+    base = len(layers) - len(var_imgs)   # camada local -1 - i das variantes -> base + i
+    var_rows = [(k, sx, sy, base - 1 - li_ if li_ < 0 else li_, kind, kq, bq) for k, sx, sy, li_, kind, kq, bq in var_rows]
+    keys = [(a, b, base - 1 - li_ if li_ < 0 else li_, h) for a, b, li_, h in keys]
     assert len(hd) <= 64, f'{c}: {len(hd)} camadas'
     rig.mode = rig.mode | stage_semi(rig, nodes)
     # faces na ordem do buffer de pacotes: (nó, lista na ordem do jogo, primitiva)
@@ -213,7 +232,7 @@ def export(c: int, outs_dir: list[str]):
                 w, npk = packet_words(li)
                 fs = face_of.get((n, lo, pi), [])
                 assert len(fs) <= 2 and (not fs or fs == list(range(fs[0], fs[0] + len(fs))))
-                rows.append((w, npk, len(fs), fs[0] if fs else 0, [slots[f] for f in fs]))
+                rows.append((w, npk, len(fs), fs[0] if fs else 0, [slots[f] for f in fs], 1 if li in PREFIX else 0))
                 words += w
         node_rows.append((offs[n], 4 * words, len(rows), first_prim))
         first_prim += len(rows)
@@ -240,19 +259,20 @@ def export(c: int, outs_dir: list[str]):
         buf += np.ascontiguousarray(smooth_alpha(img, ps1), np.uint8).tobytes()
     # ---- tabelas
     stg = bytearray(b'STG1')
-    stg += struct.pack('<6I', 2 if var_rows else 1, c, len(mesh_nodes), len(hd), len(keys), len(model))
+    stg += struct.pack('<6I', 3 if var_rows else 1, c, len(mesh_nodes), len(hd), len(keys), len(model))
     stg += struct.pack('<2I', fnv(ov[:512]), fnv(model[:256]))
     for r in node_rows:
         stg += struct.pack('<4I', *r)
-    for w, npk, nf, f0, sl in prims:
+    for w, npk, nf, f0, sl, pfx in prims:
         cs = [list(s) for s in sl] + [[0, 0, 0]] * (2 - len(sl))
-        stg += struct.pack('<HBBI', w, npk, nf, f0) + bytes(cs[0] + cs[1]) + b'\0\0'
+        stg += struct.pack('<HBBI', w, npk, nf, f0) + bytes(cs[0] + cs[1]) + bytes([pfx, 0])
     for tp, cw, li_, h in keys:
         stg += struct.pack('<HHB', tp, cw, li_) + (h & 0xFFFFFF).to_bytes(3, 'little')
     if var_rows:
         stg += struct.pack('<I', len(var_rows))
-        for k, sx, sy, li_ in var_rows:
-            stg += struct.pack('<HhhBB', k, sx, sy, li_, 0)
+        for k, sx, sy, li_, kind, kq, bq in var_rows:
+            assert 0 <= li_ < len(hd) and 0 <= k < len(keys)
+            stg += struct.pack('<HhhBB6h', k, sx, sy, li_, kind, *kq, *bq)
     for d in outs_dir:
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f'palco{c}.bin'), 'wb') as fh:
@@ -261,7 +281,8 @@ def export(c: int, outs_dir: list[str]):
             fh.write(stg)
     print(f'palco {c}: {len(buf) / 1e6:.1f} MB, {len(mesh_nodes)} nós, {len(owner)} vértices ({len(rig.owner)} antes dos '
           f'vincos), {len(rig.tris)} faces ({int(((rig.mode & SEMI) != 0).sum())} semi), {len(hd)} camadas '
-          f'({len(ex_imgs)} do código do overlay, {len(var_imgs)} variantes de CLUT), '
+          f'({len(ex_imgs)} do código do overlay, {len(var_imgs)} variantes de CLUT em camada, '
+          f'{sum(1 for r in var_rows if r[4] == 1)} afins), '
           f'{len(prims)} primitivas, chaves {[(hex(a), hex(b)) for a, b, _, _ in keys]}', flush=True)
 
 
@@ -301,7 +322,7 @@ def extra_layers(c, tims, tim_raw, have):
     (chaves, imagens RGBA 256x256 com o STP no alfa)."""
     import json
     if not os.path.exists(EXTRA_KEYS):
-        return [], [], []
+        return [], [], [], []
     want = json.load(open(EXTRA_KEYS, encoding='utf-8')).get(str(c), [])
     vram_dir = os.path.join(OUT, 'palcos', 'vram')
     common = set()
@@ -309,7 +330,7 @@ def extra_layers(c, tims, tim_raw, have):
         common = {tuple(int(x, 16) for x in k.split('/'))
                   for k in json.load(open(os.path.join(vram_dir, 'resumo.json'), encoding='utf-8'))['comuns']}
     info = [(t,) + tim_vram(r) for t, r in zip(tims, tim_raw)]
-    out_k, out_i, out_h = [], [], []
+    out_k, out_i, out_h, out_p = [], [], [], []
     for tp, cw, _n in sorted(want, key=lambda k: -k[2]):
         tp &= 0x19F
         if (tp, cw) in have or (tp, cw) in out_k:
@@ -359,7 +380,8 @@ def extra_layers(c, tims, tim_raw, have):
         out_k.append((tp, cw))
         out_i.append(img)
         out_h.append(clut_hash(pal[:16 if bpp == 4 else 256]))
-    return out_k, out_i, out_h
+        out_p.append(np.asarray(pal[:16 if bpp == 4 else 256], np.int64))
+    return out_k, out_i, out_h, out_p
 
 
 def key_page(c, tims, tim_raw, rig, key, tp, bpp):
@@ -405,48 +427,144 @@ def page_rgba(idx, cov, pal):
     return img
 
 
-def clut_variants(c, tims, tim_raw, rig, keys, room):
-    """CLUT animada por MoveImage (tools/remake/stage_clut_vars.py, vram/<c>/clut_var.json): uma camada por linha de
-    origem do banco de paletas, para cada chave com aquela CLUT; todas as de uma CLUT ou nenhuma (limite `room`). Chaves
-    animadas que ainda não estavam na tabela (página só na VRAM) entram em `keys` com a camada da primeira variante
-    (camada local, -1 - i; export() resolve). Devolve (linhas (chave, x, y, camada local), imagens 256x256)."""
+AFFINE_TOL = float(os.environ.get('BAG2_AFFINE_TOL', '1.5'))   # resíduo máximo do ajuste afim, em unidades de 5 bits
+
+
+def affine_fit(base, pal, used):
+    """Ajuste rgb' = k·rgb + b por canal (mínimos quadrados) da paleta `base` para `pal`, nos índices `used` (os que a
+    página usa e não são transparentes). Devolve (k[3], b[3], resíduo máximo em unidades de 5 bits)."""
+    b5 = np.stack([(base >> sh) & 31 for sh in (0, 5, 10)], 1).astype(float)
+    p5 = np.stack([(pal >> sh) & 31 for sh in (0, 5, 10)], 1).astype(float)
+    ks, bs, worst = [], [], 0.0
+    for ch in range(3):
+        x, y = b5[used, ch], p5[used, ch]
+        if len(x) >= 2 and x.max() > x.min():
+            (k, b), *_ = np.linalg.lstsq(np.stack([x, np.ones_like(x)], 1), y, rcond=None)
+        else:
+            k, b = 1.0, float((y - x).mean()) if len(x) else 0.0
+        k = max(k, 0.0)
+        worst = max(worst, float(np.abs(k * x + b - y).max()) if len(x) else 0.0)
+        ks.append(k); bs.append(b)
+    return ks, bs, worst
+
+
+def affine_from(anchor, lines, used):
+    """Ajuste afim de `anchor` para cada paleta de `lines`, nos índices usados. A cobertura (cor 0 = transparente no PS1,
+    e o alfa e o STP vêm da camada âncora) tem de ser a mesma: senão None. Devolve (resíduo máximo, [(k, b)])."""
+    n = len(anchor)
+    a0 = anchor[used] == 0
+    fit = used & (anchor != 0)
+    out, worst = [], 0.0
+    for pal in lines:
+        pal = pal[:n]
+        if np.any((pal[used] == 0) != a0):
+            return None
+        ks, bs, r = affine_fit(anchor, pal, fit)
+        worst = max(worst, r)
+        out.append((ks, bs))
+    return worst, out
+
+
+def clut_variants(c, tims, tim_raw, rig, keys, room, pal_of):
+    """CLUT animada por MoveImage (tools/remake/stage_clut_vars.py, vram/<c>/clut_var.json). Para cada CLUT animada:
+    1. tipo 1 (afim): escolhe uma paleta âncora (a CLUT do TIM da chave, se tiver cor, ou uma linha do banco) tal que
+       toda linha de origem seja k·rgb + b da âncora com a mesma cobertura e resíduo máximo <= AFFINE_TOL nos índices
+       usados; a âncora do TIM já é a camada da chave, a âncora de linha vira uma camada (uma por página); as linhas
+       não custam camada: só os coeficientes na tabela;
+    2. senão tipo 0: uma camada por paleta distinta de cada página, todas as da CLUT ou nenhuma (limite `room`).
+    Chaves animadas que ainda não estavam na tabela (página só na VRAM) entram em `keys` com a camada da primeira
+    variante (camada local, -1 - i; export() resolve). Devolve (linhas (chave, x, y, camada (>= 0 absoluta, < 0 local
+    -1 - i), tipo, k[3] em 8.8, b[3] em 1/4096 da escala cheia), imagens 256x256 das camadas novas)."""
     import json
     f = os.path.join(OUT, 'palcos', 'vram', str(c), 'clut_var.json')
     if not os.path.exists(f) or room <= 0:
         return [], []
     vd = os.path.dirname(f)
     rows, imgs = [], []
-    same = {}   # (página, origem) -> camada local: chaves da mesma página copiando a mesma linha dão a mesma imagem
+    same = {}   # (página (índices), paleta) -> camada local: a mesma paleta na mesma imagem dá a mesma camada
+    kq = lambda ks: [int(round(k * 256)) for k in ks]
+    bq = lambda bs: [int(round(b / 31.0 * 4096)) for b in bs]
     for cw_hex, e in json.load(open(f, encoding='utf-8')).items():
         cw, bpp = int(cw_hex, 16), 4 if e['w'] == 16 else 8
+        n = 16 if bpp == 4 else 256
+        lines = [(sx, sy, np.array(row, np.int64)[:n]) for sx, sy, row in e['src']]
         pages = [(i, keys[i][0]) for i, k in enumerate(keys) if k[1] == cw]
         if not pages:   # página só na VRAM: a chave entra agora
             pages = [(None, int(fn[:3], 16)) for fn in sorted(os.listdir(vd))
                      if fn.endswith(f'_{cw:04x}.npz') and len(fn) == 12 and ((int(fn[:3], 16) >> 7) & 3) == (bpp == 8)]
-        cand = []
+        # as páginas (índices e cobertura) de cada chave
+        pg = []
         for ki, tp in pages:
             idx, cov = key_page(c, tims, tim_raw, rig, keys[ki] if ki is not None else None, tp, bpp)
-            if idx is None:
-                continue
-            for sx, sy, row in e['src']:
-                img = None if (tp, sx, sy) in same else page_rgba(idx, cov, np.array(row, np.int64))
-                cand.append((ki, tp, sx, sy, img))
-        need = len({(tp, sx, sy) for _, tp, sx, sy, img in cand if img is not None})
-        if not cand or len(imgs) + need > room:
-            if cand:
-                print(f'palco {c}: CLUT {cw_hex} ({need} camadas novas) fica com o jogo (limite de 64)')
+            if idx is not None:
+                pg.append((ki, tp, idx, cov))
+        if not pg:
             continue
+        # 1. afim: a âncora que dá o menor resíduo máximo sobre todas as páginas e linhas
+        best = None   # (resíduo, tipo da âncora, paleta âncora, [(ki, tp, idx, cov, [(k, b)])])
+        cands = [('linha', pal) for _, _, pal in lines]
+        if all(ki is not None and keys[ki][2] >= 0 and pal_of.get(ki) is not None and (pal_of[ki] != 0).any() for ki, *_ in pg):
+            cands = [('tim', None)] + cands
+        for kind_a, apal in cands:
+            tot, per = 0.0, []
+            for ki, tp, idx, cov in pg:
+                anchor = (pal_of[ki][:n] if kind_a == 'tim' else apal)
+                used = np.zeros(n, bool)
+                used[np.unique(idx[cov]) % n] = True
+                r = affine_from(anchor, [pal for _, _, pal in lines], used)
+                if r is None:
+                    per = None
+                    break
+                tot = max(tot, r[0])
+                per.append((ki, tp, idx, cov, anchor, r[1]))
+            if per is not None and (best is None or tot < best[0]):
+                best = (tot, kind_a, apal, per)
+        if best is not None and best[0] <= AFFINE_TOL:
+            worst, kind_a, apal, per = best
+            need = 0 if kind_a == 'tim' else len({(idx.tobytes(), apal.tobytes()) for _, _, idx, _, _, _ in per
+                                                    if (idx.tobytes(), apal.tobytes()) not in same})
+            if len(imgs) + need <= room:
+                for ki, tp, idx, cov, anchor, fits in per:
+                    if kind_a == 'tim':
+                        lay = keys[ki][2]
+                    else:
+                        k2 = (idx.tobytes(), anchor.tobytes())
+                        if k2 not in same:
+                            same[k2] = len(imgs)
+                            imgs.append(page_rgba(idx, cov, anchor))
+                        lay = -1 - same[k2]
+                        if ki is None:
+                            keys.append((tp, cw, lay, 0))
+                            ki = len(keys) - 1
+                    for (sx, sy, _pal), (ks, bs) in zip(lines, fits):
+                        rows.append((ki, sx, sy, lay, 1, kq(ks), bq(bs)))
+                print(f'palco {c}: CLUT {cw_hex} afim ({len(lines)} variantes sobre a âncora {kind_a}'
+                      f'{"" if kind_a == "tim" else f" {np.argmax([np.array_equal(apal, l[2]) for l in lines])}"}, '
+                      f'{need} camada(s), resíduo máximo {worst:.2f}/31)')
+                continue
+        # 2. camadas: uma por paleta distinta de cada página
+        cand = []
+        for ki, tp, idx, cov in pg:
+            for sx, sy, pal in lines:
+                k2 = (idx.tobytes(), pal.tobytes())
+                cand.append((ki, tp, idx, cov, sx, sy, k2, pal))
+        need = len({k2 for *_, k2, _ in cand if k2 not in same})
+        why = f'resíduo afim {best[0]:.2f}/31 > {AFFINE_TOL}' if best is not None else 'cobertura das paletas difere'
+        if len(imgs) + need > room:
+            print(f'palco {c}: CLUT {cw_hex} ({need} camadas novas; {why}) fica com o jogo (limite de 64)')
+            continue
+        print(f'palco {c}: CLUT {cw_hex} em {need} camadas ({why})')
         new_key = {}
-        for ki, tp, sx, sy, img in cand:
+        for ki, tp, idx, cov, sx, sy, k2, pal in cand:
+            if k2 not in same:
+                same[k2] = len(imgs)
+                imgs.append(page_rgba(idx, cov, pal))
             if ki is None:
                 if tp not in new_key:
-                    keys.append((tp, cw, -1 - (same.get((tp, sx, sy), len(imgs))), 0))
+                    keys.append((tp, cw, -1 - same[k2], 0))
                     new_key[tp] = len(keys) - 1
                 ki = new_key[tp]
-            if (tp, sx, sy) not in same:
-                same[(tp, sx, sy)] = len(imgs)
-                imgs.append(img)
-            rows.append((ki, sx, sy, same[(tp, sx, sy)]))
+            rows.append((ki, sx, sy, -1 - same[k2], 0, [256, 256, 256], [0, 0, 0]))
     return rows, imgs
 
 

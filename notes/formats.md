@@ -191,7 +191,18 @@ endereço do pacote.
   câmera (céu e cidade do 233, XY de uma tabela menos a rolagem), billboards de brilho (função do executável em
   `0x8002DE40`: RotTransPers só do centro e um quadrado na tela do tamanho de 1/z) e sprites de um módulo carregado em
   `0x8009xxxx` (`setSprt`, posição fixa na tela).
-- **CLUT animada por MoveImage**: o jogo copia uma linha de um banco de paletas na VRAM (por exemplo 1008,32..39 para a
+- **Prefixo `DR_TPAGE` (fase 6c)**: as listas semitransparentes sem textura (18..23, 30 e 31; `FUN_8001FF34`) têm, antes
+  do pacote F3/F4/G3/G4, um `DR_TPAGE` de 2 palavras (tag + E1h com o modo de mistura): lista 30 = 36 bytes (não 28),
+  31 = 44, 18..23 = 28/32/36/44/28/32. O tamanho do buffer do nó (`+0xA4`) soma esses prefixos; `export_stage.py`
+  (`PREFIX`, `packet_words`) e a tabela `.stg` (`RmkStagePrim.prefix`) os contam; o plugin deixa esses pacotes com o jogo.
+  Só 241, 236 e 238 usam essas listas.
+- **Telão do 235 (fase 6c)**: 2 POLY_FT4 do código do overlay com `tpage = GetTPage(2, 0, X, Y)` (16 bpp, X em {0, 64,
+  128, 192, 256}, Y 0 ou 256), `clut 0`, `u0` 0/128, `v0` 61, 128 × 117 texels: a textura é o próprio buffer de tela
+  (512 × 240 duplo em y 0/256). Liga ~8,5 s a cada 34 s ((quadro >> 9) & 3 == 0). O plugin dá a esses pacotes a camada
+  `RMK_STAGE_LAYER_FB | (Y == 256 ? 8 : 0) | X / 64` (0xE0..0xEF) e o núcleo desenha com a cópia da faixa do fbo.
+- **CLUT animada por MoveImage** (fase 6c: quase toda linha do banco é afim da paleta base, `rgb' = k·rgb + b`; o
+  exportador grava os coeficientes na tabela `.stg` v3 e o shader aplica sobre a camada âncora, sem camada nova; só as
+  linhas que não passam no ajuste viram camadas): o jogo copia uma linha de um banco de paletas na VRAM (por exemplo 1008,32..39 para a
   CLUT em 960,48 no 232) para a CLUT da chave no tempo da música; a página não muda. Bancos medidos na música inteira
   (origens distintas por CLUT, `stage_clut_vars.py`): 232 8, 8 e 2; 233 2 em cada uma de 7 CLUTs; 234 9 em cada uma de
   3; 235 6 em cada uma de 6 e 2 em cada uma de 2; 242 14 em cada uma de 2; 231, 236, 237, 238, 243 e 244 nenhuma.

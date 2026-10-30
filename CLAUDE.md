@@ -160,6 +160,22 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   host; por isso `bag2_heat.c` (`marks_blocked`) e `bag2_stage.c` (`emit_post`) não ligam marcador novo no quadro da
   carga (antes, marcador apontando para si mesmo: 10–18 s de travamento). Qualquer plugin novo que ligue marcador no
   meio do quadro precisa da mesma regra.
+- **Fase 6c** (`notes/remake-visual.md`, "Fase 6c no jogo", 2026-10-30): partida pelo teclado na build normal conferida
+  pelo computer-use (2 jogadores num teclado: `[controller] p2_device = "keyboard"` no `game.toml` da build + teclas
+  próprias em `[player2]` do `keybinds.ini` da build, senão cada toque conta duas vezes). 241: as faces sem par fora de
+  `0x8008xxxx` eram o nó 5 do modelo recusado por tamanho de buffer (`packet_words` não contava o `DR_TPAGE` de 2
+  palavras das listas `PREFIX` 18..23/30/31; `RmkStagePrim.prefix`, `stage_geo s` `prefixo=`); 241/236/238
+  re-exportados. Paletas animadas: variantes **afins** (`rgb' = k·rgb + b` sobre uma camada âncora; `export_stage.py`
+  `clut_variants`/`affine_fit`, `AFFINE_TOL` 1,5/31; `.stg` v3 de 20 bytes por variante; núcleo: camada `n_layers +
+  índice` no pacote, tabela 2 × n_var RGBA32F na unidade 11, bits 9+ do modo): 242 58 camadas, 234 63, 0 texturas
+  animadas com o jogo. Telão do 235: os painéis leem o buffer de tela (página de 16 bpp, x < 512; não há cópia
+  VRAM→VRAM) e o renderizador amostra a VRAM nativa sem o desenho de host; agora `geo_key_layer` dá a camada
+  `RMK_STAGE_LAYER_FB` (0xE0..0xEF: buffer e coluna) e o núcleo copia a faixa 512 × 256 do fbo (`fb_capture`, unidade
+  12) na primeira sequência do quadro que a lê e desenha emissivo; flag 4096 do `stage_geo` = telão com o jogo (A/B).
+  `stage_geo v` lista todas as cópias VRAM→VRAM (`vt` só origem na tela, `v<n>` pagina). Pacote de face do modelo sem
+  camada (página recarregada, CLUT marcada) agora fica com o jogo (`read_packet` −3, `textura_com_o_jogo=`; flag 8192 =
+  como antes): o vidro do helicóptero do 241 é o reflexo que o jogo rola na página. O exportador precisa do venv:
+  `tools/recomp/logs/remake/venv/Scripts/python.exe tools/remake/export_stage.py <c>`.
 - **Build-debug e o pacote HD**: `build-debug/mods/texture-packs/SLUS-01159/replacements` é uma junção para a pasta
   de `build/`; conferir "HD textures:" no log antes de medir (ficou quebrada de 2026-10-24 a 2026-10-27). Com o HD
   o renderizador desliga os bancos de textura (`psx_mod_texture_banks_supported()` = 0). O cartão de memória guarda
@@ -172,8 +188,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   chega ao pad; usar `hold_key` ~0,25 s. O menu principal volta ao attract em poucos segundos.
 
 ## Próximo passo
-- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fases 0–6 e 6b feitas (HEAT,
-  palco, os dois jogadores, o elenco, a memória e os palcos pelo caminho novo). Próxima: **fase 7, o port para o
+- **Remake visual (prioridade)**: plano completo, fases e estado em `notes/remake-plano.md`. Fases 0–6, 6b e 6c feitas
+  (HEAT, palco, os dois jogadores, o elenco, a memória, os palcos pelo caminho novo e os três itens que faltavam). Próxima: **fase 7, o port para o
   Polygonia** (personagens e palcos juntos; ganchos e memória dos palcos em "Fase 7" do plano); depois 8 (abertura).
 - Fase 6b fechou o render do 236 (+2 na ordem que dava +11), o RTPT em linha (chão do 233, asfalto do 236), a segunda
   volta de dumps, o Phong nas peças curvas, 241 e 245 no jogo, as texturas da VRAM, a janela de textura e a causa do

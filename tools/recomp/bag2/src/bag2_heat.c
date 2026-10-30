@@ -1158,6 +1158,7 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     memcpy(rt.scissor, t->scissor, sizeof rt.scissor);
     memcpy(rt.bbox, fr->bbox, sizeof rt.bbox);
     bag2_stage_skip_x(t, rt.skip_x);
+    rt.pass = t->pass; rt.scale = t->scale;
     GpuTimer* gt = (fr->flags & RMK_FLAG_FLOOR) ? &s_gt_floor : &s_gt_body;
     gt_init(gt, t->get_proc);
     gt_begin(gt);
