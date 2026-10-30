@@ -37,8 +37,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
-BUILD = os.path.join(REPO, 'tools', 'recomp', 'bag2', 'build-debug')
-LOGS = os.path.join(REPO, 'tools', 'recomp', 'logs', 'remake', 'jogo')
+BUILD = os.path.join(REPO, 'game', 'build-debug')
+LOGS = os.path.join(REPO, 'logs', 'remake', 'jogo')
 DISC = os.path.join(REPO, 'disc', 'Bust A Groove 2 (USA).cue')   # disco local (fora do git; disc/README.md)
 START, CROSS, CIRCLE = 0xFFF7, 0xBFFF, 0xDFFF
 UP, DOWN, LEFT, RIGHT = 0xFFEF, 0xFFBF, 0xFF7F, 0xFFDF
@@ -62,10 +62,10 @@ PLAYER_STATE = (0x80060E30, 0x80060E38)
 # SUSHI BOY, CHICHI&SALLY, MICHAEL DOI, McLOAD, HUSTLE KONG). Com BAG2_UNLOCK=1 a sessão escreve na RAM antes do menu;
 # o jogo grava o cartão depois das partidas, então start() guarda uma cópia dos cartões e stop() a devolve.
 UNLOCK = range(0x8004F667, 0x8004F66F)
-CARDS = os.path.join(REPO, 'tools', 'recomp', 'bag2', 'saves')
+CARDS = os.path.join(REPO, 'game', 'saves')
 # Índice do palco escolhido (byte) e as cópias da partida: 0 = 234, 1 = 243, 2 = 233, 3 = 244, 4 = 236, 5 = 242, 6 = 238,
 # 7 = 237, 8 = 235, 9 = 231, 10 = 232, 11 = 241, 12 = 245 (os dois últimos não estão na tela de palco). Com
-# BAG2_STAGE_IDX=<índice> a rota do 2 jogadores escreve o índice logo depois de confirmar o palco (tools/remake/stage_hidden.py).
+# BAG2_STAGE_IDX=<índice> a rota do 2 jogadores escreve o índice logo depois de confirmar o palco (tools/tests/stage_hidden.py).
 STAGE_IDX = (0x8005FB56, 0x8008A308, 0x8008A350)
 
 

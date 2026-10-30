@@ -4,13 +4,13 @@
 Do disco até as imagens: lê modelo/animações/texturas (bag2model), solda a malha entre ossos (rig),
 anima pelo esqueleto do jogo, suaviza cada frame com Phong Tessellation (ou Loop, --method loop),
 calcula oclusão ambiente, amplia as texturas com Real-ESRGAN e renderiza ORIGINAL (imitação PS1) vs
-MODERNIZADO (luz por pixel com sombras) e MODERNIZADO cel-shading. Notas: notes/remake-visual.md.
+MODERNIZADO (luz por pixel com sombras) e MODERNIZADO cel-shading. Notas: docs/remake-visual.md.
 
 Uso (venv com tools/remake/requirements.txt; Real-ESRGAN em C:/tools/realesrgan/bin):
-    python tools/remake/heat_remake.py                 # tudo, saída em tools/recomp/logs/remake/heat/
+    python tools/remake/heat_remake.py                 # tudo, saída em logs/remake/heat/
     python tools/remake/heat_remake.py --anim 2 --frame 20 --only compare
     python tools/remake/heat_remake.py --list-anims
-Dados do jogo e imagens ficam fora do git (tools/recomp/logs/ é ignorado).
+Dados do jogo e imagens ficam fora do git (logs/ é ignorado).
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from rig import (build_rig, orient_faces, original_normals, phong_tessellate, po
 from render import Renderer, pack  # noqa: E402
 
 DISC = os.path.join(HERE, '..', '..', 'disc', 'Bust A Groove 2 (USA).bin')
-OUT = os.path.join(HERE, '..', 'recomp', 'logs', 'remake')
+OUT = os.path.join(HERE, '..', '..', 'logs', 'remake')
 ESRGAN = 'C:/tools/realesrgan/bin/realesrgan-ncnn-vulkan.exe'
 # HEAT: nós 20..23 são mãos alternativas (sem pai, posicionadas pelo jogo ao trocar de gesto)
 SKIP = {'HEAT': {20, 21, 22, 23}}
@@ -100,7 +100,8 @@ class Character:
             if ears:
                 import ears as E
                 self.rig = E.attach_nose(E.attach_ears(self.rig))
-            if ai_body:   # experimento de IA: roupa da malha gerada (tools/remake/ai_hybrid.py)
+            if ai_body:   # experimento de IA: roupa da malha gerada (archive/ai/ai_hybrid.py)
+                sys.path.insert(0, os.path.join(HERE, '..', '..', 'archive', 'ai'))
                 import ai_hybrid
                 z = np.load(os.path.join(OUT, 'ai', f'{ai_body}_encaixe.npz'))
                 self.rig, self.ai_info = ai_hybrid.attach_ai_body(

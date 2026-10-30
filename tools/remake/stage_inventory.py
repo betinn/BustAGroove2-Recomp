@@ -13,7 +13,7 @@ Duas etapas:
                               mesh o jogo desenha por FUN_80029588 (pacotes no buffer do nó, +0xA8) e quantas primitivas
                               vêm de cada origem (adereços pelos nós, código do overlay, 2D/HUD), mais uma imagem da
                               atribuição por palco (vermelho = nós, verde = overlay, azul = resto).
-Saída em tools/recomp/logs/remake/palcos/ (fora do git).
+Saída em logs/remake/palcos/ (fora do git).
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, r'C:/tools/psxrecomp/tools')
 from game_session import Session, REPO  # noqa: E402
 
-OUT = os.path.join(REPO, 'tools', 'recomp', 'logs', 'remake', 'palcos')
+OUT = os.path.join(REPO, 'logs', 'remake', 'palcos')
 BIN = os.path.join(REPO, 'disc', 'Bust A Groove 2 (USA).bin')
 STAGE_OVERLAY = 0x801DB1B8
 STAGE_CONTAINERS = range(231, 246)

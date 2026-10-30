@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from bag2model import CHARS  # noqa: E402
 
-PY = os.path.join(HERE, '..', 'recomp', 'logs', 'remake', 'venv', 'Scripts', 'python.exe')
+PY = os.path.join(HERE, '..', '..', 'logs', 'remake', 'venv', 'Scripts', 'python.exe')
 
 
 def main():

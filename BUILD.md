@@ -19,7 +19,7 @@ Real-ESRGAN) ficam em `C:\tools`, nas versões fixadas abaixo.
 | PSXRecomp | commit `31df2e1e` + 3 patches deste repo | `C:\tools\psxrecomp` | passo 2 |
 | Real-ESRGAN ncnn | v0.2.5.0 (release oficial, Windows) | `C:\tools\realesrgan\bin\realesrgan-ncnn-vulkan.exe` | zip do GitHub `xinntao/Real-ESRGAN`, extraído (só para os passos 7 e 8) |
 
-`tools/recomp/env.ps1` põe essa toolchain no PATH (`. .\tools\recomp\env.ps1` numa sessão PowerShell). O SDL3 é
+`recomp/env.ps1` põe essa toolchain no PATH (`. .\recomp\env.ps1` numa sessão PowerShell). O SDL3 é
 baixado pelo próprio CMake no primeiro build.
 
 ## 1. Repositório e disco
@@ -37,54 +37,54 @@ Coloque o seu dump em `disc/Bust A Groove 2 (USA).bin` e `.cue` e confira o SHA-
 git -c core.autocrlf=false clone --recursive https://github.com/RetroPortingToolKit/psxrecomp C:/tools/psxrecomp
 cd C:/tools/psxrecomp
 git checkout 31df2e1e
-git apply --ignore-whitespace <repo>/tools/recomp/patches/psxrecomp-hd-cache-caps.patch
-git apply --ignore-whitespace <repo>/tools/recomp/patches/psxrecomp-texture-bank-render-thread.patch
-git apply --ignore-whitespace <repo>/tools/recomp/patches/psxrecomp-host-draw.patch
+git apply --ignore-whitespace <repo>/recomp/patches/psxrecomp-hd-cache-caps.patch
+git apply --ignore-whitespace <repo>/recomp/patches/psxrecomp-texture-bank-render-thread.patch
+git apply --ignore-whitespace <repo>/recomp/patches/psxrecomp-host-draw.patch
 ```
 
 Nesta ordem. Sem o primeiro a partida cai para 13–35 fps; sem o terceiro os plugins do remake não compilam. Os
-outros três patches de `tools/recomp/patches/` (`psxrecomp-web-*`) são da versão web abandonada e não entram.
+outros três patches de `recomp/patches/` (`psxrecomp-web-*`) são da versão web abandonada e não entram.
 
 O recompilador procura o perfil de BIOS dentro da pasta do projeto do jogo; crie a junção (PowerShell):
 
 ```powershell
-New-Item -ItemType Junction -Path tools\recomp\bag2\bios -Target C:\tools\psxrecomp\bios
+New-Item -ItemType Junction -Path game\bios -Target C:\tools\psxrecomp\bios
 ```
 
 ## 3. Ferramentas do recompilador e o C do OpenBIOS
 
 ```powershell
-powershell -File tools\recomp\build.ps1 -Step framework   # psxrecomp-game, -toml, -bios (C:\tools\psxrecomp\recompiler\build)
-powershell -File tools\recomp\build.ps1 -Step bios        # generated/OpenBIOS_*.c no framework (usa o bash do Git)
+powershell -File recomp\build.ps1 -Step framework   # psxrecomp-game, -toml, -bios (C:\tools\psxrecomp\recompiler\build)
+powershell -File recomp\build.ps1 -Step bios        # generated/OpenBIOS_*.c no framework (usa o bash do Git)
 ```
 
 ## 4. Extrair o disco e gerar o C do jogo
 
 ```bash
-python tools/bust2_extract.py "disc/Bust A Groove 2 (USA).bin" extracted
+python tools/extract/bust2_extract.py "disc/Bust A Groove 2 (USA).bin" extracted
 ```
 
 Gera `extracted/disc/` (`SLUS_011.59`, `BUST2.BIN`, `XA/`, `STR/`) e `extracted/bust2/` (os containers do
 `BUST2.BIN`). Depois:
 
 ```powershell
-powershell -File tools\recomp\build.ps1 -Step game
+powershell -File recomp\build.ps1 -Step game
 ```
 
-Gera `tools/recomp/bag2/generated/SLUS_011.59_*.c` (o executável principal em C, ~27 MB) a partir de
-`tools/recomp/bag2/game.toml` e `seeds/functions.txt`.
+Gera `game/generated/SLUS_011.59_*.c` (o executável principal em C, ~27 MB) a partir de
+`game/game.toml` e `seeds/functions.txt`.
 
 ## 5. Overlays compilados antecipadamente (AOT)
 
-O jogo carrega 56 overlays `DBI_` de dentro do `BUST2.BIN`; o perfil `tools/recomp/aot/overlays.json` diz quais e
+O jogo carrega 56 overlays `DBI_` de dentro do `BUST2.BIN`; o perfil `recomp/aot/overlays.json` diz quais e
 onde. Com o `env.ps1` carregado, na pasta `C:\tools\psxrecomp\tools`:
 
 ```powershell
-python aot_overlay_pipeline.py static --profile <repo>/tools/recomp/aot/overlays.json `
-  --game-toml <repo>/tools/recomp/bag2/game.toml `
+python aot_overlay_pipeline.py static --profile <repo>/recomp/aot/overlays.json `
+  --game-toml <repo>/game/game.toml `
   --recompiler C:/tools/psxrecomp/recompiler/build/psxrecomp-game.exe `
-  --work-dir <repo>/tools/recomp/aot/work-static --gcc C:/tools/winlibs/mingw64/bin/gcc.exe `
-  --out-dir <repo>/tools/recomp/bag2/generated --workers 6
+  --work-dir <repo>/recomp/aot/work-static --gcc C:/tools/winlibs/mingw64/bin/gcc.exe `
+  --out-dir <repo>/game/generated --workers 6
 ```
 
 Gera `generated/overlays_static.c` e uma unidade por overlay, com os ganchos de instrução de
@@ -94,10 +94,10 @@ passos 4 e 5.
 ## 6. O exe
 
 ```powershell
-powershell -File tools\recomp\build.ps1 -Step runtime
+powershell -File recomp\build.ps1 -Step runtime
 ```
 
-Gera `tools/recomp/bag2/build/Bust_A_Groove_2_Recompiled.exe` e, ao lado, `bios/`, `assets/`, `mods/bundled/`,
+Gera `game/build/Bust_A_Groove_2_Recompiled.exe` e, ao lado, `bios/`, `assets/`, `mods/bundled/`,
 `game.toml` e `settings.toml`. Ele já abre o jogo (com o disco de `disc/`), mas sem os assets do remake e sem as
 texturas HD, que vêm nos passos 7 e 8.
 
@@ -105,21 +105,21 @@ No Windows PowerShell 5.1 o `build.ps1` às vezes aborta quando o cmake escreve 
 o cmake direto, com o `env.ps1` carregado:
 
 ```powershell
-cmake -S tools/recomp/bag2 -B tools/recomp/bag2/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc `
+cmake -S game -B game/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc `
   -DCMAKE_CXX_COMPILER=g++ -DPSXRECOMP_ROOT=C:/tools/psxrecomp -DPSX_RECOMP_UI=OFF -DPSX_ENABLE_VULKAN=OFF
-cmake --build tools/recomp/bag2/build --target psx-runtime
+cmake --build game/build --target psx-runtime
 ```
 
 **Build de testes** (servidor TCP na porta 4370, usado pelos scripts de `tools/remake/`): o mesmo configure em
-`tools/recomp/bag2/build-debug` com `-DPSX_DEBUG_TOOLS=ON`. Os passos 7 e 8 precisam dela.
+`game/build-debug` com `-DPSX_DEBUG_TOOLS=ON`. Os passos 7 e 8 precisam dela.
 
 ## 7. Assets do remake (`mods/remake/`, 3,3 GB)
 
 Ambiente Python dos exportadores:
 
 ```bash
-python -m venv tools/recomp/logs/remake/venv
-tools/recomp/logs/remake/venv/Scripts/python -m pip install -r tools/remake/requirements.txt
+python -m venv logs/remake/venv
+logs/remake/venv/Scripts/python -m pip install -r tools/remake/requirements.txt
 ```
 
 **Personagens** (os 18, nos dois figurinos: 36 arquivos `<nome>.bin` / `<nome>_alt.bin`), lidos direto do disco:
@@ -130,12 +130,12 @@ python tools/remake/export_all.py
 
 **Palcos** (15 arquivos `palco231..245.bin` + `.stg`). Duas coisas vêm do jogo rodando, pela build de testes:
 `tools/remake/stage_extra_keys.json` (já está no git; refazer com `stage_keys.py`) e as texturas e paletas lidas da
-VRAM em `tools/recomp/logs/remake/palcos/vram/`:
+VRAM em `logs/remake/palcos/vram/`:
 
 ```bash
 python tools/remake/stage_vram_keys.py
 python tools/remake/stage_clut_vars.py
-tools/recomp/logs/remake/venv/Scripts/python tools/remake/export_stage.py
+logs/remake/venv/Scripts/python tools/remake/export_stage.py
 ```
 
 Os dois exportadores escrevem em `build/mods/remake/` e `build-debug/mods/remake/`.
@@ -143,7 +143,7 @@ Os dois exportadores escrevem em `build/mods/remake/` e `build-debug/mods/remake
 ## 8. Texturas HD (`mods/texture-packs/SLUS-01159/replacements/`)
 
 As substituições são os dumps de textura do jogo ampliados 4x. Os dumps vêm de jogar com a captura ligada: em
-`tools/recomp/bag2/build/mods/state.toml` ponha `dump = "true"` e `replacements = "false"` (como strings) no mod
+`game/build/mods/state.toml` ponha `dump = "true"` e `replacements = "false"` (como strings) no mod
 `psx.enhancement.hd-textures`, jogue (feche pela janela, não pelo Gerenciador de Tarefas, senão o último lote se
 perde) e, para os palcos, rode `python tools/remake/stage_inventory.py run` e `python tools/remake/stage_dump2.py`.
 Depois:
@@ -163,9 +163,9 @@ Ver [releases/README.md](releases/README.md): copiar o exe e as pastas da `build
 
 ## Onde aprofundar
 
-- [notes/recomp.md](notes/recomp.md): o framework, o build, os overlays AOT (§8), 1080p/widescreen (§10, §11), as
+- [docs/recomp.md](docs/recomp.md): o framework, o build, os overlays AOT (§8), 1080p/widescreen (§10, §11), as
   texturas HD (§12), o ritmo da música (§13).
-- [notes/remake-plano.md](notes/remake-plano.md) e [notes/remake-visual.md](notes/remake-visual.md): o remake,
+- [docs/remake-plano.md](docs/remake-plano.md) e [docs/remake-visual.md](docs/remake-visual.md): o remake,
   fase a fase.
-- [notes/formats.md](notes/formats.md), [notes/model-format.md](notes/model-format.md),
-  [notes/media-formats.md](notes/media-formats.md): os formatos do disco.
+- [docs/formats.md](docs/formats.md), [docs/model-format.md](docs/model-format.md),
+  [docs/media-formats.md](docs/media-formats.md): os formatos do disco.

@@ -1,8 +1,8 @@
-"""Mãos com dedos modeladas por código para o remake (notes/remake-plano.md, fase 2).
+"""Mãos com dedos modeladas por código para o remake (docs/remake-plano.md, fase 2).
 
 O jogo não tem ossos de dedo: cada mão é um mesh rígido preso ao osso da mão, e o jogo troca o mesh inteiro
 em alguns gestos (o antebraço passa a apontar para outro nó filho: nó 15 -> 16, 20 ou 21 na esquerda e
-nó 18 -> 19, 22 ou 23 na direita; ver notes/remake-visual.md). Aqui cada gesto vira uma mão nova:
+nó 18 -> 19, 22 ou 23 na direita; ver docs/remake-visual.md). Aqui cada gesto vira uma mão nova:
 1. esqueleto de mão paramétrico (palma, 4 dedos de 3 falanges, polegar) com ângulos por gesto, no espaço do
    osso da mão do jogo (dedos para -y, costas da mão para +x, polegar da mão esquerda para +z);
 2. superfície implícita (SDF: cones arredondados unidos com mínimo suave), poligonizada por surface nets

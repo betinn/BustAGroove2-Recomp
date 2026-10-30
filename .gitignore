@@ -19,17 +19,17 @@ dist/
 __pycache__/
 *.pyc
 .vite/
-web/public/emulatorjs/
-web/.disc.json
-ghidra/project/
-ghidra/out/
-tools/recomp/logs/
-web/public/recomp/
-tools/recomp/bag2/generated-web/
-tools/recomp/bag2/build-web/
-tools/recomp/aot/work/
-tools/recomp/bag2/bios/
-tools/recomp/aot/work-static/
+archive/web/public/emulatorjs/
+archive/web/.disc.json
+archive/ghidra/project/
+archive/ghidra/out/
+logs/
+archive/web/public/recomp/
+archive/web-recomp/generated-web/
+archive/web-recomp/build-web/
+recomp/aot/work/
+game/bios/
+recomp/aot/work-static/
 releases/*
 !releases/README.md
 # Da v2.0.0 em diante só os arquivos de texto de cada release entram no git (o exe, o disco, bios/ e mods/ ficam fora)
@@ -45,7 +45,7 @@ releases/v2.0.0-remake/*
 saves/
 
 # Texturas do jogo capturadas/ampliadas pelo mod HD (psx.enhancement.hd-textures): nunca no git
-tools/recomp/bag2/build/mods/texture-packs/
+game/build/mods/texture-packs/
 **/texture-packs/**/dumps/
 **/texture-packs/**/replacements/
 *.hdres

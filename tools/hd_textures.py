@@ -4,7 +4,7 @@
 Amplia os PNG gravados pelo mod `psx.enhancement.hd-textures` ("Dump textures") por um multiplo
 inteiro, mantendo nome, proporcao e as classes de alfa do PS1, e grava em `replacements/`.
 
-Uso (padroes apontam para tools/recomp/bag2/build/mods/texture-packs/SLUS-01159):
+Uso (padroes apontam para game/build/mods/texture-packs/SLUS-01159):
     python tools/hd_textures.py                      # dumps/ -> replacements/, 4x, xBR
     python tools/hd_textures.py --scale 2            # 2x
     python tools/hd_textures.py --filter nearest     # so replica pixels (teste/controle)
@@ -37,7 +37,7 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PACK = os.path.join(HERE, "recomp", "bag2", "build", "mods", "texture-packs", "SLUS-01159")
+PACK = os.path.join(HERE, "..", "game", "build", "mods", "texture-packs", "SLUS-01159")
 ESRGAN_BIN = "C:/tools/realesrgan/bin/realesrgan-ncnn-vulkan.exe"
 
 # Pesos YUV do xBR e limiar de "cores iguais" (escala 0..255).

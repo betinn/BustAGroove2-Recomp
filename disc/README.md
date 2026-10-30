@@ -33,9 +33,9 @@ sha1sum "disc/Bust A Groove 2 (USA).bin"
 
 ## Quem lê esta pasta
 
-- `tools/recomp/bag2/game.toml` (`disc = "../../../disc/Bust A Groove 2 (USA).cue"`): o recompilador, o pipeline
+- `game/game.toml` (`disc = "../disc/Bust A Groove 2 (USA).cue"`): o recompilador, o pipeline
   dos overlays AOT e o exe da build (que procura o caminho subindo a partir da pasta do exe).
-- `tools/bust2_extract.py`: extrai o disco para `extracted/` (`SLUS_011.59`, `BUST2.BIN`, XA, STR).
+- `tools/extract/bust2_extract.py`: extrai o disco para `extracted/` (`SLUS_011.59`, `BUST2.BIN`, XA, STR).
 - Os scripts de `tools/remake/` (`game_session.py`, `heat_remake.py`, `hand_table.py`, `stage_inventory.py`) e
-  `tools/recomp/bag2perf.py`, `tools/recomp/build.ps1 -Run`, `tools/recomp/bag2/Jogar.bat`.
+  `tools/tests/bag2perf.py`, `recomp/build.ps1 -Run`, `game/Jogar.bat`.
 - A release `releases/v2.0.0-remake/` leva a própria cópia em `releases/v2.0.0-remake/disc/`.

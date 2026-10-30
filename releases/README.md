@@ -7,7 +7,7 @@ Pastas fora do git; só este README é versionado e, da v2.0.0 em diante, os arq
 - MINOR: recurso visual/jogabilidade novo (resolução, widescreen, texturas HD, controles).
 - PATCH: ajuste de config ou correção sem recurso novo.
 Cada pasta contém `VERSION.txt` (versão, data, resumo), `Jogar.bat`, `game.toml`, `settings.toml`, `keybinds.ini`,
-`bios/`, `mods/bundled/` (+ `mods/texture-packs/` desde a v1.3.0), `assets/` e o exe. Para criar a próxima: copiar de `tools/recomp/bag2/build/`
+`bios/`, `mods/bundled/` (+ `mods/texture-packs/` desde a v1.3.0), `assets/` e o exe. Para criar a próxima: copiar de `game/build/`
 (sem `cache/`, `overlay_captures*`, `*.json`), escrever `VERSION.txt`, registrar aqui e no README principal.
 
 | Versão | Data | Conteúdo | Origem |
@@ -20,8 +20,8 @@ Cada pasta contém `VERSION.txt` (versão, data, resumo), `Jogar.bat`, `game.tom
 
 A partir da v1.3.0 a pasta também leva `mods/texture-packs/SLUS-01159/replacements/` (~97 MB de PNG; `dumps/` fica
 só na build). Regerar o pack: capturar com `dump = "true"` em `build/mods/state.toml`, jogar, depois
-`python tools/hd_textures.py --filter esrgan` (`notes/recomp.md` §12 e §12.1). O exe precisa do patch
-`tools/recomp/patches/psxrecomp-hd-cache-caps.patch` no framework, senão a partida cai para 13–35 fps.
+`python tools/hd_textures.py --filter esrgan` (`docs/recomp.md` §12 e §12.1). O exe precisa do patch
+`recomp/patches/psxrecomp-hd-cache-caps.patch` no framework, senão a partida cai para 13–35 fps.
 
 A partir da v2.0.0 a pasta é auto-suficiente e não tem `Jogar.bat`: o exe lê o `game.toml` da própria pasta, e o
 `game.toml` da release aponta o disco por caminho relativo (`disc = "disc/Bust A Groove 2 (USA).cue"`, resolvido a

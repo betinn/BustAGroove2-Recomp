@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Exporta um palco para o plugin do jogo (src/bag2_stage.c + núcleo src/remake/), fase 6 do remake.
 
-O palco é um modelo no mesmo formato dos personagens (notes/model-format.md), no overlay do palco (containers 231..245
+O palco é um modelo no mesmo formato dos personagens (docs/model-format.md), no overlay do palco (containers 231..245
 do BUST2.BIN: DBI_ do código, SEDT, TIMs, o modelo e as trilhas de câmera): uma lista de objetos rígidos (nós de tipo 1,
 quase todos raízes, posição no mundo). O jogo desenha cada nó por FUN_80029588 (um pacote por primitiva no buffer do nó,
 +0xA8, na ordem das listas de GAME_LIST_ORDER; as listas com decalque geram dois pacotes, base e textura); fundo, chão e
 peças especiais de alguns palcos saem do código do overlay (não entram aqui). O plugin troca, na OT do quadro, cada
-sequência de pacotes dos nós pelo desenho de host do remake, na mesma ordem de pintor (notes/remake-visual.md, "Fase 6").
+sequência de pacotes dos nós pelo desenho de host do remake, na mesma ordem de pintor (docs/remake-visual.md, "Fase 6").
 
 Saída (fora do git, derivada do disco do usuário), em build-debug/ e build/ mods/remake/:
   palco<c>.bin  asset HTR7 (src/remake/rmk_asset.c): malha por nó (vértices divididos nos vincos, para a normal de uma
@@ -50,12 +50,12 @@ from rig import GAME_LIST_ORDER, build_rig, pose_positions, smooth_normals  # no
 from heat_remake import DISC, OUT, hd_layers, ps1_layers  # noqa: E402
 from export_char import SEMI, STP_ALPHA, canonical_corners, stp_layers  # noqa: E402
 
-BAG2 = os.path.join(HERE, '..', 'recomp', 'bag2')
+BAG2 = os.path.join(HERE, '..', '..', 'game')
 STAGES = range(231, 246)
 CREASE_DEG = 40.0                  # vinco: faces vizinhas com mais que isso entre as normais não dividem o vértice
 TEXTURED = {2, 3, 4, 5, 10, 11, 26, 27}
 OVER = {8, 9, 12, 13, 15, 28, 29}  # decalque: pacote base + pacote com textura
-# vértice de cada slot do GP0 num quad (A, B, C, D = v2, v3, v1, v0: notes/model-format.md, QUAD_ATTR); slot do vértice
+# vértice de cada slot do GP0 num quad (A, B, C, D = v2, v3, v1, v0: docs/model-format.md, QUAD_ATTR); slot do vértice
 QUAD_SLOT = {0: 3, 1: 2, 2: 0, 3: 1}
 
 

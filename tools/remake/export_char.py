@@ -51,13 +51,13 @@ from rig import GAME_LIST_ORDER, build_rig, pose_positions  # noqa: E402
 from heat_remake import DISC, OUT, hd_layers, ps1_layers  # noqa: E402
 import detail  # noqa: E402
 
-BAG2 = os.path.join(HERE, '..', 'recomp', 'bag2')
+BAG2 = os.path.join(HERE, '..', '..', 'game')
 FACE_FIELDS = ('tris', 'fnode', 'nidx', 'base', 'over', 'uv', 'layer', 'mode', 'order', 'zpair', 'hand')
 SEMI = 16                      # bit do modo da face: semitransparente (texels com STP)
 STP_ALPHA = 143                # alfa do texel com STP (o mesmo valor do pacote HD do framework)
 
 # Mãos alternativas que não se soldam ao antebraço (sem "uses"): posição na árvore observada no jogo
-# (tools/remake/char_tree.py, HEAT x COMET no palco do HEAT: 21 e 26 na mão esquerda, 23 na direita) e, para as que
+# (tools/tests/char_tree.py, HEAT x COMET no palco do HEAT: 21 e 26 na mão esquerda, 23 na direita) e, para as que
 # não apareceram, o lado pelo sinal de z do centro da malha (esquerda +z, como os nós 17 e 20).
 # Nó do arquivo -> posição (= nó padrão) que ele substitui.
 ALT_POS: dict[str, dict[int, int]] = {'COMET': {21: 17, 22: 17, 26: 17, 23: 20, 24: 20, 25: 20},

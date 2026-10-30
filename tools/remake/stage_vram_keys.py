@@ -5,7 +5,7 @@ stage_keys.py lista as texturas (página, CLUT) que a geometria do código do ov
 exportador só monta camada quando a página e a CLUT estão nos TIMs do palco. As outras (CLUT gerada pelo overlay, página
 montada em tempo de execução) são lidas aqui da VRAM do jogo (`vram_peek`): para cada palco, HEAT x COMET, depois de
 `segundos` na partida, a CLUT de cada chave em três leituras 1,5 s uma da outra (mudou = textura animada, fica com o
-jogo) e a página inteira. Grava em tools/recomp/logs/remake/palcos/vram/<container>/<tpage>_<clut>.npz (dados do jogo,
+jogo) e a página inteira. Grava em logs/remake/palcos/vram/<container>/<tpage>_<clut>.npz (dados do jogo,
 fora do git): `page` (halfwords da VRAM da página), `clut`, `animated`. tools/remake/export_stage.py usa os que não
 são animados. Chaves que aparecem em 5 palcos ou mais são texturas do jogo (efeitos), não do palco: ficam de fora.
 Uso: python tools/remake/stage_vram_keys.py [posições] [segundos]
@@ -23,7 +23,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from game_session import Session, REPO  # noqa: E402
 
-OUT = os.path.join(REPO, 'tools', 'recomp', 'logs', 'remake', 'palcos', 'vram')
+OUT = os.path.join(REPO, 'logs', 'remake', 'palcos', 'vram')
 
 
 def peek(s, x, y, w, h):

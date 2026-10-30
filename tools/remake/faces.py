@@ -1,6 +1,6 @@
 """Expressão do rosto do HEAT (dentes, olhos semicerrados/fechados, marca verde no olho).
 
-Como o jogo faz (medido na build-debug em 2026-10-27, notes/remake-visual.md "Expressão do rosto"): o rosto não
+Como o jogo faz (medido na build-debug em 2026-10-27, docs/remake-visual.md "Expressão do rosto"): o rosto não
 troca UV, CLUT nem página. A página do rosto (TIM 1, na VRAM em 768,256) é um atlas: além das "casas" que as faces
 da cabeça amostram (olho A, olho B, boca), tem as variantes de cada uma ao lado. O código do personagem chama
 MoveImage (libgpu, 0x800482F4) e copia a variante da vez para a casa, na VRAM, durante a lógica do quadro (antes

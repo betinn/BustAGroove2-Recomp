@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Leitura do modelo, animações e texturas de um personagem do Bust A Groove 2 direto do disco.
 
-Porta em Python de web/src/bag2/model.ts e anim.ts (formato em notes/model-format.md).
+Porta em Python de web/src/bag2/model.ts e anim.ts (formato em docs/model-format.md).
 Uso como módulo: `load_character(bin_path, k)` devolve (modelo, animações, TIMs de corpo).
 k = índice do container na ordem alfabética (HEAT = 3): modelo em 123 + 2k, texturas em 87 + 2k.
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'extract'))
 from bpe import bpe_decode  # noqa: E402
 from bust2_extract import Disc  # noqa: E402
 

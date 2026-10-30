@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mãos alternativas pela tabela do overlay de cada personagem (fase 5; offline, só o disco).
 
-O script da dança religa o **irmão** do antebraço para trocar a mão (notes/remake-visual.md, "Mãos com dedos"): no
+O script da dança religa o **irmão** do antebraço para trocar a mão (docs/remake-visual.md, "Mãos com dedos"): no
 overlay do personagem (DBI_ no fim do container de texturas 87 + 2k, carregado em 0x801CC510 no 1P; o do figurino
 alternativo em 159 + 2k) cada troca é um bloco
     lbu a0, F(..)   ; índice do antebraço (tabela no próprio overlay)

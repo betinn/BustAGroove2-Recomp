@@ -19,7 +19,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from game_session import Session, REPO  # noqa: E402
 
-DUMPS = os.path.join(REPO, 'tools', 'recomp', 'bag2', 'build-debug', 'mods', 'texture-packs', 'SLUS-01159', 'dumps')
+DUMPS = os.path.join(REPO, 'game', 'build-debug', 'mods', 'texture-packs', 'SLUS-01159', 'dumps')
 
 
 def count():

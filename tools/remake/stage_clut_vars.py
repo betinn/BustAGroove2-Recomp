@@ -7,7 +7,7 @@ camada HD por linha do banco, o caminho novo desenha essas faces com a paleta ce
 MoveImage de uma origem conhecida: `.stg` v2, src/bag2_stage.c, dyn_rect). Aqui, para cada palco, HEAT x COMET:
 `stage_geo v` lista os MoveImage da partida (`segundos` depois da carga); as cópias de uma linha (16 ou 256 cores) para
 uma CLUT dão as origens, e cada linha de origem é lida da VRAM (`vram_peek`). Grava
-tools/recomp/logs/remake/palcos/vram/<container>/clut_var.json (dados do jogo, fora do git):
+logs/remake/palcos/vram/<container>/clut_var.json (dados do jogo, fora do git):
   {"<clut hex>": {"w": 16|256, "src": [[x, y, [cores...]], ...]}}
 tools/remake/export_stage.py monta uma camada por origem, se couber no limite de 64.
 Uso: python tools/remake/stage_clut_vars.py [posições] [segundos]

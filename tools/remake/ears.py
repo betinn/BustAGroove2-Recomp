@@ -1,4 +1,4 @@
-"""Orelhas de anime (borda e concha) para o remake do HEAT (notes/remake-plano.md, fase 2).
+"""Orelhas de anime (borda e concha) para o remake do HEAT (docs/remake-plano.md, fase 2).
 
 A orelha original é um cone de 16 faces de pele (cor 230,156,102) no osso da cabeça (nó 13): 7 vértices da
 base presos à cabeça e 6 só dela. A orelha nova é uma folha pontuda gerada por código no mesmo osso:

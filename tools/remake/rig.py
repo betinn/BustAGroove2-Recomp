@@ -1,7 +1,7 @@
 """Malha soldada do personagem (vértices únicos entre ossos), pose por frame e suavização (Loop ou Phong Tessellation).
 
 O jogo desenha cada osso como um mesh rígido; vértices de junta são copiados de um osso para outro por um
-buffer global (slot = nó * 256 + vértice local, ver `refs`/`uses` em notes/model-format.md). Aqui cada
+buffer global (slot = nó * 256 + vértice local, ver `refs`/`uses` em docs/model-format.md). Aqui cada
 vértice ganha um id único (dono = nó que o define), então a malha inteira vira uma superfície só,
 com costuras soldadas nas juntas: dá para suavizar e animar sem rasgar.
 """
