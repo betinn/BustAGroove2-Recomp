@@ -8,6 +8,36 @@ pacote de texturas HD. Projeto pessoal, uso local, sem distribuição de dados d
 > (coprocessador de geometria), SPU ADPCM, CD-ROM XA. É a plataforma com mais ferramentas de
 > decompilação/recompilação disponíveis.
 
+## Antes e depois
+
+![Mesmo quadro: à esquerda o PS1 original, à direita a versão recompilada com o remake](docs/img/comparacao/heat_comet_corte.jpg)
+
+Todas as imagens desta seção mostram **o mesmo quadro da mesma partida** nas duas versões: o estado do jogo foi salvo
+na versão melhorada e carregado na original. **Original** é o jogo como o PS1 desenha: 512 × 240 pixels, 4:3, as
+texturas e modelos do disco, sem filtro, com o pontilhado de cor do console. **Melhorado** é a `v2.0.0-remake`:
+resolução interna 4K, 16:9 com mais cena nas laterais, personagens e palcos remodelados, texturas HD, luz e sombra
+novas. As faixas pretas da esquerda são o pedaço de cena que só existe no 16:9.
+
+### Detalhe ampliado
+
+| | |
+|---|---|
+| ![HIRO de perto: original e remake](docs/img/comparacao/kitty_hiro_zoom.jpg) | ![HEAT de perto: original e remake](docs/img/comparacao/heat_comet_zoom.jpg) |
+
+![TSUTOMU e BI-O de perto: original e remake](docs/img/comparacao/tsutomu_bio_zoom.jpg)
+
+### Lado a lado
+
+À esquerda o original em 4:3, como numa TV; à direita a versão melhorada em 16:9.
+
+![KITTY-N × HIRO](docs/img/comparacao/kitty_hiro_lado.jpg)
+![SHORTY × KELLY](docs/img/comparacao/shorty_kelly_lado.jpg)
+![COMET × TSUTOMU](docs/img/comparacao/comet_tsutomu_lado.jpg)
+![TSUTOMU × BI-O](docs/img/comparacao/tsutomu_bio_lado.jpg)
+![HEAT × COMET](docs/img/comparacao/heat_comet_lado.jpg)
+
+As capturas saem de `tools/tests/compare_shots.py` (build-debug) e as montagens de `tools/tests/compare_montage.py`.
+
 ## Jogar no PC
 
 Versões prontas ficam em `releases/` (fora do git; só [releases/README.md](releases/README.md) e, da v2.0.0 em
@@ -36,6 +66,25 @@ Para jogar:
 Ajustes: `game.toml` `[video]` (`internal_resolution`, `texture_filtering`, `antialiasing_mode`,
 `dithering`, `geometry_correction`, `aspect_ratio` "16:9"/"4:3") e `settings.toml` (`fullscreen`,
 `window_width`). Memory card em `saves/` (fora do git).
+
+### Requisitos do PC (v2.0.0-remake)
+
+| | Mínimo (estimado) | Recomendado (configuração padrão) | Máquina de teste |
+|---|---|---|---|
+| Sistema | Windows 10 64 bits | Windows 10 ou 11, 64 bits | Windows 10 Pro 22H2 |
+| Processador | 4 núcleos a ~3,5 GHz: Core i5-6500, Ryzen 5 1500X | 6 núcleos: Core i5-8400, Ryzen 5 2600 ou melhor | Core i7-9700KF (8 núcleos, 3,6–4,9 GHz) |
+| Placa de vídeo | OpenGL 3.3 com 4 GB: GeForce GTX 1050 Ti, Radeon RX 570, com `internal_resolution = "1080p"` | 6 GB ou mais: GeForce GTX 1660 Super, RTX 2060, Radeon RX 5600 XT | GeForce RTX 3070 Ti (8 GB) |
+| Memória (RAM) | 8 GB | 16 GB | 32 GB |
+| Disco | 4 GB livres (a pasta da release inteira, com o disco) | SSD | SSD NVMe |
+| Tela | 1280 × 720 | 1920 × 1080 (16:9) | 1920 × 1080 |
+| Controle | Teclado | Gamepad (Xbox, DualShock ou outro reconhecido pelo SDL) | Teclado e gamepad |
+
+Na máquina de teste o jogo fica em 59,9 fps em todos os segundos de uma partida, sem falha de áudio. O emulador do
+jogo usa 40–43 % de um núcleo e a thread de desenho 21–44 %. O processo usa até 1,7 GB de memória de vídeo (no palco
+mais pesado) e 2,8–3,6 GB de RAM. A configuração padrão desenha em 4K (2160 linhas) e reduz para a tela: é o que mais
+pesa na placa de vídeo. Com uma placa mais fraca, baixe `internal_resolution` no `game.toml` (`"1440p"`, `"1080p"` ou
+`"720p"`). Os valores mínimos e recomendados são estimativas a partir dessas medições: o jogo só foi testado na
+máquina da última coluna. Gráfico integrado (Intel UHD, Radeon Vega) não foi testado.
 
 ## Compilar
 

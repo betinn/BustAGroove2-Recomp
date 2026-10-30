@@ -235,3 +235,9 @@ dançarinos não são desenhados.
 `PrintWindow` e `CopyFromScreen` voltam preto na janela GL sem borda. Funciona: captura de tela do app
 (computer-use screenshot). O jogo lançado em segundo plano fica atrás das outras janelas: clicar nele ou
 `SetForegroundWindow`. A abertura (STR) dura ~1 min e não pula com Start; seleção de personagem: `x` confirma.
+
+Antes e depois do README (`docs/img/comparacao/`): `tools/tests/compare_shots.py` salva um savestate na build-debug
+com tudo ligado e o carrega numa sessão "original" (renderizador de software, nativo, 4:3, dithering, sem tela larga,
+HD e PGXP; os pacotes do remake ficam ligados porque o savestate exige o mesmo layout da memória de mod, e o efeito
+sai por `heat_mode 0`, `stage_geo 0`, `stage_post 0`); `tools/tests/compare_montage.py` monta as imagens. A captura
+melhorada (`screenshot_wide_hires`) vem 6138 × 2160 (largura do modo 512 esticada): comprimir para 3840 × 2160.
