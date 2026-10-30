@@ -32,6 +32,14 @@ tools/recomp/bag2/bios/
 tools/recomp/aot/work-static/
 releases/*
 !releases/README.md
+# Da v2.0.0 em diante só os arquivos de texto de cada release entram no git (o exe, o disco, bios/ e mods/ ficam fora)
+!releases/v2.0.0-remake/
+releases/v2.0.0-remake/*
+!releases/v2.0.0-remake/VERSION.txt
+!releases/v2.0.0-remake/game.toml
+!releases/v2.0.0-remake/settings.toml
+!releases/v2.0.0-remake/keybinds.ini
+!releases/v2.0.0-remake/input.ini
 
 # memory cards do jogo (dados do usuario)
 saves/

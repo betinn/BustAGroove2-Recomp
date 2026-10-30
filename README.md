@@ -10,8 +10,8 @@ pacote de texturas HD. Projeto pessoal, uso local, sem distribuição de dados d
 
 ## Jogar no PC
 
-Versões prontas ficam em `releases/` (fora do git; só [releases/README.md](releases/README.md) é
-versionado). Pastas `vMAJOR.MINOR.PATCH-apelido`, cada uma com `VERSION.txt`.
+Versões prontas ficam em `releases/` (fora do git; só [releases/README.md](releases/README.md) e, da v2.0.0 em
+diante, os arquivos de texto de cada release são versionados). Pastas `vMAJOR.MINOR.PATCH-apelido`, cada uma com `VERSION.txt`.
 
 | Versão | Conteúdo |
 |---|---|
@@ -61,7 +61,7 @@ powershell -File tools\recomp\build.ps1 -Step all       # regenera o C a partir 
 ## Regras
 
 - **Nenhum dado do jogo entra no repositório**: `.gitignore` bloqueia `.bin/.cue/.XA/.STR/SLUS_*`,
-  `extracted/`, `bios/`, `saves/`, `releases/*` (exceto o README) e as texturas capturadas/ampliadas
+  `extracted/`, `bios/`, `saves/`, `releases/*` (exceto o README e os textos das releases) e as texturas capturadas/ampliadas
   (`texture-packs/`). O jogo é lido do disco local do usuário.
 - Sem deploy nem publicação de binários do jogo.
 

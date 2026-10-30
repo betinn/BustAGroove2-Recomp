@@ -1,0 +1,12 @@
+# psxrecomp user settings - written by the launcher. Safe to hand-edit.
+# Overrides the bundled game.toml; the command line overrides this file.
+
+[video]
+window_width      = 1920
+fullscreen        = 1
+quality_preset    = "ultra"
+quality_base      = "ultra"
+quality_hardware  = "0d2aae57e5ded6c2"
+quality_detected  = "ultra"
+
+[audio]

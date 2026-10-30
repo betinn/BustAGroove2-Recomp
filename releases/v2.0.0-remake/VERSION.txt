@@ -1,0 +1,32 @@
+v2.0.0-remake (2026-10-30)
+
+Bust A Groove 2 (USA, SLUS-01159) recompilado para PC, com o remake visual completo (fases 0 a 6c do plano).
+
+COMO JOGAR
+  Dois cliques em Bust_A_Groove_2_Recompiled.exe. Nao precisa de .bat, argumentos nem instalacao.
+  A pasta e auto-suficiente: o exe acha sozinho, na propria pasta,
+    game.toml, settings.toml, keybinds.ini, input.ini   configuracao
+    disc/Bust A Groove 2 (USA).cue + .bin             o disco do jogo
+    bios/openbios.bin                                  BIOS livre (OpenBIOS, licenca MIT em bios/OpenBIOS.LICENSE)
+    mods/                                              remake, texturas HD e os demais mods
+  Cartoes de memoria sao criados em saves/ na primeira vez. A pasta pode ser movida para qualquer lugar
+  (inclusive aberta por atalho com outra pasta "Iniciar em"). So usa DLLs do proprio Windows 10/11 e OpenGL 3.3.
+  F11 alterna tela cheia. Teclado: setas, X = cruz, S = circulo, Z = quadrado, A = triangulo, Q/W = L1/R1,
+  Enter = Start, Shift direito = Select (keybinds.ini). Gamepad: automatico (input.ini).
+
+O QUE VEM LIGADO POR PADRAO
+  - 60 fps, 56 overlays compilados antecipadamente, 9x interno (supersampling para 1080p), PGXP, xBR, sem dithering,
+    widescreen 16:9 nativo (menus e FMV em 4:3), tela cheia sem borda.
+  - Ritmo da musica no periodo real do vblank NTSC (59,826 Hz) e buffer de som de 90 ms.
+  - Pacote de texturas HD: 620 substituicoes ampliadas 4x com Real-ESRGAN (mods/texture-packs/SLUS-01159/replacements).
+  - Remake dos personagens (mod bag2.remake.heat): os 18 personagens nos dois figurinos (36 assets em mods/remake/),
+    Phong Tessellation, luz por pixel com as luzes do palco, mapas de normal, sombra propria, maos com dedos,
+    orelhas e nariz, expressao do rosto do jogo; so quem esta em cena fica carregado.
+  - Remake do palco (mod bag2.remake.stage): bloom com adaptacao e graduacao de cor no tempo da musica, sombra macia
+    dos dancarinos no chao, e a geometria dos 15 palcos (palco231..245) refeita: texturas Real-ESRGAN, luz por pixel,
+    mapa de normal, especular, oclusao ambiente, reflexo no chao, paletas animadas e o telao do 235.
+
+ORIGEM
+  Exe: commit 267d7c3 (fase 6c + a pasta de trabalho fixada na pasta do exe, src/bag2_mods.c).
+  Framework PSXRecomp com os tres patches locais de tools/recomp/patches/.
+  Assets do remake: tools/remake/export_char.py / export_stage.py. Detalhes: notes/remake-plano.md e notes/remake-visual.md.

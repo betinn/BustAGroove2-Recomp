@@ -1,6 +1,8 @@
 # Releases do Bust A Groove 2 recompilado (PC)
 
-Pastas fora do git (65 MB cada); só este README é versionado. Esquema: `vMAJOR.MINOR.PATCH-apelido`.
+Pastas fora do git; só este README é versionado e, da v2.0.0 em diante, os arquivos de texto de cada release
+(`VERSION.txt`, `game.toml`, `settings.toml`, `keybinds.ini`, `input.ini`; exceções no `.gitignore`). Exe, disco,
+`bios/` e `mods/` nunca entram (o repositório é público). Esquema: `vMAJOR.MINOR.PATCH-apelido`.
 - MAJOR: mudança grande de base (outro runtime/renderer, novo pipeline de código).
 - MINOR: recurso visual/jogabilidade novo (resolução, widescreen, texturas HD, controles).
 - PATCH: ajuste de config ou correção sem recurso novo.

@@ -12,7 +12,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 
 ## Regras fixas
 - **Nenhum dado do jogo entra no git**: .bin/.cue, XA/STR, `extracted/`, texturas extraídas/dumps, `saves/`,
-  `releases/` (só `releases/README.md`). `tools/recomp/bag2/build/` é ignorado por `tools/recomp/bag2/.gitignore`.
+  `releases/` (só `releases/README.md` e os textos de cada release desde a v2.0.0: `VERSION.txt`, `game.toml`,
+  `settings.toml`, `keybinds.ini`, `input.ini`; nova release = novas exceções no `.gitignore`). `tools/recomp/bag2/build/` é ignorado por `tools/recomp/bag2/.gitignore`.
 - `releases/v1.0.0-estavel/` é backup: **nunca alterar**.
 - Sem deploy/publicação.
 - Edições de arquivo: ferramenta Edit ou Python com `encoding='utf-8'` (cp1252 corrompe acentos).
