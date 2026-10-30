@@ -4,7 +4,7 @@ Uso: python bag2perf.py <rotulo> [segundos_de_partida=120]
 import json, os, socket, subprocess, sys, time
 B = r"C:\Users\sem-m\source\GIT\BustAGroove2Web\tools\recomp\bag2\build-debug"
 LOGS = r"C:\Users\sem-m\source\GIT\BustAGroove2Web\tools\recomp\logs"
-DISC = r"C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).cue"
+DISC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'disc', 'Bust A Groove 2 (USA).cue')
 label = sys.argv[1]; secs = int(sys.argv[2]) if len(sys.argv) > 2 else 120
 _id = 0
 def cmd(obj, timeout=5.0):

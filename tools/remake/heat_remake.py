@@ -30,7 +30,7 @@ from rig import (build_rig, orient_faces, original_normals, phong_tessellate, po
                  subdivide, vertex_normals)  # noqa: E402
 from render import Renderer, pack  # noqa: E402
 
-DISC = r'C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).bin'
+DISC = os.path.join(HERE, '..', '..', 'disc', 'Bust A Groove 2 (USA).bin')
 OUT = os.path.join(HERE, '..', 'recomp', 'logs', 'remake')
 ESRGAN = 'C:/tools/realesrgan/bin/realesrgan-ncnn-vulkan.exe'
 # HEAT: nós 20..23 são mãos alternativas (sem pai, posicionadas pelo jogo ao trocar de gesto)

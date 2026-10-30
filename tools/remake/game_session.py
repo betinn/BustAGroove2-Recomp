@@ -39,7 +39,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
 BUILD = os.path.join(REPO, 'tools', 'recomp', 'bag2', 'build-debug')
 LOGS = os.path.join(REPO, 'tools', 'recomp', 'logs', 'remake', 'jogo')
-DISC = r'C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).cue'
+DISC = os.path.join(REPO, 'disc', 'Bust A Groove 2 (USA).cue')   # disco local (fora do git; disc/README.md)
 START, CROSS, CIRCLE = 0xFFF7, 0xBFFF, 0xDFFF
 UP, DOWN, LEFT, RIGHT = 0xFFEF, 0xFFBF, 0xFF7F, 0xFFDF
 # caminho na grade da seleção do 2 jogadores a partir da âncora BI-O (linha 2, coluna 0)

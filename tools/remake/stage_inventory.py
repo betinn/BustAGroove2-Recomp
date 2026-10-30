@@ -29,7 +29,7 @@ sys.path.insert(0, r'C:/tools/psxrecomp/tools')
 from game_session import Session, REPO  # noqa: E402
 
 OUT = os.path.join(REPO, 'tools', 'recomp', 'logs', 'remake', 'palcos')
-BIN = r'C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).bin'
+BIN = os.path.join(REPO, 'disc', 'Bust A Groove 2 (USA).bin')
 STAGE_OVERLAY = 0x801DB1B8
 STAGE_CONTAINERS = range(231, 246)
 NODE = 0xB0

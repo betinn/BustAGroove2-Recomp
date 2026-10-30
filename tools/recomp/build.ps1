@@ -53,5 +53,5 @@ if ($Step -in 'runtime','all') {
 }
 if ($Run) {
     Push-Location "$proj\build"
-    try { $env:PSX_FRAME_REPORT_MS = "1000"; & ".\Bust_A_Groove_2_Recompiled.exe" --game game.toml --disc "C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).cue" } finally { Pop-Location }
+    try { $env:PSX_FRAME_REPORT_MS = "1000"; & ".\Bust_A_Groove_2_Recompiled.exe" --game game.toml --disc "$repo\disc\Bust A Groove 2 (USA).cue" } finally { Pop-Location }
 }

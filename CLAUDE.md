@@ -20,7 +20,11 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - Depois de qualquer teste: `Stop-Process -Name Bust_A_Groove_2_Recompiled -Force`.
 
 ## Onde está cada coisa
-- Disco: `C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).cue` (+ .bin).
+- Disco: `disc/Bust A Groove 2 (USA).cue` (+ .bin) na raiz do repo, fora do git (`*.bin`/`*.cue` ignorados);
+  `disc/README.md` (no git) tem os hashes do dump. Todos os scripts, o `game.toml` (`../../../disc/...`) e o
+  `Jogar.bat` leem dali. Original também em `C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\`.
+  **Nunca** pôr a imagem no git: repo público, jogo comercial, 612 MB.
+- Build do zero: `BUILD.md` (raiz). Releases: `releases/README.md`.
 - Framework PSXRecomp (nativo): `C:\tools\psxrecomp` (docs em `docs/`: `WIDESCREEN.md`, `HD_TEXTURE_PACKS.md`,
   `MOD_PACKAGES.md`, `QUALITY_PRESETS.md`). Fork web (não usado mais): `C:\tools\psxrecomp-web`.
 - Projeto do jogo: `tools/recomp/bag2/` — `CMakeLists.txt`, `game.toml` (config do runtime: `[video]`, `[widescreen]`),

@@ -22,7 +22,8 @@ diante, os arquivos de texto de cada release são versionados). Pastas `vMAJOR.M
 | `v2.0.0-remake` | **Atual.** v1.3.0 + **remake visual completo**: os 18 personagens nos dois figurinos refeitos (Phong Tessellation, luz por pixel, normal, sombra própria, mãos com dedos, expressão do rosto), a geometria dos 15 palcos refeita, bloom e graduação de cor no tempo da música, sombra macia no chão, 620 texturas HD, ritmo da música no vblank real. Pasta auto-suficiente: dois cliques no exe, disco em `disc/`. [notes/remake-plano.md](notes/remake-plano.md). |
 
 Para jogar:
-1. Tenha o disco original como `.cue` + `.bin` (o repositório não contém o jogo).
+1. Tenha o disco original como `.cue` + `.bin` (o repositório não contém o jogo; o dump usado está descrito em
+   [disc/README.md](disc/README.md)).
 2. Na `v2.0.0-remake`: dois cliques em `Bust_A_Groove_2_Recompiled.exe` (o disco fica em `disc/` dentro da
    pasta da release). Nas anteriores: rode `Jogar.bat` na pasta da release (usa o `.cue` da pasta padrão do
    disco; aceita outro caminho como argumento) ou:
@@ -38,31 +39,22 @@ Ajustes: `game.toml` `[video]` (`internal_resolution`, `texture_filtering`, `ant
 
 ## Compilar
 
-Projeto do jogo em `tools/recomp/bag2/` (`CMakeLists.txt`, `game.toml`, `settings.toml`, `src/bag2_mods.c`,
-`mods/preloaded/`). Framework PSXRecomp nativo em `C:\tools\psxrecomp`; toolchain GCC 16 (WinLibs),
-CMake e Ninja via `tools/recomp/env.ps1`.
+**Passo a passo do zero em [BUILD.md](BUILD.md)**: requisitos e versões, o framework com os patches, a extração
+do disco, o C gerado, os overlays AOT, o exe, os assets do remake, as texturas HD e a montagem de uma release.
+
+Resumo: o disco vai em `disc/` (identidade do dump em [disc/README.md](disc/README.md)); o projeto do jogo é
+`tools/recomp/bag2/` e o framework fica em `C:\tools\psxrecomp` (commit `31df2e1e` + os patches de
+`tools/recomp/patches/`). Com tudo gerado, recompilar só o exe:
 
 ```
-powershell -File tools\recomp\build.ps1 -Step runtime   # só o runtime/exe
-powershell -File tools\recomp\build.ps1 -Step all       # regenera o C a partir do disco + overlays AOT
+powershell -File tools\recomp\build.ps1 -Step runtime
 ```
-
-- O exe sai em `tools/recomp/bag2/build/Bust_A_Groove_2_Recompiled.exe`; `game.toml`/`settings.toml` são
-  copiados para `build/` no pós-build.
-- Os 56 overlays `DBI_` do jogo são compilados antecipadamente (AOT) a partir do disco
-  (`tools/recomp/aot/overlays.json`, [notes/recomp.md](notes/recomp.md) §8).
-- O mod de texturas HD exige o patch local
-  `tools/recomp/patches/psxrecomp-hd-cache-caps.patch` no framework; sem ele a partida cai para
-  13–35 fps ([notes/recomp.md](notes/recomp.md) §12.1).
-- Para publicar uma versão nova: copiar `build/` (exe, `assets/`, `bios/`, `mods/bundled/`,
-  `mods/texture-packs/SLUS-01159/replacements/`, `game.toml`, `settings.toml`, `keybinds.ini`,
-  `Jogar.bat`), escrever `VERSION.txt` e registrar em [releases/README.md](releases/README.md).
 
 ## Regras
 
 - **Nenhum dado do jogo entra no repositório**: `.gitignore` bloqueia `.bin/.cue/.XA/.STR/SLUS_*`,
   `extracted/`, `bios/`, `saves/`, `releases/*` (exceto o README e os textos das releases) e as texturas capturadas/ampliadas
-  (`texture-packs/`). O jogo é lido do disco local do usuário.
+  (`texture-packs/`). O jogo é lido do disco local do usuário, em `disc/` (só o `disc/README.md` é versionado).
 - Sem deploy nem publicação de binários do jogo.
 
 ## Android (Polygonia)

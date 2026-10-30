@@ -10,7 +10,7 @@ if not exist "%DIR%Bust_A_Groove_2_Recompiled.exe" (
     pause
     exit /b 1
 )
-set DISC=C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\Bust A Groove 2 (USA).cue
+set DISC=%~dp0..\..\..\disc\Bust A Groove 2 (USA).cue
 if not "%~1"=="" set DISC=%~1
 cd /d "%DIR%"
 start "" "%DIR%Bust_A_Groove_2_Recompiled.exe" --game game.toml --disc "%DISC%"
