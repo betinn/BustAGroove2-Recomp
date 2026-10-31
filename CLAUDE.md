@@ -5,10 +5,12 @@ Projeto pessoal, uso local. A versão para navegador (archive/web/) foi **abando
 Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`; pasta local
 `<pasta do repo>` (renomeada de `BustAGroove2Web` em 2026-10-24).
 
-**Android**: fork GPLv3 do DuckStation chamado **Polygonia** em `<pasta do Polygonia>`
-(GitHub `betinn/Polygonia`, público). Tudo sobre ele em `docs/android-fork.md`: commit base, toolchain
-(`<TOOLS>\android-sdk`, JDK 11/21), bug do OpenBIOS, rename, Play. Keystore em
-`<pasta das chaves>\` (fora de qualquer repo).
+**Android** (desde 2026-10-30, fase 7): **APK nativo do mesmo jogo recompilado** (runtime do PSXRecomp + C gerado
++ plugins do remake + SDL3, arm64, OpenGL ES 3.2), projeto Gradle em `android/`, scripts em `recomp/android/`,
+tudo em `docs/android-apk.md`. O APK leva disco e BIOS: uso próprio, nunca Play nem repositório público; os dados
+ficam fora do git (`android/app/src/main/assets/`, `jniLibs/` e `game/build-android/` ignorados). Keystore própria em
+`<pasta das chaves>\BAG2-keys\` (fora de qualquer repo). O fork do DuckStation (**Polygonia**, `docs/android-fork.md`,
+GitHub `betinn/Polygonia`) foi o caminho anterior e não é mais mexido.
 
 ## Regras fixas
 - (só `releases/README.md` e os textos de cada release desde a v2.0.0: `VERSION.txt`, `game.toml`,
@@ -67,7 +69,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   deduplicados) em `build/mods/texture-packs/SLUS-01159/replacements/` (fora do git). Para capturar mais palcos:
   `build/mods/state.toml` com `dump = "true"`, `replacements = "false"` (strings), jogar, fechar a janela (não
   `Stop-Process`, senão perde o último lote), rodar o script de novo (incremental). Notas §12 e §12.1.
-- **Framework patcheado localmente**, três patches em `recomp/patches/`, nesta ordem:
+- **Framework patcheado localmente**, quatro patches em `recomp/patches/`, nesta ordem (o 4º, `psxrecomp-android.patch`, é o do Android: só muda a build sob `ANDROID`/`PSX_GLES`; gerado por `make_android_patch.py`, ver `docs/android-apk.md` §2):
   `psxrecomp-hd-cache-caps.patch` (caches do mod HD ampliados; sem isso a partida trava, 13–35 fps),
   `psxrecomp-texture-bank-render-thread.patch` (bancos de textura na thread de render, para o fallback por pacotes)
   e `psxrecomp-host-draw.patch` (desenho de host do remake; sem ele o plugin não compila; desde 2026-10-27 sem
@@ -202,8 +204,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 
 ## Próximo passo
 - **Remake visual (prioridade)**: plano completo, fases e estado em `docs/remake-plano.md`. Fases 0–6, 6b e 6c feitas
-  (HEAT, palco, os dois jogadores, o elenco, a memória, os palcos pelo caminho novo e os três itens que faltavam). Próxima: **fase 7, o port para o
-  Polygonia** (personagens e palcos juntos; ganchos e memória dos palcos em "Fase 7" do plano); depois 8 (abertura).
+  (HEAT, palco, os dois jogadores, o elenco, a memória, os palcos pelo caminho novo e os três itens que faltavam). **Fase 7 (Android,
+  APK nativo) em andamento**: estado, medições e pendências em `docs/android-apk.md` §5; depois 8 (abertura).
 - Fase 6b fechou o render do 236 (+2 na ordem que dava +11), o RTPT em linha (chão do 233, asfalto do 236), a segunda
   volta de dumps, o Phong nas peças curvas, 241 e 245 no jogo, as texturas da VRAM, a janela de textura e a causa do
   HEAT × COMET (driver, não pixel). 13 palcos a 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a

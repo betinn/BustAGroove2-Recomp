@@ -96,6 +96,48 @@ BAG2_STAGE_MODE=full bash recomp/android/build.sh stage apk   # APK completo (as
   (remake 3,3 GB em 66 assets, disco 585 MB, pacote HD 132 MB); zlib reduz os assets do remake a ~30 % e o disco a
   ~67 %, então o APK completo deve ficar em ~1,6 GB (o aapt comprime `assets/`).
 
-## 5. Estado e medições
+## 5. Estado e medições (2026-10-30)
 
-(em andamento — preenchido conforme os testes no aparelho)
+O que já roda no tablet (build de desenvolvimento, `PSX_DEBUG_TOOLS=ON`, dados por `adb push`):
+- Boot pelo OpenBIOS, abertura (FMV), menus 4:3 com faixas, partida 2P pelo harness
+  (`python tools/tests/android_session.py 30 HEAT COMET 0`: `who()` = HEAT, COMET) no 233 com **personagens
+  (Phong + texturas HD), geometria e pós-efeito do palco, pacote HD e 16:9** ligados — `heat_chars`: 2 assets
+  carregados, 306 MB de GPU; `stage_stats`: `ready=1`; nenhum shader recusado pelo compilador da Mali.
+- Paisagem forçada (`SDL_ORIENTATIONS` + targetSdk 35), janela 2960×1848, painel de 120 Hz (o runtime mantém o
+  ritmo de 59,94 Hz por relógio de parede; `GL temporal frame blending disabled (host 120.0 Hz)`).
+- Temperatura da bateria 26 °C depois de ~4 min de partida; processo com ~1,0 GB residentes (22 GB virtuais).
+
+### Medições (`tools/tests/android_perf.py`, 60 s por janela na partida, log por segundo)
+
+| variante (escala interna 5x = 1200 linhas) | fps méd / mín | s < 59,5 | jogo méd/máx | render méd/máx | underruns |
+|---|---|---|---|---|---|
+| remake inteiro (`heat_mode 1; stage_post 1; stage_geo 1`), 1 dançarino* | 59,9 / 59,7 | 0 | 49 / 51 % | 67 / 79 % | 0 |
+| original (`0;0;0`), 1 dançarino* | 59,9 / 59,6 | 0 | 53 / 56 % | 86 / 90 % | 0 |
+
+\* nessa rodada a rota do 2P deixou o P2 vazio (ver `enter_match_checked`). Como no PC, o remake **baixa** a
+render thread (o desenho de host substitui os pacotes do PS1 e as texturas HD por lotes grandes).
+
+### PC sem regressão
+`game/build` e `game/build-debug` recompilados com o 4º patch (só objetos do framework; o C gerado não muda).
+Partida 2P HEAT × COMET no 233 pela build-debug (`game_session.py 12 HEAT COMET 0`): 59,9 fps, jogo 31 %, render
+38 % a 9x, capturas de 4608×2160 iguais às da fase 6c (remake inteiro). Cuidado: um `adb forward tcp:4370`
+esquecido faz o harness do PC falar com o tablet (por isso o do Android usa a porta 4371).
+
+### Partida 2P inteira a 5x (HEAT × COMET no 233, 4 janelas de 45 s seguidas, `tablet_escala`)
+
+| janela | fps méd / mín | s < 59,5 | jogo méd/máx | render méd/máx | underruns | bateria |
+|---|---|---|---|---|---|---|
+| 1 | 59,9 / 59,8 | 0 | 49 / 51 % | 79 / 87 % | 0 | 26,6 °C |
+| 2 | 59,9 / 59,7 | 0 | 50 / 52 % | 71 / 90 % | 0 | 26,6 °C |
+| 3 | 59,9 / 59,6 | 0 | 50 / 64 % | 58 / 76 % | 0 | 26,6 °C |
+| 4 | 59,9 / 59,7 | 0 | 49 / 50 % | 39 / 42 % | 0 | 26,7 °C |
+
+**Decisão: escala interna 5x** (`internal_resolution = "1080p"`, 2560×1200 na tela larga, apresentado em
+2960×1665). A render thread chega a 90 % nos picos da música; 6x custaria 1,44× os pixels e passaria do quadro.
+`dynres_force` não vale com `dynamic_resolution = false` (a varredura ao vivo exige ligá-la; fica como opção se
+um aparelho mais fraco precisar: piso 3x, teto 8x). A Mali não tem *timer query*, então o tempo de GPU por
+peça (`gpu_timers`) não é medido no tablet; a medida é a ocupação da render thread.
+
+Rota do 2P no tablet: na primeira tentativa depois do boot o P2 ficou vazio (o `set_input` da porta 2 feito na
+hora da seleção não foi visto); `enter_match_checked` repete pela pausa/QUIT e o harness agora liga a porta 2
+logo depois do `ping`.

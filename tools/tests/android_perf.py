@@ -6,8 +6,9 @@ relata, das linhas por segundo do log do aparelho (PSX_FRAME_REPORT_MS=1000 pelo
 segundos abaixo de 59,5, emu_busy e render_busy médios e máximos; `audio_stats` antes/depois (underruns = estalos);
 temperatura da bateria (dumpsys battery) no fim de cada janela.
 
-Variante = "heat_mode;stage_post;stage_geo" (args de cada comando; vazio = não mexe), como no game_perf.py:
-    "1;1;1" remake inteiro (padrão), "0;0;0" original, "1;0;1" sem pós-efeito.
+Variante = "heat_mode;stage_post;stage_geo;escala" (args de cada comando; vazio = não mexe), como no game_perf.py
+mais a escala interna ao vivo (`dynres_force`, dentro do teto alocado na partida: 8x com internal_resolution 1080p):
+    "1;1;1" remake inteiro (padrão), "0;0;0" original, "1;0;1" sem pós-efeito, "1;1;1;6" remake a 6x.
 Uso: python tools/tests/android_perf.py [rótulo] [variantes separadas por |] [segundos]
      ex.: python tools/tests/android_perf.py tablet "1;1;1|0;0;0" 60
 """
@@ -54,14 +55,15 @@ def main():
     s.start()
     rows = []
     try:
-        s.enter_match()
-        print('personagens', s.who(), flush=True)
+        print('personagens', s.enter_match_checked(), flush=True)
         time.sleep(3)
         for v in variants:
-            parts = (v.split(';') + ['', '', ''])[:3]
-            for name, args in zip(('heat_mode', 'stage_post', 'stage_geo'), parts):
+            parts = (v.split(';') + ['', '', '', ''])[:4]
+            for name, args in zip(('heat_mode', 'stage_post', 'stage_geo'), parts[:3]):
                 if args != '':
                     s.cmd({'cmd': 'mod_cmd', 'name': name, 'args': args})
+            if parts[3] != '':   # escala interna ao vivo (dynres_force; 0 solta), dentro do teto alocado (8x aqui)
+                print('dynres_force', s.cmd({'cmd': 'dynres_force', 'scale': int(parts[3])}), flush=True)
             time.sleep(2)
             n0 = len(fps_lines(s))
             u0 = underruns(s)
