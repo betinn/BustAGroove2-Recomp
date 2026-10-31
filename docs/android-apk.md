@@ -1,0 +1,101 @@
+# APK Android do Bust A Groove 2 recompilado
+
+Fase 7 do remake (`docs/remake-plano.md`), decidida em 2026-10-30: o Android sai como **APK nativo do mesmo
+jogo recompilado** (runtime do PSXRecomp + C gerado + plugins do remake), não mais pelo Polygonia (fork do
+DuckStation, que fica como está; `docs/android-fork.md` continua valendo só para ele). O APK leva disco e BIOS:
+**uso próprio, nunca Google Play nem repositório público**, e nenhum dado do jogo entra no git.
+
+Aparelho de referência: Samsung Galaxy Tab S10 Ultra (SM-X920), Android 16 (API 36), Dimensity 9300+, GPU
+Mali-G720-Immortalis MC12 (OpenGL ES 3.2, Vulkan), 12 GB, tela 2960×1848.
+
+## 1. Arquitetura
+
+```
+APK (Gradle, android/)                         Aparelho (primeira execução)
+├── lib/arm64-v8a/libBust_A_Groove_2_Recompiled.so   runtime + jogo + SDL3 estático (47 MB com strip)
+├── classes.dex  SDLActivity (SDL3 3.4.10) + BAG2Activity + SetupActivity + AssetInstaller
+└── assets/bag2/ game.toml, disc/, bios/, mods/{bundled,remake,texture-packs}, settings/keybinds/input
+                 ──SetupActivity──► /sdcard/Android/data/io.github.betinn.bag2/files/ (4,0 GB)
+```
+
+- **Uma só biblioteca nativa.** O projeto do jogo (`game/CMakeLists.txt`, o mesmo do PC) é configurado com a
+  toolchain do NDK 28 (`recomp/android/build.sh configure`); o framework, sob `ANDROID`, cria o alvo como
+  `add_library(SHARED)` em vez de `add_executable` (SDL3 exige: a Java `SDLActivity` carrega a `.so` e chama o
+  `SDL_main` dela). O SDL3 entra estático (FetchContent do framework, mesma versão do PC); o `JNI_OnLoad` e os
+  `Java_org_libsdl_app_*` são exportados pela nossa `.so`, então `getLibraries()` devolve só ela.
+- **O Gradle só empacota.** A `.so` é compilada fora do Gradle (cmake + ninja, ~2,5 min para os 600 objetos no
+  PC) e copiada com `llvm-strip` para `android/app/src/main/jniLibs/arm64-v8a/`; os dados do jogo entram em
+  `android/app/src/main/assets/bag2/` por links físicos (`recomp/android/stage.py full`). As duas pastas são
+  ignoradas pelo git.
+- **Dados em arquivos comuns.** O runtime lê `game.toml`, disco, BIOS, mods e cartões por `fopen`/`ifstream`
+  ancorados na "pasta do exe". No Android essa âncora é `SDL_GetAndroidExternalStoragePath()`
+  (`/sdcard/Android/data/io.github.betinn.bag2/files`), e a `SetupActivity` extrai `assets/bag2/**` para lá na
+  primeira execução (ou quando o carimbo do manifesto muda), com barra de progresso; depois abre a
+  `BAG2Activity`. A pasta é acessível por `adb` (push/pull de dados, `log.txt`, capturas), o que dá o ciclo de
+  desenvolvimento: **APK pequeno (modo `external`, sem assets) + `adb push` dos dados uma vez.**
+- **Debug server pela USB.** A build Android sai com `PSX_DEBUG_TOOLS=ON` por padrão (`BAG2_ANDROID_DEBUG_TOOLS`):
+  `adb forward tcp:4370 tcp:4370` e os scripts de `tools/remake/` e `tools/tests/` (`game_session.py`,
+  `game_perf.py`, comandos `heat_*`, `stage_*`) falam com o jogo no tablet como falam com a build-debug do PC.
+- `stdout`/`stderr` do runtime vão para o logcat (tag `psxrecomp`) e para `<files>/log.txt` (patch).
+
+## 2. O que mudou no framework: `recomp/patches/psxrecomp-android.patch` (4º patch, depois dos três do PC)
+
+Tudo atrás de `__ANDROID__` / `PSX_GLES` (definido em `runtime.cmake` só quando `ANDROID`): a build do PC compila
+o mesmo código de antes.
+
+| Arquivo | Mudança |
+|---|---|
+| `runtime/runtime.cmake` | `add_library(SHARED)` no Android; link com `GLESv3 EGL android log dl`; `PSX_GLES=1` |
+| `runtime/src/psx_fiber.c` | backend AArch64 próprio (o bionic declara `makecontext`/`swapcontext` mas não os implementa): troca de contexto em assembly guardando x19–x30 e d8–d15 na pilha da fibra, trampolim que chama a entrada |
+| `runtime/src/gpu_gl_renderer.c` | caminho **GLES 3.2** (§3) |
+| `runtime/src/main.cpp` | contexto `SDL_GL_CONTEXT_PROFILE_ES` 3.2; `exe_dir_from_argv` devolve a pasta de arquivos do app; `chdir` nela no começo do `main` (os plugins abrem `mods/remake/*.bin` por caminho relativo); `stdout`/`stderr` para logcat + `log.txt` |
+| `runtime/src/quality_probe.c` | perfil ES na sonda da GPU (segunda janela: no Android falha e a sonda só desiste) |
+
+Fora do framework: `game/src/bag2_heat.c`/`bag2_stage.c` passam `gles = 1` ao núcleo `src/remake/` quando
+`PSX_GLES` (o núcleo já escolhia `#version 300 es` por essa flag desde a fase 1); `timespec_get` exige API 29
+(`minSdk 29`).
+
+## 3. GL 3.3 core → OpenGL ES 3.2 no `gpu_gl_renderer.c`
+
+Levantamento (2026-10-30): o renderizador usa ~90 entradas de GL, quase todas no núcleo do ES 3.0. O que não
+tinha par e como ficou (tudo sob `PSX_GLES`, com os mesmos nomes para o corpo do arquivo não mudar):
+
+| GL 3.3 | ES 3.2 (Mali-G720) |
+|---|---|
+| `#version 330` (29 shaders, todos por `compile_shader`) | reescrito em tempo de execução para `#version 320 es` + `#define PSX_GLES` + `precision highp` (float, int, samplers) |
+| `noperspective` (varyings `v_col`, `v_uv`, `v_b3d`, `v_npos` dos programas GEO e TEX: a interpolação afim do PS1) | não existe no GLSL ES (nem a extensão NV na Mali). Emulado: o vertex shader manda `v*w` e `w`, o fragment divide (`lerp_tela(v·w)/lerp_tela(w)` = interpolação linear na tela, exata). Onde `w = 1` (sem PGXP de perspectiva) não muda nada |
+| *dual-source blending* (`glBindFragDataLocationIndexed`, `GL_SRC1_ALPHA`: lote misto opaco/semitransparente do modo 4 num desenho só) | `EXT_blend_func_extended` não existe na Mali; usa `EXT_shader_framebuffer_fetch` (`inout frag`): o shader lê o destino e faz `src + dst·fator` ele mesmo, com `GL_BLEND` desligado nesse caminho |
+| `glGetTexImage` (2 usos, só dumps) | textura num FBO temporário + `glReadPixels` |
+| `glReadPixels(GL_BGRA)` (4 usos) | leitura RGBA + troca R/B na CPU (`EXT_read_format_bgra` só vale para o formato preferido) |
+| `glTexImage2D(GL_RGBA, …, GL_BGRA)` | `internalformat = GL_BGRA_EXT` (`EXT_texture_format_BGRA8888`) |
+| `glClearDepth`, `GL_BACK_LEFT` | `glClearDepthf`, `GL_BACK` |
+| `glMapBuffer`, `glQueryCounter`/`GL_TIMESTAMP`, `GL_TIME_ELAPSED` | já eram opcionais (ponteiro nulo desliga o recurso); a Mali não tem *timer query* (`EXT_disjoint_timer_query` ausente), então `gpu_timers` não mede no tablet |
+
+Extensões conferidas no aparelho (`dumpsys SurfaceFlinger`): `EXT_color_buffer_float` (alvos RGBA32F do PGXP e do
+remake), `EXT_shader_framebuffer_fetch`, `ARM_shader_framebuffer_fetch`, `EXT_texture_format_BGRA8888`,
+`EXT_sRGB_write_control`, `EXT_clip_control`, `EXT_texture_filter_anisotropic`, `OES_texture_float_linear`,
+`KHR_texture_compression_astc_ldr`, `EXT_texture_border_clamp`. Ausentes: `EXT_blend_func_extended`,
+`EXT_disjoint_timer_query`, `NV_shader_noperspective_interpolation`.
+
+## 4. Build e ciclo de desenvolvimento
+
+```bash
+bash recomp/android/build.sh configure      # uma vez (cmake + NDK, SDL3/zlib/libchdr/libwebp das fontes já baixadas pela build do PC)
+bash recomp/android/build.sh native stage apk install   # .so (~2,5 min) + APK pequeno (modo external) + adb install
+bash recomp/android/build.sh push run       # dados (4 GB, uma vez) e logcat
+BAG2_STAGE_MODE=full bash recomp/android/build.sh stage apk   # APK completo (assets dentro)
+```
+
+- `recomp/android/env.sh`: SDK/NDK em `C:\tools\android-sdk` (NDK 28.2.13676358, build-tools 36, platform 36 já
+  instalados pelo Polygonia), JDK 21 em `C:\tools\jdk-21.0.12.1+1`, cmake/ninja do pip. Gradle 8.9 + AGP 8.7.3
+  (wrapper copiado do Polygonia; distribuição já em `~/.gradle`).
+- Assinatura: `C:\Users\sem-m\BAG2-keys\` (keystore própria, alias `bag2`, RSA 4096; `LEIA-ME.txt` pede backup;
+  `app/build.gradle` lê o caminho em `BAG2_KEYSTORE_PROPERTIES`). Debug e release assinados com a mesma chave para
+  `adb install -r` trocar uma pela outra sem desinstalar (desinstalar apaga os 4 GB extraídos).
+- Tamanhos: `.so` 304 MB sem strip (fica em `game/build-android/` para `ndk-stack`), 47 MB com strip. Dados: 4,0 GB
+  (remake 3,3 GB em 66 assets, disco 585 MB, pacote HD 132 MB); zlib reduz os assets do remake a ~30 % e o disco a
+  ~67 %, então o APK completo deve ficar em ~1,6 GB (o aapt comprime `assets/`).
+
+## 5. Estado e medições
+
+(em andamento — preenchido conforme os testes no aparelho)

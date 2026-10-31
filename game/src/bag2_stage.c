@@ -18,6 +18,12 @@
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
+/* Android (PSX_GLES): o núcleo compila os shaders como GLSL ES 3.00. */
+#if defined(PSX_GLES)
+#define BAG2_GLES 1
+#else
+#define BAG2_GLES 0
+#endif
 #include "gpu_timer.h"
 
 #include <math.h>
@@ -203,7 +209,7 @@ static void stage_char_update(struct CPUState* cpu, uint32_t address) {
 static void stage_host_draw(const PSXModHostDrawTarget* t, const void* payload, uint32_t bytes) {
     const double t0 = st_now_us();
     if (!s_post && !s_failed) {
-        s_post = rmk_post_create(t->get_proc, 0);
+        s_post = rmk_post_create(t->get_proc, BAG2_GLES);
         if (!s_post) s_failed = 1;
     }
     if (!s_ready && !s_failed) {
@@ -1400,7 +1406,7 @@ static void geo_host_draw(const PSXModHostDrawTarget* t, const void* payload, ui
     Stg* s = &s_st[i];
     if (s->state != 2) return;
     if (!s->gl && !s->rt_failed) {
-        s->gl = rmk_stage_gl_create(t->get_proc, 0);
+        s->gl = rmk_stage_gl_create(t->get_proc, BAG2_GLES);
         if (!s->gl) s->rt_failed = 1;
     }
     if (!s->rt_ready && !s->rt_failed) {

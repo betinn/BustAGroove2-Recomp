@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:installLocation="internalOnly">
+
+    <!-- OpenGL ES 3.2: o renderizador do PSXRecomp sob PSX_GLES e o remake (src/remake) -->
+    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.type.pc" android:required="false" />
+
+    <!-- Sem permissões de armazenamento: tudo fica em Android/data/<pacote>/files (getExternalFilesDir),
+         acessível por adb para testes. INTERNET só pelo servidor TCP de debug na porta 4370 (loopback, via
+         `adb forward`): sem a permissão o bionic recusa socket(). O modo online fica para depois. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:theme="@style/AppTheme"
+        android:enableOnBackInvokedCallback="false"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true">
+
+        <!-- SDL_ENV.*: a SDLActivity põe no ambiente do processo antes do SDL_main (meta-data do application).
+             SDL_ORIENTATIONS: o SDL chama setRequestedOrientation ele mesmo e ignora o screenOrientation do
+             manifesto; sem isto o jogo abre em retrato com faixas pretas. PSX_FRAME_REPORT_MS: uma linha
+             "fps=... emu_busy=... render_busy=..." por segundo no log, como no PC. -->
+        <meta-data android:name="SDL_ENV.SDL_ORIENTATIONS" android:value="LandscapeLeft LandscapeRight" />
+        <!-- Android 16 em tela grande ignora a orientação pedida por apps com targetSdk 36; além do targetSdk 35,
+             a propriedade de compatibilidade pede para respeitar as restrições do app. -->
+        <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        <meta-data android:name="SDL_ENV.PSX_FRAME_REPORT_MS" android:value="1000" />
+
+        <!-- Primeira execução: extrai os dados do jogo do APK para a pasta de arquivos (com progresso)
+             e então abre o jogo. Nas seguintes, só confere o carimbo e abre direto. -->
+        <activity
+            android:name=".SetupActivity"
+            android:label="@string/app_name"
+            android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- O jogo (SDLActivity do SDL3 + libBust_A_Groove_2_Recompiled.so). screenOrientation e
+             resizeableActivity como no Polygonia: o One UI abria o app em janela pop-up e ignorava a
+             orientação (docs/android-fork.md §5). -->
+        <activity
+            android:name=".BAG2Activity"
+            android:label="@string/app_name"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

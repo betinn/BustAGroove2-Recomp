@@ -1,0 +1,12 @@
+# settings.toml do APK Android (docs/android-apk.md). Preferências do jogador, lidas ao lado do game.toml.
+# quality_preset = "custom" com base "ultra": sem isso o runtime detecta a GPU móvel como "low" e aplica o
+# [quality.low] do game.toml (filtro nearest, resolução dinâmica, sem render thread). O preset "custom" não é
+# redetectado quando a impressão digital do hardware muda.
+
+[video]
+fullscreen        = 1
+quality_preset    = "custom"
+quality_base      = "ultra"
+quality_detected  = "ultra"
+
+[audio]

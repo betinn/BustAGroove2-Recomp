@@ -10,8 +10,8 @@ números, testes) ficam em `docs/remake-visual.md`. Toda sessão que avançar um
 ## Objetivo
 Salto visual grande no jogo em si (palco + jogadores), sem artista humano, mantendo 60 fps estáveis com
 folga e sem engasgo de áudio, com a mesma jogabilidade. Nada de mudança que quase não se nota. A abertura em
-vídeo fica para depois (fase 8). Primeiro no exe de PC; o port para o Android (Polygonia) vem depois e o PC
-já é construído pensando nele (fase 7).
+vídeo fica para depois (fase 8). Primeiro no exe de PC; o Android (fase 7) é o mesmo jogo recompilado num APK,
+então o PC já é construído pensando nele.
 
 ## Estado
 | Fase | O que | Estado |
@@ -25,7 +25,7 @@ já é construído pensando nele (fase 7).
 | 6 | Palcos: geometria e luz pelo caminho novo, pacote HD de todos os palcos | **feito** (2026-10-28): os 11 palcos da tela de palco pelo desenho de host, chão e fundos do overlay, pacote HD +92 texturas |
 | 6b | Pendências da fase 6: render do 236, chão por RTPT em linha, segunda volta de dumps HD, e na segunda rodada tudo o que faltava | **feito** (2026-10-28 e 2026-10-29): espelho do 16:9 só nas laterais, RTPT/RTPS em linha do overlay (chão do 233, asfalto do 236), sombra macia no cenário, sem junta entre ladrilhos; Phong nas peças curvas, 241 e 245, texturas da VRAM, janela de textura, causa do HEAT × COMET; na terceira rodada, cantos saturados com a projeção exata do GTE e paletas animadas por camada (cobertura 80–98 %); 13 palcos a 60 fps, render até +2 |
 | 6c | Os três itens que faltavam da fase 6: faces do 241, paletas animadas do 242/234, telão do 235; partida pelo teclado na build normal | **feito** (2026-10-30): 241 era um nó do modelo (prefixo `DR_TPAGE` nas listas 18..23/30/31, `packet_words`); paletas como variantes afins no shader (`.stg` v3: 242 58 camadas, 234 63, 0 texturas animadas com o jogo); telão do 235 = amostragem do buffer de tela, resolvido com a cópia do fbo no núcleo; 2 jogadores pelo teclado conferido |
-| 7 | Port para o Polygonia (Android) | **próxima** |
+| 7 | Android: APK nativo do jogo recompilado (era o port para o Polygonia) | **em andamento** (2026-10-30): APK roda a partida completa no tablet com o remake inteiro; falta fechar medições, controles Bluetooth e o APK completo (`docs/android-apk.md`) |
 | 8 | Abertura em vídeo ampliada por IA | futuro |
 
 ## Onde estamos (fim da fase 6c, 2026-10-30)
@@ -349,7 +349,23 @@ Pedido: partida na build normal pelo teclado (computer-use), faces sem par do 24
 das 64 camadas, telão do 235. Técnica e números em `docs/remake-visual.md`, "Fase 6c no jogo"; formato em
 `docs/formats.md` ("Palcos: conteúdo e desenho": prefixo `DR_TPAGE`, `.stg` v3, camada do telão).
 
-## Fase 7 — Port para o Polygonia (Android)
+## Fase 7 — Android: APK nativo do jogo recompilado (decidido em 2026-10-30)
+O caminho pelo Polygonia (DuckStation de 2021, sem plugins nem hook de função: o que está abaixo em "Caminho
+descartado") foi trocado por um **APK arm64 do mesmo jogo recompilado**: runtime do PSXRecomp + C gerado +
+plugins do remake + SDL3, com disco, BIOS e assets dentro do APK (uso próprio; nunca Play nem repositório
+público). Um código só para PC e Android. Tudo em `docs/android-apk.md`:
+- 4º patch do framework (`recomp/patches/psxrecomp-android.patch`): biblioteca compartilhada no Android, fibers
+  AArch64 próprias (o bionic não tem `makecontext`), **GL 3.3 core → OpenGL ES 3.2** no `gpu_gl_renderer.c`
+  (`noperspective` emulado por `v·w`/`w`, *dual-source blending* por `EXT_shader_framebuffer_fetch`,
+  `glGetTexImage`/`GL_BGRA` reescritos), pasta de arquivos do app como "pasta do exe", stdout no logcat.
+- O núcleo `src/remake/` compilou como GLES 3.00 sem mudança (a flag `gles` existia desde a fase 1).
+- Projeto Gradle em `android/`: `SetupActivity` extrai os dados na primeira execução; build de desenvolvimento
+  com `adb push`; servidor TCP 4370 pela USB (`adb forward`), então `game_session.py`/`android_session.py`
+  dirigem o jogo no tablet.
+- Estado (2026-10-30): partida 2P HEAT × COMET no 233 no Galaxy Tab S10 Ultra com personagens, palco, pós-efeito,
+  texturas HD e 16:9 ligados; medições e o que falta em `docs/android-apk.md` §5.
+
+### Caminho descartado: port para o Polygonia (notas mantidas)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.
 - Hook: detectar no CPU emulado a entrada de `0x80029D4C` e ler as matrizes da RAM.
 - Palcos (fase 6): as entradas de `DrawOTagEnv` (0x800486AC, trocar as sequências na OT antes do DMA), de `FUN_80029588`

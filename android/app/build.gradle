@@ -1,0 +1,89 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Assinatura: keystore FORA do repositório (C:/Users/sem-m/BAG2-keys, LEIA-ME.txt lá). O .properties tem
+// storeFile, storePassword, keyAlias e keyPassword. Caminho em BAG2_KEYSTORE_PROPERTIES (gradle.properties,
+// variável de ambiente ou -P). Sem o arquivo, a build release sai sem assinatura.
+def keystorePropertiesPath = project.findProperty('BAG2_KEYSTORE_PROPERTIES') ?:
+        System.getenv('BAG2_KEYSTORE_PROPERTIES') ?:
+        'C:/Users/sem-m/BAG2-keys/keystore.properties'
+def keystorePropertiesFile = file(keystorePropertiesPath)
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+// versionCode/versionName vêm do staging (recomp/android/stage.py grava app/version.properties a partir de
+// VERSION.txt + número de commits); sem o arquivo, 1 / "dev".
+def versionProps = new Properties()
+def versionFile = file('version.properties')
+if (versionFile.exists()) {
+    versionFile.withInputStream { versionProps.load(it) }
+}
+
+android {
+    namespace 'io.github.betinn.bag2'
+    compileSdk 36
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        applicationId 'io.github.betinn.bag2'
+        minSdk 29            // timespec_get no bionic; GLES 3.2 obrigatório (uses-feature no manifesto)
+        // 35, não 36: no Android 16 um app com targetSdk 36 não consegue travar a orientação em telas grandes
+        // (o tablet abria o jogo em retrato com faixas pretas); o APK não vai para a Play, então não há exigência.
+        targetSdk 35
+        versionCode = Integer.parseInt(versionProps.getProperty('versionCode', '1'))
+        versionName = versionProps.getProperty('versionName', 'dev')
+        ndk { abiFilters 'arm64-v8a' }
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProperties['storeFile']) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystoreProperties['storeFile']) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            // Mesma assinatura: `adb install -r` troca debug por release e vice-versa sem desinstalar
+            // (desinstalar apagaria os 2,5 GB extraídos em Android/data).
+            if (keystoreProperties['storeFile']) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    sourceSets.main {
+        // libBust_A_Groove_2_Recompiled.so copiada de game/build-android pelo build.sh (já com strip).
+        jniLibs.srcDirs = ['src/main/jniLibs']
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false   // páginas de 16 KB, .so mapeada direto do APK
+        }
+        // Os dados do jogo (assets/bag2/**) são extraídos para Android/data na primeira execução
+        // (SetupActivity). Deixar o aapt comprimir: o APK encolhe de ~4,3 GB para ~1,6 GB.
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError = false
+    }
+}

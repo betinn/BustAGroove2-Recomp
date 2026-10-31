@@ -37,6 +37,12 @@
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
+/* Android (PSX_GLES): o núcleo compila os shaders como GLSL ES 3.00. */
+#if defined(PSX_GLES)
+#define BAG2_GLES 1
+#else
+#define BAG2_GLES 0
+#endif
 #include "gpu_timer.h"
 
 #include <math.h>
@@ -1119,7 +1125,7 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     Chr* c = &s_ch[ch];
     if (c->state != 2) return;
     if (!c->gl && !c->rt_failed) {
-        c->gl = rmk_gl_create(t->get_proc, 0);
+        c->gl = rmk_gl_create(t->get_proc, BAG2_GLES);
         if (!c->gl) c->rt_failed = 1;
     }
     if (!c->rt_ready && !c->rt_failed) {

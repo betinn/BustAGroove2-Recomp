@@ -1,0 +1,564 @@
+diff --git a/runtime/runtime.cmake b/runtime/runtime.cmake
+index bfaa49c..5bde9c0 100644
+--- a/runtime/runtime.cmake
++++ b/runtime/runtime.cmake
+@@ -1650,12 +1650,23 @@ function(psxrecomp_add_runtime_target target)
+         set(mode_source ${PSXRECOMP_ROOT}/runtime/src/stub_interpreter.c)
+     endif()
+ 
++    if(ANDROID)
++        # Android: the runtime is a shared library that SDLActivity loads and
++        # whose SDL_main the Java side calls (SDL3 android-project contract).
++        add_library(${target} SHARED
++            ${PSXRECOMP_RUNTIME_SOURCES}
++            ${mode_source}
++            ${generated_sources}
++            ${PSXRT_EXTRAS_SOURCES}
++        )
++    else()
+     add_executable(${target}
+         ${PSXRECOMP_RUNTIME_SOURCES}
+         ${mode_source}
+         ${generated_sources}
+         ${PSXRT_EXTRAS_SOURCES}
+     )
++    endif()
+     target_link_libraries(${target} PRIVATE chdr-static psx_texture_image_decode)
+     psxrecomp_windows_manifest(${target})
+     psxrecomp_sha256_file(${target})
+@@ -2341,6 +2352,12 @@ function(psxrecomp_add_runtime_target target)
+         if(MINGW)
+             target_link_libraries(${target} PRIVATE winpthread)
+         endif()
++    elseif(ANDROID)
++        # GLES 3.2 + EGL (gpu_gl_renderer.c under PSX_GLES), logcat, dl.
++        target_compile_definitions(${target} PRIVATE PSX_GLES=1)
++        target_link_libraries(${target} PRIVATE GLESv3 EGL android log dl)
++        find_package(Threads REQUIRED)
++        target_link_libraries(${target} PRIVATE Threads::Threads)
+     else()
+         if(CMAKE_DL_LIBS)
+             target_link_libraries(${target} PRIVATE ${CMAKE_DL_LIBS})
+diff --git a/runtime/src/gpu_gl_renderer.c b/runtime/src/gpu_gl_renderer.c
+index 3a410da..64e996c 100644
+--- a/runtime/src/gpu_gl_renderer.c
++++ b/runtime/src/gpu_gl_renderer.c
+@@ -103,7 +103,12 @@
+ #include "present_thread.h"
+ 
+ #include "psx_sdl.h"
+-#if defined(PSX_SDL3)
++#if defined(PSX_GLES)
++/* OpenGL ES 3.2 (Android): the ES headers export every entry point directly;
++ * SDL_GL_GetProcAddress still resolves the p_gl* pointers below. */
++#include <GLES3/gl32.h>
++#include <GLES2/gl2ext.h>
++#elif defined(PSX_SDL3)
+ #include <SDL3/SDL_opengl.h>
+ #else
+ #include <SDL_opengl.h>
+@@ -156,6 +161,71 @@ static uint64_t s_fg_flips;   /* frame generation (below): game frames seen */
+ #define APIENTRY
+ #endif
+ 
++#if defined(PSX_GLES)
++/* ---- GLES 3.2 seam ------------------------------------------------------ *
++ * The renderer is written against GL 3.3 core. What ES lacks is emulated here
++ * with the same names so the body of the file stays identical:
++ *   glClearDepth        -> glClearDepthf
++ *   GL_BACK_LEFT        -> GL_BACK (default framebuffer attachment query)
++ *   glReadPixels(BGRA)  -> RGBA read + R/B swap (EXT_read_format_bgra is not
++ *                          guaranteed for every framebuffer)
++ *   glTexImage2D(BGRA)  -> internalformat GL_BGRA_EXT (EXT_texture_format_BGRA8888)
++ *   glGetTexImage       -> attach to a scratch FBO + glReadPixels (dumps only)
++ * The GLSL 330 sources are rewritten to GLSL ES 3.20 in compile_shader, and
++ * dual-source blending (absent on Mali) becomes a framebuffer-fetch blend in
++ * TEX_FS (see tex_draw_passes_ex). */
++#define glClearDepth(d) glClearDepthf((GLfloat)(d))
++#ifndef GL_BACK_LEFT
++#define GL_BACK_LEFT GL_BACK
++#endif
++static void psx_gles_ReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum fmt, GLenum type, void *out) {
++    if (fmt != GL_BGRA_EXT) { glReadPixels(x, y, w, h, fmt, type, out); return; }
++    glReadPixels(x, y, w, h, GL_RGBA, type, out);
++    GLint row = 0; glGetIntegerv(GL_PACK_ROW_LENGTH, &row);
++    if (row <= 0) row = w;
++    for (GLsizei j = 0; j < h; j++) {
++        uint8_t *r = (uint8_t *)out + (size_t)j * (size_t)row * 4u;
++        for (GLsizei i = 0; i < w; i++) { uint8_t t = r[4 * i]; r[4 * i] = r[4 * i + 2]; r[4 * i + 2] = t; }
++    }
++}
++static void psx_gles_TexImage2D(GLenum target, GLint level, GLint internal, GLsizei w, GLsizei h, GLint border,
++                                GLenum fmt, GLenum type, const void *px) {
++    if (fmt == GL_BGRA_EXT) internal = GL_BGRA_EXT;
++    glTexImage2D(target, level, internal, w, h, border, fmt, type, px);
++}
++static void psx_gles_GetTexImage(GLenum target, GLint level, GLenum fmt, GLenum type, void *out) {
++    GLint tex = 0, w = 0, h = 0, prev = 0;
++    (void)type;
++    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
++    glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &w);
++    glGetTexLevelParameteriv(target, level, GL_TEXTURE_HEIGHT, &h);
++    if (w <= 0 || h <= 0) return;
++    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev);
++    GLuint fbo = 0;
++    glGenFramebuffers(1, &fbo);
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
++    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target, (GLuint)tex, level);
++    uint8_t *rgba = (uint8_t *)malloc((size_t)w * (size_t)h * 4u);
++    if (rgba) {
++        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
++        if (fmt == GL_RGB) {
++            uint8_t *o = (uint8_t *)out;
++            for (size_t i = 0, n = (size_t)w * (size_t)h; i < n; i++) {
++                o[3 * i] = rgba[4 * i]; o[3 * i + 1] = rgba[4 * i + 1]; o[3 * i + 2] = rgba[4 * i + 2];
++            }
++        } else {
++            memcpy(out, rgba, (size_t)w * (size_t)h * 4u);
++        }
++        free(rgba);
++    }
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev);
++    glDeleteFramebuffers(1, &fbo);
++}
++#define glReadPixels  psx_gles_ReadPixels
++#define glTexImage2D  psx_gles_TexImage2D
++#define glGetTexImage psx_gles_GetTexImage
++#endif /* PSX_GLES */
++
+ #define VRAM_W 1024
+ #define VRAM_H 512
+ /* GL_MAX_INTERNAL_SCALE (the compile-time ceiling) lives in gpu_render.h; the
+@@ -356,7 +426,13 @@ static int load_modern_gl(void) {
+     LOAD(p_glBindBuffer, "glBindBuffer");        LOAD(p_glBufferData, "glBufferData");
+     LOAD(p_glVertexAttribPointer, "glVertexAttribPointer");
+     LOAD(p_glEnableVertexAttribArray, "glEnableVertexAttribArray");
++#if defined(PSX_GLES)
++    /* No dual-source blending in ES (EXT_blend_func_extended is missing on
++     * Mali); TEX_FS blends mixed semi batches with framebuffer fetch instead. */
++    p_glBindFragDataLocationIndexed = NULL;
++#else
+     LOAD(p_glBindFragDataLocationIndexed, "glBindFragDataLocationIndexed");
++#endif
+     LOAD(p_glGenFramebuffers, "glGenFramebuffers"); LOAD(p_glBindFramebuffer, "glBindFramebuffer");
+     LOAD(p_glDeleteFramebuffers, "glDeleteFramebuffers");
+     LOAD(p_glFramebufferTexture2D, "glFramebufferTexture2D");
+@@ -1806,11 +1882,18 @@ static const char *GEO_VS =
+     "uniform float u_xscale; /* native-wide 2D-backdrop x-stretch; 1 canonical */\n"
+     "uniform float u_xcenter;/* stretch centre in VRAM px; 0 canonical */\n"
+     "uniform float u_zbias;  /* PGXP depth: relative near bias of the colour pass */\n"
++    /* GLSL ES has no noperspective: under PSX_GLES these varyings travel
++     * pre-multiplied by w next to w itself (screen-linear after the divide). */
++    "#ifdef PSX_GLES\n"
++    "out vec4 v_col_np; out float v_b3d_np; out vec2 v_npos_np; out float v_np_w;\n"
++    "#define v_col v_col_np\n#define v_b3d v_b3d_np\n#define v_npos v_npos_np\n"
++    "#else\n"
+     "noperspective out vec4 v_col;\n"
+-    "smooth out vec3 v_col_p;   /* perspective-correct colour (PGXP, G1.14) */\n"
+-    "flat out int v_cp;\n"
+     "noperspective out float v_b3d;   /* bloom source: 1 on a PGXP 3D vertex */\n"
+     "noperspective out vec2 v_npos;  /* native VRAM position (dithering) */\n"
++    "#endif\n"
++    "smooth out vec3 v_col_p;   /* perspective-correct colour (PGXP, G1.14) */\n"
++    "flat out int v_cp;\n"
+     "flat out int v_dith;            /* this primitive is dither-eligible */\n"
+     "void main(){\n"
+     "  v_npos = a_pos;\n"
+@@ -1835,14 +1918,24 @@ static const char *GEO_VS =
+     "    float l = u_xcenter - h, r = u_xcenter + h;\n"
+     "    if (xb < l) xb = l + (xb-l)*s; else if (xb > r) xb = r + (xb-r)*s;\n"
+     "  } else xb = (xb - u_xcenter)*u_xscale + u_xcenter;\n"
++    "#ifdef PSX_GLES\n"
++    "  v_col_np *= w; v_b3d_np *= w; v_npos_np *= w; v_np_w = w;\n"
++    "#endif\n"
+     "  gl_Position = vec4(((xb+u_shift+u_xoff)/u_xhalf - 1.0) * w, ((a_pos.y+u_shift)/256.0 - 1.0) * w, zn * w, w); }\n";
+ static const char *GEO_FS =
+     "#version 330\n"
+-    "noperspective in vec4 v_col; smooth in vec3 v_col_p; flat in int v_cp; out vec4 frag;\n"
++    "#ifdef PSX_GLES\n"
++    "in vec4 v_col_np; in float v_b3d_np; in vec2 v_npos_np; in float v_np_w;\n"
++    "#define v_col (v_col_np / v_np_w)\n#define v_b3d (v_b3d_np / v_np_w)\n#define v_npos (v_npos_np / v_np_w)\n"
++    "#else\n"
++    "noperspective in vec4 v_col;\n"
+     "noperspective in float v_b3d;\n"
++    "noperspective in vec2 v_npos;\n"
++    "#endif\n"
++    "smooth in vec3 v_col_p; flat in int v_cp; out vec4 frag;\n"
+     "uniform int u_bcls;   /* bloom source pass (gl_postfx.inc): 0 off, 2 clear, 1 mark */\n"
+     "uniform int u_badd;   /* this batch blends additively */\n"
+-    "noperspective in vec2 v_npos; flat in int v_dith;\n"
++    "flat in int v_dith;\n"
+     PSX_DITHER_GLSL
+     "void main(){\n"
+     "  if (u_bcls != 0) { if (u_bcls == 1 && !(v_b3d > 0.999 || u_badd != 0)) discard; frag = vec4(0.0); return; }\n"
+@@ -1884,7 +1977,14 @@ static const char *TEX_VS =
+     "uniform float u_xscale; /* native-wide 2D-backdrop x-stretch; 1 canonical */\n"
+     "uniform float u_xcenter;/* stretch centre in VRAM px; 0 canonical */\n"
+     "uniform float u_zbias;  /* PGXP depth: relative near bias of the colour pass */\n"
++    "#ifdef PSX_GLES\n"
++    "out vec2 v_uv_np; out vec4 v_col_np; out float v_b3d_np; out vec2 v_npos_np; out float v_np_w;\n"
++    "#define v_uv v_uv_np\n#define v_col v_col_np\n#define v_b3d v_b3d_np\n#define v_npos v_npos_np\n"
++    "#else\n"
+     "noperspective out vec2 v_uv; noperspective out vec4 v_col;\n"
++    "noperspective out float v_b3d;   /* bloom source: 1 on a PGXP 3D vertex */\n"
++    "noperspective out vec2 v_npos;  /* native VRAM position (dithering) */\n"
++    "#endif\n"
+     "smooth out vec2 v_uv_p;  /* perspective-correct UV (used when v_persp!=0) */\n"
+     "flat out int v_persp;\n"
+     "flat out ivec2 v_tpage; flat out ivec2 v_clut; flat out int v_depth;\n"
+@@ -1894,8 +1994,6 @@ static const char *TEX_VS =
+     "flat out vec4 v_hd_source; flat out int v_hd_mode;\n"
+     "flat out int v_filter;\n"
+     "smooth out vec3 v_col_p; flat out int v_cp;\n"
+-    "noperspective out float v_b3d;   /* bloom source: 1 on a PGXP 3D vertex */\n"
+-    "noperspective out vec2 v_npos;  /* native VRAM position (dithering) */\n"
+     "void main(){ v_uv = a_uv; v_uv_p = a_uv; v_col = a_col; v_col_p = a_col.rgb;\n"
+     "  v_npos = a_pos;\n"
+     "  v_persp = (a_q > 0.0) ? 1 : 0;\n"
+@@ -1929,16 +2027,29 @@ static const char *TEX_VS =
+     "  if (sz > 0.5) { zn = 1.0 - 512.0 / (max(sz * (1.0 - u_zbias) - (u_zbias > 0.0 ? 48.0 : 0.0), 1.0) + 256.0); if (a_q <= 0.0 && cp > 0.5) w = sz / 1024.0; }\n"
+     "  v_cp = int(cp); v_b3d = sz > 0.5 ? 1.0 : 0.0;\n"
+     "  vec2 ndc = vec2((xb+u_shift+u_xoff)/u_xhalf - 1.0, (a_pos.y+u_shift)/256.0 - 1.0);\n"
++    "#ifdef PSX_GLES\n"
++    "  v_uv_np *= w; v_col_np *= w; v_b3d_np *= w; v_npos_np *= w; v_np_w = w;\n"
++    "#endif\n"
+     "  gl_Position = vec4(ndc * w, zn * w, w); }\n";
+ static const char *TEX_FS =
+     "#version 330\n"
++    "#ifdef PSX_GLES\n"
++    "in vec2 v_uv_np; in vec4 v_col_np; in float v_b3d_np; in vec2 v_npos_np; in float v_np_w;\n"
++    "#define v_uv (v_uv_np / v_np_w)\n#define v_col (v_col_np / v_np_w)\n"
++    "#define v_b3d (v_b3d_np / v_np_w)\n#define v_npos (v_npos_np / v_np_w)\n"
++    /* Dual-source blending stands in for per-texel opaque/semi selection on
++     * desktop; ES reads the destination instead (EXT_shader_framebuffer_fetch)
++     * and applies src + dst * dst_factor itself, with GL blending off. */
++    "layout(location=0) inout vec4 frag; vec4 blend_factor;\n"
++    "#else\n"
+     "noperspective in vec2 v_uv; noperspective in vec4 v_col;\n"
++    "noperspective in vec2 v_npos;\n"
++    "noperspective in float v_b3d;\n"
++    "out vec4 frag; out vec4 blend_factor;\n"
++    "#endif\n"
+     "smooth in vec2 v_uv_p; flat in int v_persp;\n"
+     "smooth in vec3 v_col_p; flat in int v_cp;\n"
+-    "noperspective in vec2 v_npos;\n"
+     PSX_DITHER_GLSL
+-    "out vec4 frag; out vec4 blend_factor;\n"
+-    "noperspective in float v_b3d;\n"
+     "uniform int u_bcls;      /* bloom source pass (gl_postfx.inc): 0 off, 2 clear, 1 mark */\n"
+     "flat in ivec2 v_tpage;   /* texture page base, VRAM px */\n"
+     "flat in ivec2 v_clut;    /* CLUT base, VRAM px */\n"
+@@ -2182,7 +2293,13 @@ static const char *TEX_FS =
+     "    dst_factor = v_semi == 1 ? 0.5 : 1.0;\n"
+     "    if (v_semi == 1) rgb *= 0.5; else if (v_semi == 4) rgb *= 0.25;\n"
+     "  }\n"
++    "#ifdef PSX_GLES\n"
++    "  vec3 dst = frag.rgb;\n"
+     "  frag = vec4(rgb, (stp == 1 || u_maskset == 1) ? 1.0 : 0.0);\n"
++    "  if (u_semimode == 4) frag.rgb = clamp(rgb + dst * dst_factor, 0.0, 1.0);\n"
++    "#else\n"
++    "  frag = vec4(rgb, (stp == 1 || u_maskset == 1) ? 1.0 : 0.0);\n"
++    "#endif\n"
+     "  blend_factor = vec4(0.0, 0.0, 0.0, dst_factor);\n"
+     "}\n";
+ 
+@@ -2256,9 +2373,45 @@ static const char *STENCIL_FS =
+     "void main(){ vec4 c=texelFetch(u_src,ivec2(gl_FragCoord.xy)-u_off,0);\n"
+     "  if(c.a<0.5) discard; frag=vec4(0.0); }\n";
+ 
++#if defined(PSX_GLES)
++/* GLSL 330 core -> GLSL ES 3.20: swap the version line for an ES prelude
++ * (precision defaults, PSX_GLES for the shader-side #ifdefs, framebuffer
++ * fetch for TEX_FS) and blank the `noperspective` qualifier, which ES does
++ * not have (GEO/TEX emulate it by pre-multiplying those varyings with w). */
++static char *gles_shader_source(GLenum type, const char *src) {
++    const char *prelude = type == PSXGL_FRAGMENT_SHADER
++        ? "#version 320 es\n"
++          "#extension GL_EXT_shader_framebuffer_fetch : enable\n"
++          "#define PSX_GLES 1\n"
++          "precision highp float; precision highp int; precision highp sampler2D; precision highp usampler2D;\n"
++          "precision highp isampler2D; precision highp sampler2DArray; precision highp sampler2DShadow;\n"
++        : "#version 320 es\n"
++          "#define PSX_GLES 1\n"
++          "precision highp float; precision highp int; precision highp sampler2D; precision highp usampler2D;\n";
++    const char *body = src;
++    if (strncmp(body, "#version 330", 12) == 0) {
++        const char *nl = strchr(body, '\n');
++        body = nl ? nl + 1 : "";
++    }
++    size_t n = strlen(prelude) + strlen(body) + 1;
++    char *out = (char *)malloc(n);
++    if (!out) return NULL;
++    memcpy(out, prelude, strlen(prelude));
++    memcpy(out + strlen(prelude), body, strlen(body) + 1);
++    for (char *p = strstr(out, "noperspective"); p; p = strstr(p, "noperspective")) memset(p, ' ', 13);
++    return out;
++}
++#endif
+ static GLuint compile_shader(GLenum type, const char *src) {
+     GLuint s = p_glCreateShader(type);
++#if defined(PSX_GLES)
++    char *es = gles_shader_source(type, src);
++    if (es) src = es;
++    p_glShaderSource(s, 1, &src, NULL);
++    free(es);
++#else
+     p_glShaderSource(s, 1, &src, NULL);
++#endif
+     p_glCompileShader(s);
+     GLint ok = 0; p_glGetShaderiv(s, PSXGL_COMPILE_STATUS, &ok);
+     if (!ok) { char log[1024]; log[0]=0; p_glGetShaderInfoLog(s, sizeof log, NULL, log);
+@@ -2271,7 +2424,7 @@ static GLuint build_program_ex(const char *vs, const char *fs, int dual_source)
+     if (!v || !f) return 0;
+     GLuint p = p_glCreateProgram();
+     p_glAttachShader(p, v); p_glAttachShader(p, f);
+-    if (dual_source) {
++    if (dual_source && p_glBindFragDataLocationIndexed) {
+         p_glBindFragDataLocationIndexed(p, 0, 0, "frag");
+         p_glBindFragDataLocationIndexed(p, 0, 1, "blend_factor");
+     }
+diff --git a/runtime/src/main.cpp b/runtime/src/main.cpp
+index fc42513..5c4c7d2 100644
+--- a/runtime/src/main.cpp
++++ b/runtime/src/main.cpp
+@@ -2467,6 +2467,15 @@ static void update_adaptive_widescreen() {
+  * runtime requirements immediately before every GL window, because launcher
+  * teardown resets them and macOS otherwise supplies a legacy 2.1 context. */
+ static void configure_core_gl_context_attributes() {
++#if defined(PSX_GLES)
++    /* Android: OpenGL ES 3.2 (gpu_gl_renderer.c under PSX_GLES). */
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
++    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
++    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
++    return;
++#endif
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+     int major = 3, minor = 3;
+ #if defined(PSX_OPENXR)
+@@ -3049,6 +3058,13 @@ static std::filesystem::path exe_dir_from_argv(const char* argv0) {
+     namespace fs = std::filesystem;
+     std::error_code ec;
+     fs::path exe_dir;
++#if defined(__ANDROID__)
++    /* No executable directory on Android: the app's external files directory
++     * (/sdcard/Android/data/<package>/files, where the APK unpacked game.toml,
++     * disc, BIOS and mods) anchors everything instead. */
++    if (const char* ext = SDL_GetAndroidExternalStoragePath(); ext && ext[0])
++        return fs::path(ext);
++#endif
+ #ifdef _WIN32
+     // Authoritative: the real image path, regardless of how we were invoked.
+     {
+@@ -17653,9 +17669,60 @@ static void host_pause_service(void) {
+     }
+ }
+ 
++#if defined(__ANDROID__)
++#include <android/log.h>
++#include <unistd.h>
++#include <pthread.h>
++/* stdout/stderr go nowhere in an Android app: pump them through a pipe to
++ * logcat (tag psxrecomp) and to <files>/log.txt, so adb logcat and the test
++ * scripts see the same lines the PC build prints on the console. */
++static void* android_log_pump(void* arg) {
++    int fd = (int)(intptr_t)arg;
++    const char* base = SDL_GetAndroidExternalStoragePath();
++    FILE* f = nullptr;
++    if (base && base[0]) {
++        std::string p = std::string(base) + "/log.txt";
++        f = std::fopen(p.c_str(), "w");
++    }
++    char buf[4096];
++    std::string line;
++    for (;;) {
++        ssize_t n = read(fd, buf, sizeof buf);
++        if (n <= 0) break;
++        for (ssize_t i = 0; i < n; i++) {
++            if (buf[i] == '\n') {
++                __android_log_write(ANDROID_LOG_INFO, "psxrecomp", line.c_str());
++                if (f) { std::fputs(line.c_str(), f); std::fputc('\n', f); std::fflush(f); }
++                line.clear();
++            } else {
++                line.push_back(buf[i]);
++            }
++        }
++    }
++    if (f) std::fclose(f);
++    return nullptr;
++}
++static void android_redirect_stdio(void) {
++    int fds[2];
++    if (pipe(fds) != 0) return;
++    dup2(fds[1], 1);
++    dup2(fds[1], 2);
++    close(fds[1]);
++    pthread_t t;
++    if (pthread_create(&t, nullptr, android_log_pump, (void*)(intptr_t)fds[0]) == 0)
++        pthread_detach(t);
++}
++#endif
++
+ int main(int argc, char** argv) {
+     g_main_argc = argc;
+     g_main_argv = argv;
++#if defined(__ANDROID__)
++    android_redirect_stdio();
++    /* Relative paths (mods/remake/*.bin opened by the title's plugins) resolve
++     * against the same anchor as exe_dir_from_argv. */
++    if (const char* ext = SDL_GetAndroidExternalStoragePath(); ext && ext[0]) (void)chdir(ext);
++#endif
+     /* Force line-buffered output so messages appear even if killed. */
+     std::setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
+     std::setvbuf(stderr, nullptr, _IOLBF, BUFSIZ);
+diff --git a/runtime/src/psx_fiber.c b/runtime/src/psx_fiber.c
+index a379eca..2c2f587 100644
+--- a/runtime/src/psx_fiber.c
++++ b/runtime/src/psx_fiber.c
+@@ -34,6 +34,129 @@ psx_fiber_t psx_fiber_create(size_t stack_size, psx_fiber_entry entry, void* arg
+ void psx_fiber_switch(psx_fiber_t target) { SwitchToFiber((LPVOID)target); }
+ void psx_fiber_destroy(psx_fiber_t fiber) { if (fiber) DeleteFiber((LPVOID)fiber); }
+ 
++#elif defined(__ANDROID__) && defined(__aarch64__)
++
++/* Bionic declares getcontext/makecontext/swapcontext but does not implement
++ * them. Minimal cooperative context switch for AArch64: callee-saved x19..x30
++ * and d8..d15 live on the fiber's own stack; the switch saves sp into the
++ * outgoing fiber and restores the incoming one. */
++#include <stdlib.h>
++#include <stdint.h>
++#include <string.h>
++
++typedef struct psx_fiber_impl {
++    void*           sp;       /* saved stack pointer while not running */
++    void*           stack;    /* NULL for the thread-fiber */
++    psx_fiber_entry entry;
++    void*           arg;
++} psx_fiber_impl;
++
++static psx_fiber_impl* s_current = NULL;
++
++void psx_fiber_swap_arm64(void** save_sp, void* new_sp);
++void psx_fiber_start_arm64(void);
++
++__asm__(
++    ".text\n"
++    ".align 4\n"
++    ".globl psx_fiber_swap_arm64\n"
++    ".type psx_fiber_swap_arm64, %function\n"
++    "psx_fiber_swap_arm64:\n"
++    "    hint #34\n"                       /* bti c */
++    "    sub  sp, sp, #176\n"
++    "    stp  x19, x20, [sp, #0]\n"
++    "    stp  x21, x22, [sp, #16]\n"
++    "    stp  x23, x24, [sp, #32]\n"
++    "    stp  x25, x26, [sp, #48]\n"
++    "    stp  x27, x28, [sp, #64]\n"
++    "    stp  x29, x30, [sp, #80]\n"
++    "    stp  d8,  d9,  [sp, #96]\n"
++    "    stp  d10, d11, [sp, #112]\n"
++    "    stp  d12, d13, [sp, #128]\n"
++    "    stp  d14, d15, [sp, #144]\n"
++    "    mov  x2, sp\n"
++    "    str  x2, [x0]\n"
++    "    mov  sp, x1\n"
++    "    ldp  x19, x20, [sp, #0]\n"
++    "    ldp  x21, x22, [sp, #16]\n"
++    "    ldp  x23, x24, [sp, #32]\n"
++    "    ldp  x25, x26, [sp, #48]\n"
++    "    ldp  x27, x28, [sp, #64]\n"
++    "    ldp  x29, x30, [sp, #80]\n"
++    "    ldp  d8,  d9,  [sp, #96]\n"
++    "    ldp  d10, d11, [sp, #112]\n"
++    "    ldp  d12, d13, [sp, #128]\n"
++    "    ldp  d14, d15, [sp, #144]\n"
++    "    add  sp, sp, #176\n"
++    "    ret\n"
++    ".size psx_fiber_swap_arm64, .-psx_fiber_swap_arm64\n"
++    ".globl psx_fiber_start_arm64\n"
++    ".type psx_fiber_start_arm64, %function\n"
++    "psx_fiber_start_arm64:\n"
++    "    hint #34\n"
++    "    mov  x0, x19\n"
++    "    bl   psx_fiber_run_c\n"
++    "    brk  #0\n"
++    ".size psx_fiber_start_arm64, .-psx_fiber_start_arm64\n"
++);
++
++void psx_fiber_run_c(psx_fiber_impl* f)
++{
++    f->entry(f->arg);
++    /* The BIOS thread entry never returns normally (see the ucontext backend). */
++    abort();
++}
++
++psx_fiber_t psx_fiber_convert_thread(void)
++{
++    if (!s_current) {
++        psx_fiber_impl* f = (psx_fiber_impl*)calloc(1, sizeof(*f));
++        f->stack = NULL;
++        s_current = f;
++    }
++    return (psx_fiber_t)s_current;
++}
++
++psx_fiber_t psx_fiber_current(void) { return (psx_fiber_t)s_current; }
++
++psx_fiber_t psx_fiber_create(size_t stack_size, psx_fiber_entry entry, void* arg)
++{
++    if (stack_size < 65536) stack_size = 65536;
++    stack_size = (stack_size + 15u) & ~(size_t)15u;
++    psx_fiber_impl* f = (psx_fiber_impl*)calloc(1, sizeof(*f));
++    if (!f) return NULL;
++    f->stack = malloc(stack_size);
++    if (!f->stack) { free(f); return NULL; }
++    f->entry = entry;
++    f->arg   = arg;
++    /* Initial frame: the 176-byte register block psx_fiber_swap_arm64 pops,
++     * with x19 = fiber and x30 = trampoline, at the top of the new stack. */
++    uintptr_t top = ((uintptr_t)f->stack + stack_size) & ~(uintptr_t)15u;
++    uint64_t* frame = (uint64_t*)(top - 176);
++    memset(frame, 0, 176);
++    frame[0]  = (uint64_t)(uintptr_t)f;                      /* x19 */
++    frame[11] = (uint64_t)(uintptr_t)psx_fiber_start_arm64;  /* x30 */
++    f->sp = frame;
++    return (psx_fiber_t)f;
++}
++
++void psx_fiber_switch(psx_fiber_t target)
++{
++    psx_fiber_impl* to   = (psx_fiber_impl*)target;
++    psx_fiber_impl* from = s_current;
++    if (!to || to == from) return;
++    s_current = to;
++    psx_fiber_swap_arm64(&from->sp, to->sp);
++}
++
++void psx_fiber_destroy(psx_fiber_t fiber)
++{
++    psx_fiber_impl* f = (psx_fiber_impl*)fiber;
++    if (!f) return;
++    free(f->stack);
++    free(f);
++}
++
+ #else /* POSIX: ucontext */
+ 
+ #ifndef _XOPEN_SOURCE
+diff --git a/runtime/src/quality_probe.c b/runtime/src/quality_probe.c
+index 1ce7f14..2689966 100644
+--- a/runtime/src/quality_probe.c
++++ b/runtime/src/quality_probe.c
+@@ -121,7 +121,11 @@ int psx_quality_probe_gl_renderer(char *out, size_t cap) {
+     if (!out || !cap) return 0;
+     out[0] = 0;
+     if (!SDL_WasInit(SDL_INIT_VIDEO)) return 0;
++#if defined(PSX_GLES)
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
++#else
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
++#endif
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+     SDL_Window *w = SDL_CreateWindow("psxrecomp gpu probe", 0, 0, 1, 1,
