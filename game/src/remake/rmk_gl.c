@@ -56,6 +56,7 @@ struct RmkGL {
     void (RGLAPI* ClearDepthf)(float);
     void (RGLAPI* ClearDepth)(double);
     int gles, step, ready, failed, has_nmap;   /* has_nmap: mapas de normal na GPU (o asset pode soltar a cópia) */
+    int bstep;   /* passos da criação: programa, buffers, sombra no chão, array das camadas, array dos mapas de normal */
     GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING], shadow_tex, shadow_fbo;
     float lbasis[3][3], lcenter[4];  /* espaço da luz da sombra do último quadro: u, v, direção; centro, 1/raio */
     int key;                         /* luz principal (a da sombra) do último quadro */
@@ -465,8 +466,7 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     /* camadas HD: um texture array, enchido uma camada por chamada de rmk_gl_prepare */
     g->GenTextures(1, &g->tex);
     g->ActiveTexture(R_TEXTURE0 + 9);
-    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
-    alloc_array(g, a->tex_size, a->n_layers ? a->n_layers : 1u, a->mips != NULL);
+    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);   /* os dois arrays são alocados em passos próprios (bstep 3 e 4) */
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
@@ -476,7 +476,6 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
     g->has_nmap = a->nmaps != NULL;
     const GLsizei_ ns = a->nmaps ? (GLsizei_)a->tex_size : 1;
-    alloc_array(g, (uint32_t)ns, a->n_layers ? a->n_layers : 1u, a->nmips != NULL);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
@@ -519,13 +518,26 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
     while (g->GetError() != 0) {}
     g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
     g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
-    if (g->step == 0) {
-        if (!build_program(g) || !build_buffers(g, a) || !build_floor(g)) {
+    if (g->step == 0) {   /* criação em passos, um por quadro: juntos custavam até 95 ms num quadro na Mali */
+        int ok = 1;
+        if (g->bstep == 0) ok = build_program(g);
+        else if (g->bstep == 1) ok = build_buffers(g, a);
+        else if (g->bstep == 2) ok = build_floor(g);
+        else {
+            const int is_n = g->bstep == 4;
+            g->ActiveTexture(R_TEXTURE0 + 9);
+            g->BindTexture(R_TEXTURE_2D_ARRAY, is_n ? g->nmap : g->tex);
+            alloc_array(g, is_n && !a->nmaps ? 1u : a->tex_size, a->n_layers ? a->n_layers : 1u,
+                        (is_n ? a->nmips : a->mips) != NULL);
+            g->BindTexture(R_TEXTURE_2D_ARRAY, 0);
+            ok = g->GetError() == 0;
+            if (is_n) g->step = 1;
+        }
+        g->bstep++;
+        if (!ok) {
             if (!g->err[0]) snprintf(g->err, sizeof g->err, "recursos GL: erro 0x%X", g->GetError());
             g->failed = 1;
-            return 0;
         }
-        g->step = 1;
         return 0;
     }
     /* passos: 1..n_layers camadas de cor, depois n_layers mapas de normal (se houver), depois mipmaps */

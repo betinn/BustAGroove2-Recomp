@@ -471,6 +471,10 @@ static int overlay_stage(void) {
     return -1;
 }
 
+/* Índice do palco escolhido (byte; docs/formats.md "Palcos: conteúdo e desenho") e o container de cada um */
+#define STAGE_IDX_ADDR 0x8005FB56u
+static const uint32_t k_idx_container[13] = {234, 243, 233, 244, 236, 242, 238, 237, 235, 231, 232, 241, 245};
+
 /* VBlank (thread do jogo), 4 vezes por segundo: qual palco está na RAM numa partida (FUN_800326F8 instala o overlay e
  * liga o ponteiro da partida, que não volta a zero depois do QUIT); o asset carrega quando o jogo desenha os nós dele
  * (o voo da câmera antes do "Ready" cobre a carga e o preparo) e descarrega 3 s depois que ele para de desenhar
@@ -485,6 +489,23 @@ static void geo_vblank(void) {
     if (cur != s_cur) { s_cur = cur; s_model = 0; s_neg_i = 0; memset(s_neg, 0, sizeof s_neg); }
     /* ligado ou não (stage_geo 0, comparação), o asset fica carregado enquanto o jogo desenha o palco */
     if (s_cur >= 0 && now - s_seen_us < 1e6) request_stage(s_cur);
+    /* Palco escolhido (byte do índice, gravado na confirmação da tela de palco, ~6 s antes da partida começar): a
+     * carga e o preparo GL começam na tela de carregamento, e não no voo da câmera da introdução, onde a alocação dos
+     * arrays (60-160 ms num quadro na Mali) engasgava a música (docs/android-apk.md §7). O overlay só bate com o
+     * ponteiro da partida já ligado. Mantido por até 30 s sem desenho; a primeira leitura (boot) não conta e o mesmo
+     * índice de novo cai na regra de cima. */
+    static int idx_prev = -2, early = -1;
+    static double early_t;
+    const uint32_t w = rd32(STAGE_IDX_ADDR & ~3u);
+    const int idx = (int)((w >> (8u * (STAGE_IDX_ADDR & 3u))) & 0xFFu);
+    if (idx != idx_prev && idx_prev != -2 && idx < (int)(sizeof k_idx_container / sizeof k_idx_container[0])) {
+        early = -1;
+        for (int i = 0; i < s_nst; i++)
+            if (s_st[i].t.container == k_idx_container[idx]) { early = i; early_t = now; }
+        if (early >= 0) psx_mod_counter_add("bag2_stage.geo_load_early", 1);
+    }
+    idx_prev = idx;
+    if (early >= 0 && now - early_t < 30e6) request_stage(early);
     for (int i = 0; i < s_nst; i++) {
         Stg* s = &s_st[i];
         if (s->state == 2 && (i != s_cur || now - s_seen_us > 3e6) && now - s->last_use_us > 3e6) {
@@ -1617,7 +1638,7 @@ static int gpu_timers_cmd(const char* args, char* reply, int cap) {
 }
 
 static int stage_stats_cmd(const char* args, char* reply, int cap) {
-    (void)args;
+    if (args && args[0] == 'z') { s_prep_max_us = 0; s_prep_mip_us = 0; }   /* zera o preparo (android_intro.py) */
     static uint32_t d0;
     static double u0;
     const uint32_t d = s_draws;
