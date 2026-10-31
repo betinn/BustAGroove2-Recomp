@@ -92,6 +92,8 @@ BAG2_STAGE_MODE=full bash recomp/android/build.sh stage apk   # APK completo (as
 - Assinatura: `C:\Users\sem-m\BAG2-keys\` (keystore própria, alias `bag2`, RSA 4096; `LEIA-ME.txt` pede backup;
   `app/build.gradle` lê o caminho em `BAG2_KEYSTORE_PROPERTIES`). Debug e release assinados com a mesma chave para
   `adb install -r` trocar uma pela outra sem desinstalar (desinstalar apaga os 4 GB extraídos).
+- Artefatos assinados ficam em `C:/Users/sem-m/BAG2-keys/artefatos/` (fora do repo): `BustAGroove2-2.0.0-android.84-completo.apk`
+  (1,46 GB, certificado SHA-256 `d9bce567…b6d5f5`, `versionCode` 84 = nº de commits).
 - Tamanhos: `.so` 304 MB sem strip (fica em `game/build-android/` para `ndk-stack`), 47 MB com strip. Dados: 4,0 GB
   (remake 3,3 GB em 66 assets, disco 585 MB, pacote HD 132 MB); zlib reduz os assets do remake a ~30 % e o disco a
   ~67 %, então o APK completo deve ficar em ~1,6 GB (o aapt comprime `assets/`).
@@ -116,6 +118,28 @@ O que já roda no tablet (build de desenvolvimento, `PSX_DEBUG_TOOLS=ON`, dados 
 
 \* nessa rodada a rota do 2P deixou o P2 vazio (ver `enter_match_checked`). Como no PC, o remake **baixa** a
 render thread (o desenho de host substitui os pacotes do PS1 e as texturas HD por lotes grandes).
+
+### APK completo (assets dentro), instalado por `adb install`
+`BAG2_STAGE_MODE=full bash recomp/android/build.sh stage apk`: 1,46 GB (Gradle leva ~5 min no merge dos assets),
+`adb install -r` 79 s. Primeira execução com a pasta de dados vazia: a `SetupActivity` extraiu os 4,1 GB em **21 s**
+(704 arquivos: 66 assets do remake, 620 texturas HD, disco, BIOS) e abriu o jogo; na execução seguinte o carimbo
+`.bag2-assets-version` bate e o jogo abre direto. Atualizar o APK (`adb install -r`, mesma assinatura) não apaga
+`Android/data`, então só o que mudar de tamanho é extraído de novo; desinstalar apaga tudo (inclusive `saves/`).
+
+Dois `psx_freeze_dump_*.json` (100–124 MB) apareceram na pasta de dados às 23:48 e 23:53: foi a janela em que um
+`adb forward tcp:4370` esquecido fez o harness do PC e o do tablet mandarem comandos (`quit`, `press`) ao mesmo
+jogo; apagados, não voltaram. O watchdog de congelamento escreve na pasta de dados: conferir se aparecer.
+
+### Entrada
+- `[controller]` do `game.android.toml`: P1 `auto` (padrão da build com debug tools: primeiro gamepad SDL) e
+  `p2_device = "gamepad"` (o próximo livre: `open_player` reserva um aparelho por porta). O SDL3 enumera os
+  controles Bluetooth e USB pelo `SDLControllerManager` da activity; o mapeamento é o de `input.ini`.
+- Teclado (Bluetooth ou `adb shell input keyevent`): só com `p1_device = "keyboard"` (sem gamepad, o P1 `auto`
+  fica sem fonte). Conferido no tablet com essa troca: `KEYCODE_ENTER` na abertura levou ao menu principal
+  (`keybinds.ini`, start = Return); um `keyevent` seco de DPAD/X é curto demais para o jogo ler (como o toque curto
+  no PC): usar `input keyevent --longpress` ou o `press` do servidor TCP.
+- **Pendente (precisa do aparelho físico):** parear um controle Bluetooth e conferir o P1; parear o segundo e
+  conferir o 2 jogadores (P2 no segundo controle).
 
 ### PC sem regressão
 `game/build` e `game/build-debug` recompilados com o 4º patch (só objetos do framework; o C gerado não muda).
