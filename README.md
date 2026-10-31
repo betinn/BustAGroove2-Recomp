@@ -131,6 +131,9 @@ powershell -File recomp\build.ps1 -Step runtime
 
 ## Android
 
-No celular o jogo roda pelo [Polygonia](https://github.com/betinn/Polygonia), fork do DuckStation com boot direto no
-jogo, Vulkan, 4x, PGXP e 16:9. O remake ainda não chegou lá: é a próxima fase do projeto
-([plano](docs/remake-plano.md)). Detalhes em [docs/android-fork.md](docs/android-fork.md).
+Desde 2026-10-30 o Android é o **mesmo jogo recompilado num APK arm64** (runtime do PSXRecomp em OpenGL ES 3.2 +
+plugins do remake): personagens e palcos refeitos, pós-efeito, texturas HD e 16:9 a 60 fps no Galaxy Tab S10 Ultra,
+com controles Bluetooth e 2 jogadores local. Projeto em [`android/`](android/), scripts em `recomp/android/`, tudo
+em [docs/android-apk.md](docs/android-apk.md). O APK leva o disco e o BIOS, então é de uso próprio: não vai para a
+Google Play nem para este repositório (só o código). O caminho anterior, o [Polygonia](https://github.com/betinn/Polygonia)
+(fork do DuckStation), continua documentado em [docs/android-fork.md](docs/android-fork.md) mas não é mais mexido.
