@@ -3,8 +3,8 @@
 
 Uso como módulo:
     s = Session(); s.start(); s.to_match()   # abre o exe, passa abertura/menus e entra numa partida
-    s.cmd({'cmd': 'mod_cmd', 'name': 'heat_dump', 'args': 'C:/.../dump.txt'})
-    s.shot('C:/.../tela.png'); s.stop()
+    s.cmd({'cmd': 'mod_cmd', 'name': 'heat_dump', 'args': '<pasta>/dump.txt'})
+    s.shot('<pasta>/tela.png'); s.stop()
 Uso direto: python tools/remake/game_session.py [segundos_de_partida]  (só entra na partida e tira capturas)
 
 Rotas:

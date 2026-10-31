@@ -1,7 +1,7 @@
 # Build reproduzível do PSXRecomp + Bust A Groove 2 (nativo, Windows x64, GCC MinGW).
 # Uso:  powershell -File recomp\build.ps1 [-Step framework|bios|game|runtime|all] [-Run]
 # Pré-requisitos (tudo já instalado por este projeto; ver env.ps1):
-#   C:\tools\psxrecomp (clone), C:\tools\winlibs (GCC 16.2), cmake/ninja via pip --user.
+#   $BAG2_TOOLS\psxrecomp (clone), $BAG2_TOOLS\winlibs (GCC 16.2), cmake/ninja via pip --user.
 param(
     [ValidateSet('framework','bios','game','runtime','all')] [string]$Step = 'all',
     [switch]$Run
@@ -30,8 +30,8 @@ if ($Step -in 'framework','all') {
 if ($Step -in 'bios','all') {
     # 2. C do OpenBIOS (generated/OpenBIOS_*.c no framework). Precisa de bash (Git for Windows).
     Invoke-Logged 'regen_bios' {
-        $env:PATH = "C:\tools\winlibs\mingw64\bin;$env:APPDATA\Python\Python314\Scripts;$env:PATH"
-        & "C:\Program Files\Git\bin\bash.exe" -lc "cd '$($fw -replace '\\','/')' && PATH='/c/tools/winlibs/mingw64/bin:/c/Users/sem-m/AppData/Roaming/Python/Python314/Scripts:'`$PATH bash tools/regen_bios.sh --config bios/OpenBIOS.toml"
+        $env:PATH = "$gccBin;$env:APPDATA\Python\Python314\Scripts;$env:PATH"
+        & "C:\Program Files\Git\bin\bash.exe" -lc "cd '$($fw -replace '\\','/')' && PATH=`"`$(cygpath -u '$gccBin'):`$(cygpath -u '$env:APPDATA')/Python/Python314/Scripts:`$PATH`" bash tools/regen_bios.sh --config bios/OpenBIOS.toml"
     }
 }
 if ($Step -in 'game','all') {

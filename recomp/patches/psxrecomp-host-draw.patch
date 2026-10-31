@@ -1,5 +1,5 @@
 # Patch local do PSXRecomp para o remake (fase 1, notes/remake-plano.md): API de desenho de host para plugins.
-# Aplicar em C:/tools/psxrecomp depois de psxrecomp-hd-cache-caps.patch e psxrecomp-texture-bank-render-thread.patch:
+# Aplicar na pasta do clone do psxrecomp depois de psxrecomp-hd-cache-caps.patch e psxrecomp-texture-bank-render-thread.patch:
 #   git apply --ignore-whitespace <este arquivo>
 # Um pacote marcador na arena de pacotes (GP0 00h com "HDR") vira RTH_HOSTDRAW no fluxo da thread de render;
 # no replay o callback do plugin desenha no FBO de alta resolução (e no espelho da tela larga).

@@ -5,7 +5,7 @@ Como sair de uma máquina Windows limpa e do disco original até o exe com o rem
 
 O que **não** está no git e por quê: o disco e tudo o que sai dele (C gerado, arquivos extraídos, assets do remake,
 texturas HD) são dados do jogo e o repositório é público. As ferramentas de terceiros (framework, compilador,
-Real-ESRGAN) ficam em `C:\tools`, nas versões fixadas abaixo.
+Real-ESRGAN) ficam em `<TOOLS>` (variável de ambiente `BAG2_TOOLS`; padrão: pasta `tools` ao lado do repo), nas versões fixadas abaixo.
 
 ## 0. Requisitos
 
@@ -14,10 +14,10 @@ Real-ESRGAN) ficam em `C:\tools`, nas versões fixadas abaixo.
 | Windows | 10/11 x64, GPU com OpenGL 3.3 (Vulkan para o Real-ESRGAN) | — | — |
 | Git for Windows | qualquer recente (o `bash` é usado no passo 3) | `C:\Program Files\Git` | instalador |
 | Python | 3.14 | no PATH | instalador |
-| GCC MinGW-w64 UCRT (WinLibs) | 16.2.0 posix/seh r2 | `C:\tools\winlibs\mingw64\bin` | zip do WinLibs (`BrechtSanders.WinLibs.POSIX.UCRT` no winget), extraído |
+| GCC MinGW-w64 UCRT (WinLibs) | 16.2.0 posix/seh r2 | `<TOOLS>\winlibs\mingw64\bin` | zip do WinLibs (`BrechtSanders.WinLibs.POSIX.UCRT` no winget), extraído |
 | CMake + Ninja | 4.4.4 / 1.13.2 | `%APPDATA%\Python\Python314\Scripts` | `pip install --user cmake ninja` (o cmake do WinLibs falha nos downloads) |
-| PSXRecomp | commit `31df2e1e` + 3 patches deste repo | `C:\tools\psxrecomp` | passo 2 |
-| Real-ESRGAN ncnn | v0.2.5.0 (release oficial, Windows) | `C:\tools\realesrgan\bin\realesrgan-ncnn-vulkan.exe` | zip do GitHub `xinntao/Real-ESRGAN`, extraído (só para os passos 7 e 8) |
+| PSXRecomp | commit `31df2e1e` + 3 patches deste repo | `<TOOLS>\psxrecomp` | passo 2 |
+| Real-ESRGAN ncnn | v0.2.5.0 (release oficial, Windows) | `<TOOLS>\realesrgan\bin\realesrgan-ncnn-vulkan.exe` | zip do GitHub `xinntao/Real-ESRGAN`, extraído (só para os passos 7 e 8) |
 
 `recomp/env.ps1` põe essa toolchain no PATH (`. .\recomp\env.ps1` numa sessão PowerShell). O SDL3 é
 baixado pelo próprio CMake no primeiro build.
@@ -34,8 +34,8 @@ Coloque o seu dump em `disc/Bust A Groove 2 (USA).bin` e `.cue` e confira o SHA-
 ## 2. Framework PSXRecomp com os patches locais
 
 ```bash
-git -c core.autocrlf=false clone --recursive https://github.com/RetroPortingToolKit/psxrecomp C:/tools/psxrecomp
-cd C:/tools/psxrecomp
+git -c core.autocrlf=false clone --recursive https://github.com/RetroPortingToolKit/psxrecomp $env:BAG2_TOOLS/psxrecomp
+cd $env:BAG2_TOOLS/psxrecomp
 git checkout 31df2e1e
 git apply --ignore-whitespace <repo>/recomp/patches/psxrecomp-hd-cache-caps.patch
 git apply --ignore-whitespace <repo>/recomp/patches/psxrecomp-texture-bank-render-thread.patch
@@ -48,13 +48,13 @@ outros três patches de `recomp/patches/` (`psxrecomp-web-*`) são da versão we
 O recompilador procura o perfil de BIOS dentro da pasta do projeto do jogo; crie a junção (PowerShell):
 
 ```powershell
-New-Item -ItemType Junction -Path game\bios -Target C:\tools\psxrecomp\bios
+New-Item -ItemType Junction -Path game\bios -Target $env:BAG2_TOOLS\psxrecomp\bios
 ```
 
 ## 3. Ferramentas do recompilador e o C do OpenBIOS
 
 ```powershell
-powershell -File recomp\build.ps1 -Step framework   # psxrecomp-game, -toml, -bios (C:\tools\psxrecomp\recompiler\build)
+powershell -File recomp\build.ps1 -Step framework   # psxrecomp-game, -toml, -bios (<TOOLS>\psxrecomp\recompiler\build)
 powershell -File recomp\build.ps1 -Step bios        # generated/OpenBIOS_*.c no framework (usa o bash do Git)
 ```
 
@@ -77,13 +77,13 @@ Gera `game/generated/SLUS_011.59_*.c` (o executável principal em C, ~27 MB) a p
 ## 5. Overlays compilados antecipadamente (AOT)
 
 O jogo carrega 56 overlays `DBI_` de dentro do `BUST2.BIN`; o perfil `recomp/aot/overlays.json` diz quais e
-onde. Com o `env.ps1` carregado, na pasta `C:\tools\psxrecomp\tools`:
+onde. Com o `env.ps1` carregado, na pasta `<TOOLS>\psxrecomp\tools`:
 
 ```powershell
 python aot_overlay_pipeline.py static --profile <repo>/recomp/aot/overlays.json `
   --game-toml <repo>/game/game.toml `
-  --recompiler C:/tools/psxrecomp/recompiler/build/psxrecomp-game.exe `
-  --work-dir <repo>/recomp/aot/work-static --gcc C:/tools/winlibs/mingw64/bin/gcc.exe `
+  --recompiler $env:BAG2_TOOLS/psxrecomp/recompiler/build/psxrecomp-game.exe `
+  --work-dir <repo>/recomp/aot/work-static --gcc $env:BAG2_TOOLS/winlibs/mingw64/bin/gcc.exe `
   --out-dir <repo>/game/generated --workers 6
 ```
 
@@ -106,7 +106,7 @@ o cmake direto, com o `env.ps1` carregado:
 
 ```powershell
 cmake -S game -B game/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc `
-  -DCMAKE_CXX_COMPILER=g++ -DPSXRECOMP_ROOT=C:/tools/psxrecomp -DPSX_RECOMP_UI=OFF -DPSX_ENABLE_VULKAN=OFF
+  -DCMAKE_CXX_COMPILER=g++ -DPSXRECOMP_ROOT=$env:BAG2_TOOLS/psxrecomp -DPSX_RECOMP_UI=OFF -DPSX_ENABLE_VULKAN=OFF
 cmake --build game/build --target psx-runtime
 ```
 

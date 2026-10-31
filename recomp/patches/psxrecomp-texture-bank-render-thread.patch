@@ -1,5 +1,5 @@
 # Patch local do PSXRecomp para o remake do HEAT (notes/remake-visual.md, seção Desempenho).
-# Aplicar em C:/tools/psxrecomp depois de psxrecomp-hd-cache-caps.patch: git apply --ignore-whitespace <este arquivo>
+# Aplicar na pasta do clone do psxrecomp depois de psxrecomp-hd-cache-caps.patch: git apply --ignore-whitespace <este arquivo>
 diff --git a/runtime/include/mod_memory.h b/runtime/include/mod_memory.h
 index 98fb0ec6..31b2aeaa 100644
 --- a/runtime/include/mod_memory.h

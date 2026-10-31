@@ -6,7 +6,7 @@ anima pelo esqueleto do jogo, suaviza cada frame com Phong Tessellation (ou Loop
 calcula oclusão ambiente, amplia as texturas com Real-ESRGAN e renderiza ORIGINAL (imitação PS1) vs
 MODERNIZADO (luz por pixel com sombras) e MODERNIZADO cel-shading. Notas: docs/remake-visual.md.
 
-Uso (venv com tools/remake/requirements.txt; Real-ESRGAN em C:/tools/realesrgan/bin):
+Uso (venv com tools/remake/requirements.txt; Real-ESRGAN em $BAG2_TOOLS/realesrgan/bin):
     python tools/remake/heat_remake.py                 # tudo, saída em logs/remake/heat/
     python tools/remake/heat_remake.py --anim 2 --frame 20 --only compare
     python tools/remake/heat_remake.py --list-anims
@@ -32,7 +32,7 @@ from render import Renderer, pack  # noqa: E402
 
 DISC = os.path.join(HERE, '..', '..', 'disc', 'Bust A Groove 2 (USA).bin')
 OUT = os.path.join(HERE, '..', '..', 'logs', 'remake')
-ESRGAN = 'C:/tools/realesrgan/bin/realesrgan-ncnn-vulkan.exe'
+ESRGAN = os.path.join(os.environ.get('BAG2_TOOLS', ''), 'realesrgan', 'bin', 'realesrgan-ncnn-vulkan.exe')
 # HEAT: nós 20..23 são mãos alternativas (sem pai, posicionadas pelo jogo ao trocar de gesto)
 SKIP = {'HEAT': {20, 21, 22, 23}}
 

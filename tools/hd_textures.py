@@ -16,7 +16,7 @@ Algoritmo: xBR nivel 1 (Hyllian) em numpy, 2x por passada, aplicado log2(scale) 
 de saida copia a cor de um pixel de entrada (sem mistura), entao os valores de alfa continuam
 exatamente os do dump (0 = recorte, 143 = semitransparente STP, 255 = opaco): o runtime classifica
 transparencia por limiares de alfa (docs/DUCKSTATION_TEXTURE_FORMAT.md) e mistura criaria franjas.
-Filtro esrgan: usa o binario portatil realesrgan-ncnn-vulkan (C:/tools/realesrgan/bin por padrao, --esrgan-bin),
+Filtro esrgan: usa o binario portatil realesrgan-ncnn-vulkan ($BAG2_TOOLS/realesrgan/bin por padrao, --esrgan-bin),
 modelo realesr-animevideov3 (x2/x3/x4, --model). Antes de enviar ao ESRGAN os pixels recortados (alfa 0) recebem a cor
 do vizinho opaco mais proximo (dilatacao), senao a rede mistura preto nas bordas e gera franja. O alfa de saida NAO vem
 da rede: vem do xBR (bordas diagonais suaves, valores exatos do dump), e onde o alfa e 0 o RGB vira 0.
@@ -38,7 +38,7 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PACK = os.path.join(HERE, "..", "game", "build", "mods", "texture-packs", "SLUS-01159")
-ESRGAN_BIN = "C:/tools/realesrgan/bin/realesrgan-ncnn-vulkan.exe"
+ESRGAN_BIN = os.path.join(os.environ.get("BAG2_TOOLS", ""), "realesrgan", "bin", "realesrgan-ncnn-vulkan.exe")
 
 # Pesos YUV do xBR e limiar de "cores iguais" (escala 0..255).
 _Y = np.array([0.299, 0.587, 0.114], dtype=np.float32)
@@ -153,7 +153,7 @@ def alpha_xbr(rgba: np.ndarray, scale: int) -> np.ndarray:
 def run_esrgan(src_dir: str, dst_dir: str, scale: int, exe: str, model: str) -> None:
     if not os.path.isfile(exe):
         raise FileNotFoundError(f"Real-ESRGAN nao encontrado: {exe} (baixe realesrgan-ncnn-vulkan-*-windows.zip "
-                                "de github.com/xinntao/Real-ESRGAN/releases e extraia em C:/tools/realesrgan/bin)")
+                                "de github.com/xinntao/Real-ESRGAN/releases e extraia em $BAG2_TOOLS/realesrgan/bin)")
     cmd = [exe, "-i", src_dir, "-o", dst_dir, "-n", model, "-s", str(scale), "-f", "png", "-j", "2:4:2"]
     r = subprocess.run(cmd, cwd=os.path.dirname(exe), capture_output=True, text=True, errors="replace")
     if r.returncode != 0:

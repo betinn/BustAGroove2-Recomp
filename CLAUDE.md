@@ -3,12 +3,12 @@
 Bust A Groove 2 (USA, SLUS-01159, **PlayStation 1**) recompilado para .exe nativo de PC via PSXRecomp.
 Projeto pessoal, uso local. A versão para navegador (archive/web/) foi **abandonada** em 2026-10-23; foco 100 % no exe.
 Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`; pasta local
-`C:\Users\sem-m\source\GIT\BustAGroove2-Recomp` (renomeada de `BustAGroove2Web` em 2026-10-24).
+`<pasta do repo>` (renomeada de `BustAGroove2Web` em 2026-10-24).
 
-**Android**: fork GPLv3 do DuckStation chamado **Polygonia** em `C:\Users\sem-m\source\GIT\Polygonia`
+**Android**: fork GPLv3 do DuckStation chamado **Polygonia** em `<pasta do Polygonia>`
 (GitHub `betinn/Polygonia`, público). Tudo sobre ele em `docs/android-fork.md`: commit base, toolchain
-(`C:\tools\android-sdk`, JDK 11/21), bug do OpenBIOS, rename, Play. Keystore em
-`C:\Users\sem-m\Polygonia-keys\` (fora de qualquer repo).
+(`<TOOLS>\android-sdk`, JDK 11/21), bug do OpenBIOS, rename, Play. Keystore em
+`<pasta das chaves>\` (fora de qualquer repo).
 
 ## Regras fixas
 - (só `releases/README.md` e os textos de cada release desde a v2.0.0: `VERSION.txt`, `game.toml`,
@@ -20,7 +20,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 ## Onde está cada coisa
 - Disco: `disc/Bust A Groove 2 (USA).cue` (+ .bin) na raiz do repo, fora do git (`*.bin`/`*.cue` ignorados);
   `disc/README.md` (no git) tem os hashes do dump. Todos os scripts, o `game.toml` (`../disc/...`) e o
-  `Jogar.bat` leem dali. Original também em `C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\`.
+  `Jogar.bat` leem dali. Original também em `<pasta do disco original>\`.
 - Build do zero: `BUILD.md` (raiz). Releases: `releases/README.md`.
 - Estrutura (reorganizada em 2026-10-30; tabela no README): `game/` (projeto do jogo, era `tools/recomp/bag2`),
   `recomp/` (build.ps1, env.ps1, patches, aot; era `tools/recomp`), `tools/remake/` (geração dos assets e captura
@@ -28,8 +28,8 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   (extração do disco), `docs/` (era `notes/`), `archive/` (web, IA descartada, ghidra, roteiro antigo), `logs/`
   (fora do git; venv dos exportadores em `logs/remake/venv`). Scripts de `tools/tests/` acham os de `tools/remake/`
   por `sys.path`; rodar da raiz do repo.
-- Framework PSXRecomp (nativo): `C:\tools\psxrecomp` (docs em `docs/`: `WIDESCREEN.md`, `HD_TEXTURE_PACKS.md`,
-  `MOD_PACKAGES.md`, `QUALITY_PRESETS.md`). Fork web (não usado mais): `C:\tools\psxrecomp-web`.
+- Framework PSXRecomp (nativo): `<TOOLS>\psxrecomp` (docs em `docs/`: `WIDESCREEN.md`, `HD_TEXTURE_PACKS.md`,
+  `MOD_PACKAGES.md`, `QUALITY_PRESETS.md`). Fork web (não usado mais): `<TOOLS>\psxrecomp-web`.
 - Projeto do jogo: `game/` — `CMakeLists.txt`, `game.toml` (config do runtime: `[video]`, `[widescreen]`),
   `settings.toml` (tela cheia), `Jogar.bat`, `src/bag2_mods.c` (plugins estáticos: widescreen),
   `mods/preloaded/packages/*/manifest.toml` (pacotes de mod ligados por padrão), `generated/` (C gerado + overlays AOT),
@@ -60,7 +60,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   buffer), `tools/tests/audio_buffer_check.py` (underruns por fase).
 - Pacote de texturas HD (v1.3.0): mod `psx.enhancement.hd-textures` ligado por override do manifest em
   `mods/preloaded/packages/psx.enhancement.hd-textures/`; 710 dumps (467 identidades) na v1.3.0; fase 6: dumps dos 11 palcos da tela de palco do 2 jogadores (`stage_inventory.py run`, 562 novos), 92 texturas novas; fase 6b: segunda volta com a música quase inteira (`stage_dump2.py`, 104 novos), 59 texturas novas, **620 substituições** ampliados 4x com Real-ESRGAN
-  (`tools/hd_textures.py --filter esrgan`, binário em `C:/tools/realesrgan/bin`, alfa via xBR, recortes aninhados
+  (`tools/hd_textures.py --filter esrgan`, binário em `<TOOLS>/realesrgan/bin`, alfa via xBR, recortes aninhados
   deduplicados) em `build/mods/texture-packs/SLUS-01159/replacements/` (fora do git). Para capturar mais palcos:
   `build/mods/state.toml` com `dump = "true"`, `replacements = "false"` (strings), jogar, fechar a janela (não
   `Stop-Process`, senão perde o último lote), rodar o script de novo (incremental). Notas §12 e §12.1.
@@ -71,7 +71,7 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
   `glGetIntegerv` no save/restore, que custava 1,5–1,9 ms por desenho com o driver da NVIDIA em modo de thread;
   plugins usam só unidades de textura 8+ e não leem estado do GL por quadro; desde 2026-10-28 passa ao plugin, no
   espelho da tela larga, as colunas do centro que a apresentação cobre: `PSXModHostDrawTarget.center_x`). Reaplicar
-  (`git apply --ignore-whitespace`) se `C:/tools/psxrecomp` for atualizado. Medição de desempenho: `build-debug/`
+  (`git apply --ignore-whitespace`) se `<TOOLS>/psxrecomp` for atualizado. Medição de desempenho: `build-debug/`
   (`-DPSX_DEBUG_TOOLS=ON`, TCP 4370) + `tools/tests/game_perf.py`.
 - `recomp/build.ps1` aborta no PowerShell 5.1 quando o cmake escreve aviso em stderr (`$ErrorActionPreference =
   'Stop'`); alternativa: rodar `cmake -S game -B game/build ...` e `cmake --build ... --target
@@ -146,10 +146,10 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - **Fase 6b** (`docs/remake-visual.md`, "Fase 6b no jogo"): no 16:9 o espelho da tela larga desenha só as laterais
   (`RmkTarget.skip_x`; flag 2048 do `stage_geo` desenha o centro, para A/B); o RTPT/RTPS em linha dos overlays de palco
   entra por gancho de instrução: 20 endereços em `[recompiler] mod_instruction_sites` do `game.toml`. Mudar essa lista =
-  regenerar os overlays estáticos (cwd `C:\tools\psxrecomp\tools`, `env.ps1` no PATH): `python aot_overlay_pipeline.py
+  regenerar os overlays estáticos (cwd `<TOOLS>\psxrecomp\tools`, `env.ps1` no PATH): `python aot_overlay_pipeline.py
   static --profile <repo>/recomp/aot/overlays.json --game-toml <repo>/game/game.toml --recompiler
-  C:/tools/psxrecomp/recompiler/build/psxrecomp-game.exe --work-dir <repo>/recomp/aot/work-static --gcc
-  C:/tools/winlibs/mingw64/bin/gcc.exe --out-dir <repo>/game/generated --workers 6` (só os 13 overlays
+  <TOOLS>/psxrecomp/recompiler/build/psxrecomp-game.exe --work-dir <repo>/recomp/aot/work-static --gcc
+  <TOOLS>/winlibs/mingw64/bin/gcc.exe --out-dir <repo>/game/generated --workers 6` (só os 13 overlays
   de palco mudam; fazer cópia de `generated/` antes) e recompilar. Tempo de GPU do palco e dos dançarinos: `gpu_timers 1` +
   `tools/tests/stage_gpu_ab.py` (o `render_busy` varia ±5 pontos entre janelas da mesma variante). Segunda rodada
   (2026-10-29): Phong nas peças curvas, decidido por nó quando ele entra em cena (`classify_tess`; flag 16 do

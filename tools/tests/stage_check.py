@@ -20,7 +20,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'remake'))
-sys.path.insert(0, r'C:/tools/psxrecomp/tools')
+sys.path.insert(0, os.path.join(os.environ.get('PSXRECOMP_ROOT', os.path.join(os.environ.get('BAG2_TOOLS', ''), 'psxrecomp')), 'tools'))
 from game_session import Session, REPO  # noqa: E402
 from stage_beat import present_shot  # noqa: E402
 import psx_gpu_frame as pgf  # noqa: E402

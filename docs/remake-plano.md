@@ -254,7 +254,7 @@ não feita: o brief pedia "só se valer e couber"; os dados de custo e ganho est
 
 Plano original:
 - Luz e efeitos na tela: bloom forte nos neons, graduação de cor, luzes pulsando com a música. O framework
-  já tem bloom e presets de pós-efeito `.pfx` (`C:/tools/psxrecomp/docs/POST_EFFECTS.md`), na GPU.
+  já tem bloom e presets de pós-efeito `.pfx` (`<TOOLS>/psxrecomp/docs/POST_EFFECTS.md`), na GPU.
 - Com o atalho: geometria e luz do palco pelo caminho novo (iluminação dinâmica, sombra dos personagens no
   chão, reflexo no piso se fizer sentido). Formato/container dos palcos ainda não mapeado.
 - Texturas HD dos palcos já existem (pacote v1.3.0); cobrir mais palcos com dumps se faltar.

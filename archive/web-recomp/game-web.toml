@@ -1,5 +1,5 @@
 # game-web.toml — Bust A Groove 2 (USA) para o fork kem0x/psxrecomp (branch
-# compat/windows-web-stability, C:\tools\psxrecomp-web), usado pelo alvo WASM.
+# compat/windows-web-stability, <TOOLS>\psxrecomp-web), usado pelo alvo WASM.
 # Esquema do fork = o do RepsiMan/game.toml (sem bios_config/discovery, que são
 # chaves do upstream). O C gerado vai para generated-web/ (um único
 # SLUS_011.59_full.c + _dispatch.c; o fork não fragmenta em shards).

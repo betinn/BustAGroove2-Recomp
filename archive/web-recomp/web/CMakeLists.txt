@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 # Alvo WASM do Bust A Groove 2 (fork kem0x/psxrecomp, branch compat/windows-web-stability).
-# Modelo: C:\tools\RepsiMan\CMakeLists.txt. Configure SEMPRE com emcmake (ver archive/web-recomp/build-web.ps1):
+# Modelo: <TOOLS>\RepsiMan\CMakeLists.txt. Configure SEMPRE com emcmake (ver archive/web-recomp/build-web.ps1):
 #   emcmake cmake -S game/web -B archive/web-recomp/build-web -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_LAUNCHER=OFF -DPSX_DEBUG_TOOLS=OFF
 project(BustAGroove2RecompWeb C CXX)
 
@@ -8,7 +8,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(PSXRECOMP_ROOT "C:/tools/psxrecomp-web" CACHE PATH "Path to the kem0x/psxrecomp checkout (compat/windows-web-stability)")
+set(PSXRECOMP_ROOT "<TOOLS>/psxrecomp-web" CACHE PATH "Path to the kem0x/psxrecomp checkout (compat/windows-web-stability)")
 if(NOT EXISTS "${PSXRECOMP_ROOT}/runtime/runtime.cmake")
     message(FATAL_ERROR "psxrecomp-web runtime missing: ${PSXRECOMP_ROOT}/runtime/runtime.cmake (set -DPSXRECOMP_ROOT)")
 endif()
@@ -23,7 +23,7 @@ set(PSX_DEBUG_TOOLS OFF CACHE BOOL "" FORCE)
 set(PSXRECOMP_SKIP_BIOS_STALE_CHECK ON CACHE BOOL "" FORCE)
 include("${PSXRECOMP_ROOT}/runtime/runtime.cmake")
 
-# C gerado por C:\tools\psxrecomp-web\recompiler\build\psxrecomp-game.exe --config game-web.toml
+# C gerado por <TOOLS>\psxrecomp-web\recompiler\build\psxrecomp-game.exe --config game-web.toml
 set(BAG2_GEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../generated-web")
 set(BAG2_GENERATED_FULL     "${BAG2_GEN_DIR}/SLUS_011.59_full.c")
 set(BAG2_GENERATED_DISPATCH "${BAG2_GEN_DIR}/SLUS_011.59_dispatch.c")
@@ -96,8 +96,8 @@ if(EMSCRIPTEN)
     add_custom_command(TARGET psx-runtime POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:psx-runtime>/bios"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "C:/tools/psxrecomp/bios/openbios.bin" "$<TARGET_FILE_DIR:psx-runtime>/bios/openbios.bin"
+            "<TOOLS>/psxrecomp/bios/openbios.bin" "$<TARGET_FILE_DIR:psx-runtime>/bios/openbios.bin"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "C:/tools/psxrecomp/bios/OpenBIOS.LICENSE" "$<TARGET_FILE_DIR:psx-runtime>/bios/OpenBIOS.LICENSE"
+            "<TOOLS>/psxrecomp/bios/OpenBIOS.LICENSE" "$<TARGET_FILE_DIR:psx-runtime>/bios/OpenBIOS.LICENSE"
         VERBATIM)
 endif()

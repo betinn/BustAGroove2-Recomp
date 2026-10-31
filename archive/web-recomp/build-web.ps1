@@ -1,17 +1,17 @@
 # Build WASM (Emscripten) do Bust A Groove 2 recompilado, com o fork kem0x/psxrecomp.
 # Uso:  powershell -File archive\web-recomp\build-web.ps1 [-Step framework|game|configure|build|copy|all]
 # Pré-requisitos (ver docs/recomp.md §7):
-#   C:\tools\psxrecomp-web  = git clone --recurse-submodules https://github.com/kem0x/psxrecomp (branch compat/windows-web-stability)
-#   C:\tools\emsdk          = Emscripten 6.0.13 instalado/ativado (emsdk install latest; emsdk activate latest)
-#   C:\tools\winlibs, cmake/ninja do pip (env.ps1) — o recompilador do fork é nativo (GCC).
+#   $BAG2_TOOLS\psxrecomp-web  = git clone --recurse-submodules https://github.com/kem0x/psxrecomp (branch compat/windows-web-stability)
+#   $BAG2_TOOLS\emsdk          = Emscripten 6.0.13 instalado/ativado (emsdk install latest; emsdk activate latest)
+#   $BAG2_TOOLS\winlibs, cmake/ninja do pip (env.ps1) — o recompilador do fork é nativo (GCC).
 param(
     [ValidateSet('framework','game','configure','build','copy','all')] [string]$Step = 'all'
 )
 $ErrorActionPreference = 'Stop'
 $repo  = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . "$PSScriptRoot\env.ps1"
-$fw    = 'C:\tools\psxrecomp-web'
-$emsdk = 'C:\tools\emsdk'
+$fw    = Join-Path $env:BAG2_TOOLS 'psxrecomp-web'
+$emsdk = Join-Path $env:BAG2_TOOLS 'emsdk'
 $proj  = "$PSScriptRoot\bag2"
 $src   = "$proj\web"
 $bld   = "$proj\build-web"

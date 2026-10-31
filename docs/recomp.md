@@ -5,7 +5,7 @@ Data: 2026-10-22. Máquina: Windows 10 Pro 19045, sem workload C++ do VS 2022.
 ## 1. O que é o PSXRecomp
 
 - Repo: <https://github.com/RetroPortingToolKit/psxrecomp> (antes `mstan/psxrecomp`).
-  Clone local: `C:\tools\psxrecomp` (commit `31df2e1e`, 2026-10-22).
+  Clone local: `<TOOLS>\psxrecomp` (commit `31df2e1e`, 2026-10-22).
 - Framework de **recompilação estática** de PS1: traduz MIPS R3000A → C e linka
   com um runtime de hardware compartilhado (GPU OpenGL/Vulkan/software, SPU,
   CD-ROM, MDEC, GTE, pads, memcards). Dois CMake trees: `recompiler/`
@@ -34,7 +34,7 @@ Data: 2026-10-22. Máquina: Windows 10 Pro 19045, sem workload C++ do VS 2022.
 
 ## 2. Formato de configuração (`game.toml`)
 
-Esquema completo: `C:\tools\psxrecomp\docs\config_schema.md`. Um processo sempre
+Esquema completo: `<TOOLS>\psxrecomp\docs\config_schema.md`. Um processo sempre
 carrega um perfil de BIOS (`bios/OpenBIOS.toml`) e, opcionalmente, um
 `game.toml`. Caminhos relativos resolvem a partir da raiz do projeto (o loader
 sobe até achar `CMakeLists.txt`, `.gitignore` ou `.git`).
@@ -77,7 +77,7 @@ MinGW (MSYS2 — é o que o CI do projeto usa, "release parity") ou o pacote
 <https://github.com/RetroPortingToolKit/RetroPorting-Toolchains/releases>.
 
 ```sh
-cd C:/tools/psxrecomp
+cd <TOOLS>/psxrecomp
 cmake -S recompiler -B recompiler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build recompiler/build
 bash tools/regen_bios.sh --config bios/OpenBIOS.toml      # gera generated/OpenBIOS_*.c (obrigatório)
@@ -88,8 +88,8 @@ cmake --build runtime/build --target psx-runtime           # runtime só-BIOS (t
 Projeto de jogo (nosso: `game/`):
 
 ```sh
-C:/tools/psxrecomp/recompiler/build/psxrecomp-game --config game/game.toml
-cmake -S game -B game/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSXRECOMP_ROOT=C:/tools/psxrecomp
+<TOOLS>/psxrecomp/recompiler/build/psxrecomp-game --config game/game.toml
+cmake -S game -B game/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSXRECOMP_ROOT=<TOOLS>/psxrecomp
 cmake --build game/build --target psx-runtime
 game/build/psx-runtime.exe --game game.toml --disc "<cue>"
 ```
@@ -124,7 +124,7 @@ Nunca buildar em Debug sem querer: o C gerado em `-O0` demora demais.
 
 ```sh
 git clone --recurse-submodules https://github.com/FermataRest/RepsiMan.git
-# ativar emsdk (C:\tools\emsdk\emsdk_env.bat / emsdk activate latest)
+# ativar emsdk (<TOOLS>\emsdk\emsdk_env.bat / emsdk activate latest)
 cmake -S psxrecomp/recompiler -B psxrecomp/recompiler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build psxrecomp/recompiler/build
 psxrecomp/recompiler/build/psxrecomp-game --config game.toml
@@ -143,11 +143,11 @@ Toolchain instalada (nada exigiu admin, exceto o que ficou pendente):
 
 | Ferramenta | Versão | Onde | Como |
 |---|---|---|---|
-| GCC MinGW-w64 UCRT (WinLibs) | 16.2.0 (posix/seh, r2) | `C:\tools\winlibs\mingw64\bin` | zip baixado e verificado pelo winget (`BrechtSanders.WinLibs.POSIX.UCRT`, SHA256 `D5DBAFC4A170…276A`), extraído à mão porque o winget ficou preso atrás de um prompt UAC |
+| GCC MinGW-w64 UCRT (WinLibs) | 16.2.0 (posix/seh, r2) | `<TOOLS>\winlibs\mingw64\bin` | zip baixado e verificado pelo winget (`BrechtSanders.WinLibs.POSIX.UCRT`, SHA256 `D5DBAFC4A170…276A`), extraído à mão porque o winget ficou preso atrás de um prompt UAC |
 | CMake | 4.4.4 (Kitware) | `%APPDATA%\Python\Python314\Scripts\cmake.exe` | `pip install --user cmake ninja` |
 | Ninja | 1.13.2 | idem | idem |
-| Emscripten (emsdk) | 6.0.13 | `C:\tools\emsdk` (`emsdk_env.bat`) | `git clone` + `emsdk install/activate latest` |
-| PSXRecomp | commit `31df2e1e` (2026-10-22) | `C:\tools\psxrecomp` | `git clone --recursive` |
+| Emscripten (emsdk) | 6.0.13 | `<TOOLS>\emsdk` (`emsdk_env.bat`) | `git clone` + `emsdk install/activate latest` |
+| PSXRecomp | commit `31df2e1e` (2026-10-22) | `<TOOLS>\psxrecomp` | `git clone --recursive` |
 | Python | 3.14 | já havia | — |
 
 Pendente/observações:
@@ -170,7 +170,7 @@ Arquivos deste repo:
 - `recomp/env.ps1` — PATH/CC/CXX da toolchain.
 - `recomp/build.ps1` — passos 1-4 reproduzíveis (`-Step framework|bios|game|runtime|all`, `-Run`).
 - `game/game.toml` — config do jogo (ver §2); `bios_config` aponta
-  para `C:/tools/psxrecomp/bios/OpenBIOS.toml` (sem isso o `psxrecomp-game`
+  para `<TOOLS>/psxrecomp/bios/OpenBIOS.toml` (sem isso o `psxrecomp-game`
   aborta com "no BIOS profile found").
 - `game/CMakeLists.txt` — projeto de jogo (`psxrecomp_add_game_runtime`, sem recomp-ui/netplay).
 - `game/seeds/functions.txt` — 632 seeds do `psxrecomp-toml` (631 alvos de JAL + entry). Os endereços conhecidos 0x80035DC4 (BPE) e 0x8001F7E0 (instalador de overlay) já estão lá.
@@ -215,7 +215,7 @@ Resultados:
 2. Se algum trecho ficar no interpretador/`psx_unknown_dispatch`, adicionar os
    endereços ao `seeds/functions.txt` (os 14 avisos "out-of-function branch" do
    log do psxrecomp-game são os primeiros candidatos) e regenerar.
-3. Alvo WASM: (a) clonar `kem0x/psxrecomp` em `C:\tools\psxrecomp-web`, (b)
+3. Alvo WASM: (a) clonar `kem0x/psxrecomp` em `<TOOLS>\psxrecomp-web`, (b)
    `emsdk_env.bat`, (c) regenerar o C do jogo com o `psxrecomp-game` desse fork
    (API `psxrecomp_add_runtime_target` antiga; conferir `psxrecomp-toml-readme.md`
    do fork), (d) copiar `CMakeLists.txt`, `archive/web/shell.html`, `archive/web/serve.py` do
@@ -231,8 +231,8 @@ Resultado: `archive/web/recomp.html` roda o jogo recompilado no navegador (`/rec
 `.bin`/`.cue`). Boot OpenBIOS → logos → abertura → menu principal a 60 vblank/s (abertura ~36–39 por
 causa do MDEC no renderer software). Teclado: mapa do PS1 em `archive/web/src/recomp/main.ts` (`KEYBINDS_INI`).
 
-Toolchain: fork **kem0x/psxrecomp** (branch `compat-web`) em `C:\tools\psxrecomp-web`, Emscripten 6.0.13
-(`C:\tools\emsdk`). Script: `powershell -File archive\web-recomp\build-web.ps1 -Step framework|game|configure|build|copy|all`.
+Toolchain: fork **kem0x/psxrecomp** (branch `compat-web`) em `<TOOLS>\psxrecomp-web`, Emscripten 6.0.13
+(`<TOOLS>\emsdk`). Script: `powershell -File archive\web-recomp\build-web.ps1 -Step framework|game|configure|build|copy|all`.
 Projeto CMake: `archive/web-recomp/web/CMakeLists.txt` (API antiga `psxrecomp_add_runtime_target`,
 `BIOS_INTERPRETER`, renderer software, `-sINVOKE_RUN=0`, `-sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV`,
 `-msimd128`). Config do jogo: `archive/web-recomp/game-web.toml` (C gerado em `generated-web/`, o fork emite
@@ -263,9 +263,9 @@ interpretador MIPS (`overlay_backend = "interp"`).
   v1`, `fixed_address_extents`, `allow_missing`, 56 imagens únicas — 159..194 e 252..485 são cópias
   byte a byte). O overlay principal 3 tem tabelas de dados que o descobridor estático tentava decodificar
   como código (`UNSUPPORTED_INSTRUCTION` em `0x800956B0..`); resolvido com `excluded_ranges`.
-- `python aot_overlay_pipeline.py extract|static ...` (cwd `C:\tools\psxrecomp\tools`, gcc do WinLibs no
+- `python aot_overlay_pipeline.py extract|static ...` (cwd `<TOOLS>\psxrecomp\tools`, gcc do WinLibs no
   PATH). O recompilador procura `bios/SCPH1001.toml` em `--project-root` = pasta do `game.toml`:
-  `game/bios` é uma junção para `C:\tools\psxrecomp\bios`. Resultado: 55/55 shards ok →
+  `game/bios` é uma junção para `<TOOLS>\psxrecomp\bios`. Resultado: 55/55 shards ok →
   `generated/overlays_static.c` + 56 unidades, linkadas com
   `GAME_OVERLAY_STATIC_C "${CMAKE_CURRENT_SOURCE_DIR}/generated/overlays_static.c"` (caminho absoluto:
   com relativo o glob das unidades `_NNNN.c` falha e o link dá 34k referências indefinidas).
@@ -361,7 +361,7 @@ Captura de tela: `PrintWindow` e `CopyFromScreen` voltam preto com a janela GL s
 a captura de tela do app (DXGI). Sempre `Stop-Process -Name Bust_A_Groove_2_Recompiled` depois dos testes.
 
 ## 12. Pacote de texturas HD (2026-10-23)
-Mod embutido `psx.enhancement.hd-textures` do runtime (formato DuckStation; `C:\tools\psxrecomp\docs\HD_TEXTURE_PACKS.md`
+Mod embutido `psx.enhancement.hd-textures` do runtime (formato DuckStation; `<TOOLS>\psxrecomp\docs\HD_TEXTURE_PACKS.md`
 e `DUCKSTATION_TEXTURE_FORMAT.md`). Só o OpenGL exibe substituições. Pasta do pacote: `mods/texture-packs/SLUS-01159`
 ao lado do exe (o runtime gera esse caminho como recurso `pack` padrão quando nada foi selecionado —
 `mod_runtime.cpp`, "psx.hd-textures has a shared directory-resource contract"), com `dumps/` e `replacements/`.
@@ -431,10 +431,10 @@ a cada 10 s os contadores do mod e a linha de fps do log).
 Mesmo com o pack 2x o quadro era igual (3 200 composições/s): não é peso de pixel, é *churn* de cache.
 
 **Correção.** Patch local no framework (`recomp/patches/psxrecomp-hd-cache-caps.patch`, aplicado em
-`C:\tools\psxrecomp`): composições 2048 entradas / 512 MiB, cache GL 4096 entradas / 1 GiB. Resultado na mesma
+`<TOOLS>\psxrecomp`): composições 2048 entradas / 512 MiB, cache GL 4096 entradas / 1 GiB. Resultado na mesma
 partida (xBR 4x): composições refeitas 7–280 por 10 s, uploads GL ~10 por 10 s, `render_busy` 23–44 %, 60 fps
 estáveis. O processo passa a usar ~1 GB de RAM. Reaplicar o patch se o framework for atualizado
-(`git -C C:\tools\psxrecomp apply <patch>`), depois `-Step runtime`.
+(`git -C <TOOLS>\psxrecomp apply <patch>`), depois `-Step runtime`.
 
 **Dedupe dos dumps.** O dumper publica a união dos retângulos usados a cada ~1 s e a união só cresce, então a mesma
 textura+paleta aparece várias vezes com recortes aninhados (710 arquivos = 467 identidades; 238 recortes contidos
@@ -442,7 +442,7 @@ num maior). Dois recortes casando o mesmo draw = `count > 1` no matcher = compos
 (imagem única no cache GL). `hd_textures.py` agora ignora recortes contidos por padrão (`--no-dedupe` desliga).
 
 **Real-ESRGAN.** `--filter esrgan` usa `realesrgan-ncnn-vulkan.exe` (release oficial v0.2.5.0 de
-xinntao/Real-ESRGAN, em `C:\tools\realesrgan\bin`, GPU via Vulkan; 710 texturas 4x em ~3,5 min na RTX 3070 Ti),
+xinntao/Real-ESRGAN, em `<TOOLS>\realesrgan\bin`, GPU via Vulkan; 710 texturas 4x em ~3,5 min na RTX 3070 Ti),
 modelo `realesr-animevideov3` (cartoon; `realesrgan-x4plus` é mais "foto"). Fluxo por textura: RGB com os pixels
 recortados preenchidos pela cor do vizinho opaco (dilatação) -> ESRGAN -> alfa do xBR (valores exatos 0/143/255,
 bordas diagonais suaves) -> RGB zerado onde alfa = 0. Sem isso a rede devolve alfa contínuo (109 valores numa

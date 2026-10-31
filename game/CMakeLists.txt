@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 # Projeto de jogo para o PSXRecomp. O framework NÃO é submódulo aqui: aponte
-# -DPSXRECOMP_ROOT=C:/tools/psxrecomp (padrão abaixo).
-set(PSXRECOMP_ROOT "C:/tools/psxrecomp" CACHE PATH "Path to psxrecomp framework checkout")
+# -DPSXRECOMP_ROOT=<pasta do clone> (ou a variável de ambiente PSXRECOMP_ROOT, que recomp/env.ps1 define).
+if(DEFINED ENV{PSXRECOMP_ROOT})
+    set(_psxrecomp_default "$ENV{PSXRECOMP_ROOT}")
+else()
+    set(_psxrecomp_default "${CMAKE_CURRENT_LIST_DIR}/../../tools/psxrecomp")
+endif()
+set(PSXRECOMP_ROOT "${_psxrecomp_default}" CACHE PATH "Path to psxrecomp framework checkout")
 if(NOT EXISTS "${PSXRECOMP_ROOT}/runtime/runtime.cmake")
     message(FATAL_ERROR "PSXRecomp runtime missing: ${PSXRECOMP_ROOT}/runtime/runtime.cmake (set -DPSXRECOMP_ROOT)")
 endif()

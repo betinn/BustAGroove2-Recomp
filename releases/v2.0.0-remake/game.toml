@@ -1,5 +1,5 @@
 # game.toml — Bust A Groove 2 (USA) para o PSXRecomp (RetroPortingToolKit/psxrecomp).
-# Esquema: C:\tools\psxrecomp\docs\config_schema.md
+# Esquema: <psxrecomp>/docs/config_schema.md
 # Caminhos relativos resolvem a partir da "raiz do projeto" = esta pasta
 # (o loader sobe diretórios até achar CMakeLists.txt/.gitignore/.git).
 #
@@ -29,7 +29,7 @@ stack_base   = "0x801FFFF0"
 # seeds/functions.txt: alvos de JAL extraídos pelo psxrecomp-toml + endereços
 # conhecidos (BPE 0x80035DC4, instalador de overlay 0x8001F7E0).
 seeds       = "seeds/functions.txt"
-bios_config = "C:/tools/psxrecomp/bios/OpenBIOS.toml"   # perfil de BIOS (modelo de endereços); OpenBIOS é o que roda
+bios_config = "bios/OpenBIOS.toml"   # perfil de BIOS (modelo de endereços); OpenBIOS é o que roda
 out_dir   = "generated"
 strict    = true
 discovery = "whole-image"

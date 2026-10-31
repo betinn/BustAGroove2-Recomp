@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-run Ghidra headless analysis + export. Needs C:\tools\ghidra_12.1.4_PUBLIC and C:\tools\jdk-21*.
+# Re-run Ghidra headless analysis + export. Needs <TOOLS>\ghidra_12.1.4_PUBLIC and <TOOLS>\jdk-21*.
 set -e
 cd "$(dirname "$0")/../.."
 export JAVA_HOME=$(ls -d /c/tools/jdk-21* | head -1); export PATH="$JAVA_HOME/bin:$PATH"
