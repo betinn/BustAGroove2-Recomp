@@ -11,11 +11,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 `C:\Users\sem-m\Polygonia-keys\` (fora de qualquer repo).
 
 ## Regras fixas
-- **Nenhum dado do jogo entra no git**: .bin/.cue, XA/STR, `extracted/`, texturas extraídas/dumps, `saves/`,
-  `releases/` (só `releases/README.md` e os textos de cada release desde a v2.0.0: `VERSION.txt`, `game.toml`,
+- (só `releases/README.md` e os textos de cada release desde a v2.0.0: `VERSION.txt`, `game.toml`,
   `settings.toml`, `keybinds.ini`, `input.ini`; nova release = novas exceções no `.gitignore`). `game/build/` é ignorado por `game/.gitignore`.
 - `releases/v1.0.0-estavel/` é backup: **nunca alterar**.
-- Sem deploy/publicação.
 - Edições de arquivo: ferramenta Edit ou Python com `encoding='utf-8'` (cp1252 corrompe acentos).
 - Depois de qualquer teste: `Stop-Process -Name Bust_A_Groove_2_Recompiled -Force`.
 
@@ -23,7 +21,6 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - Disco: `disc/Bust A Groove 2 (USA).cue` (+ .bin) na raiz do repo, fora do git (`*.bin`/`*.cue` ignorados);
   `disc/README.md` (no git) tem os hashes do dump. Todos os scripts, o `game.toml` (`../disc/...`) e o
   `Jogar.bat` leem dali. Original também em `C:\Users\sem-m\OneDrive\Documentos\My Games\Bust a groove 2\`.
-  **Nunca** pôr a imagem no git: repo público, jogo comercial, 612 MB.
 - Build do zero: `BUILD.md` (raiz). Releases: `releases/README.md`.
 - Estrutura (reorganizada em 2026-10-30; tabela no README): `game/` (projeto do jogo, era `tools/recomp/bag2`),
   `recomp/` (build.ps1, env.ps1, patches, aot; era `tools/recomp`), `tools/remake/` (geração dos assets e captura
