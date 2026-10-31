@@ -114,7 +114,8 @@ struct RmkStageGL {
 #define X(ret, name, args) ret(RGLAPI* name) args;
     GL_FUNCS(X)
 #undef X
-    int gles, step, ready, failed, has_nmap;
+    void (RGLAPI* TexStorage3D)(GLenum_, GLsizei_, GLenum_, GLsizei_, GLsizei_, GLsizei_);   /* opcional */
+    int gles, step, ready, failed, has_nmap, nmap_alloc;
     GLuint_ prog, vao, tri_vbo, inst_vbo, tex, nmap, geo[GEO_RING], smp_shadow;
     GLuint_ vtab;                    /* variantes afins (.stg v3): 2 texels RGBA32F por variante, k e b (unidade 11) */
     uint32_t n_var;
@@ -362,6 +363,7 @@ RmkStageGL* rmk_stage_gl_create(RmkGetProc get_proc, int gles) {
     if (!(g->name = (ret(RGLAPI*) args)get_proc("gl" #name))) { ok = 0; snprintf(g->err, sizeof g->err, "sem gl%s", #name); }
     GL_FUNCS(X)
 #undef X
+    g->TexStorage3D = (void(RGLAPI*)(GLenum_, GLsizei_, GLenum_, GLsizei_, GLsizei_, GLsizei_))get_proc("glTexStorage3D");
     if (!ok) g->failed = 1;
     return g;
 }
@@ -485,6 +487,21 @@ static void classify_tess(RmkStageGL* g, const RmkAsset* a, uint64_t done) {
     g->n_tess = nt;
 }
 
+/* Array de camadas RGBA8 com todos os níveis de mipmap: glTexStorage3D (imutável: uma alocação só; na Mali o
+ * TexImage3D nível a nível reespecificava a textura e custava até 200 ms num quadro) ou, sem ele (GL 3.3 sem
+ * ARB_texture_storage), TexImage3D por nível. Com mips da CPU os níveis são enchidos por camada; sem eles o
+ * GenerateMipmap do fim enche os níveis já alocados. */
+static void alloc_array(RmkStageGL* g, uint32_t S, uint32_t nl, int with_mips) {
+    const int L = rmk_mip_levels(S);
+    if (g->TexStorage3D) {
+        g->TexStorage3D(R_TEXTURE_2D_ARRAY, L + 1, R_RGBA8, (GLsizei_)S, (GLsizei_)S, (GLsizei_)nl);
+        return;
+    }
+    for (int l = 0; l <= (with_mips ? L : 0); l++)
+        g->TexImage3D(R_TEXTURE_2D_ARRAY, l, R_RGBA8, (GLsizei_)(S >> l), (GLsizei_)(S >> l), (GLsizei_)nl, 0, R_RGBA,
+                      R_UNSIGNED_BYTE, NULL);
+}
+
 static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     GLuint_ vs = compile(g, R_VERTEX_SHADER, VS), fs = vs ? compile(g, R_FRAGMENT_SHADER, FS) : 0;
     if (!vs || !fs) return 0;
@@ -579,18 +596,17 @@ static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     g->GenTextures(1, &g->tex);
     g->ActiveTexture(R_TEXTURE0 + 9);
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
-    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size,
-                  (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA, R_UNSIGNED_BYTE, NULL);
+    alloc_array(g, a->tex_size, a->n_layers ? a->n_layers : 1u, a->mips != NULL);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    /* o array dos mapas de normal (mesmo tamanho) é alocado só no passo em que a primeira camada dele sobe
+     * (alloc_nmap no prepare): os dois juntos custavam 119 ms num quadro na Mali */
     g->GenTextures(1, &g->nmap);
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
     g->has_nmap = a->nmaps != NULL;
-    const GLsizei_ ns = a->nmaps ? (GLsizei_)a->tex_size : 1;
-    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, ns, ns, (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA,
-                  R_UNSIGNED_BYTE, NULL);
+    if (!g->has_nmap) alloc_array(g, 1u, a->n_layers ? a->n_layers : 1u, 0);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
@@ -629,6 +645,7 @@ static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
         free(tab);
     }
     const uint64_t layer = (uint64_t)a->tex_size * a->tex_size * 4u * (a->n_layers ? a->n_layers : 1u);
+    const uint64_t ns = a->nmaps ? a->tex_size : 1u;
     g->bytes += layer * 4u / 3u + (uint64_t)ns * ns * 4u * (a->n_layers ? a->n_layers : 1u) * 4u / 3u +
                 (uint64_t)GEO_RING * g->geo_w * g->geo_h * 16u + sizeof(SInst) * g->n_inst_cap;
     return g->GetError() == 0;
@@ -656,8 +673,19 @@ int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
         const int is_n = k >= a->n_layers;
         const uint32_t l = is_n ? k - a->n_layers : k;
         g->BindTexture(R_TEXTURE_2D_ARRAY, is_n ? g->nmap : g->tex);
+        if (is_n && l == 0 && !g->nmap_alloc) {   /* alloc_nmap: o array dos mapas de normal, num passo só dele */
+            alloc_array(g, a->tex_size, a->n_layers, a->nmips != NULL);
+            g->nmap_alloc = 1;
+            return 0;   /* a camada sobe no próximo passo */
+        }
         g->TexSubImage3D(R_TEXTURE_2D_ARRAY, 0, 0, 0, (GLint_)l, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size, 1,
                          R_RGBA, R_UNSIGNED_BYTE, (is_n ? a->nmaps : a->layers) + bytes * l);
+        const uint8_t* chain = is_n ? a->nmips : a->mips;
+        if (chain)
+            for (int lv = 1, L = rmk_mip_levels(a->tex_size); lv <= L; lv++)
+                g->TexSubImage3D(R_TEXTURE_2D_ARRAY, lv, 0, 0, (GLint_)l, (GLsizei_)(a->tex_size >> lv),
+                                 (GLsizei_)(a->tex_size >> lv), 1, R_RGBA, R_UNSIGNED_BYTE,
+                                 chain + rmk_mip_offset(a->tex_size, a->n_layers, lv, l));
         g->step++;
     } else {
         float an = 0.0f;
@@ -665,7 +693,7 @@ int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
         const int aniso = g->GetError() == 0 && an > 1.0f;
         for (int t = 0; t < (nm ? 2 : 1); t++) {
             g->BindTexture(R_TEXTURE_2D_ARRAY, t ? g->nmap : g->tex);
-            g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
+            if (!(t ? a->nmips : a->mips)) g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
             g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR_MIPMAP_LINEAR);
             if (aniso) g->TexParameterf(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAX_ANISOTROPY, an < 8.0f ? an : 8.0f);
         }

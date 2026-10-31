@@ -79,7 +79,10 @@ renderer          = "opengl"   # "software" é o fallback/referência (e o que a
 internal_resolution        = "1080p"        # Android: 5x (1200 linhas); 9x custa demais na Mali (medido em docs/android-apk.md)
 resolution_reference_lines = 240
 window_width               = 1920          # Android: ignorado (a janela é a tela)
-vsync                      = "on"
+vsync                      = "off"         # Android: painel de 120 Hz; com "on" a troca de buffer bloqueia a 120 Hz e o
+                                           # batimento com os 59,94 Hz do jogo atrasa um quadro em 8 ms a cada ~7 s (docs/
+                                           # android-apk.md §5). "off" = troca sem bloqueio, só o pacer de relógio de parede,
+                                           # que é o que o PC já faz (vsync do driver desligado sob o DWM).
 render_thread              = true          # GL numa thread própria: stalls do driver não travam o jogo. O remake do HEAT
                                            # precisa do patch local tools/recomp/patches/psxrecomp-texture-bank-render-thread.patch
                                            # (sem ele cada troca de banco de textura sincroniza as threads: ~30-40 fps)
@@ -120,9 +123,11 @@ render_thread = false
 [controller]
 default_analog = false
 deadzone       = 12000
-# Android: 2 jogadores local com dois controles Bluetooth. O jogador 1 fica com o primeiro controle ("auto",
-# padrão) e o 2 com o próximo livre: cada porta reserva um aparelho (open_player no runtime). Com um controle
-# só, a porta 2 fica sem pad.
+# Android: 2 jogadores local com dois controles Bluetooth. O jogador 1 fica com o primeiro controle e o 2 com o
+# próximo livre: cada porta reserva um aparelho (open_player no runtime). p1_device é obrigatório: o padrão do
+# runtime é "keyboard" (o primeiro controle ia para o P2). Sem nenhum controle, o P1 cai no teclado (patch do
+# Android em pad_buttons_for). Com um controle só, a porta 2 fica sem pad.
+p1_device      = "gamepad"
 p2_device      = "gamepad"
 
 # Regiões para a ferramenta de auditoria (tools/audit_config.py):

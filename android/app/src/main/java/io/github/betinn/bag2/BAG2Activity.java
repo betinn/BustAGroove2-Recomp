@@ -9,6 +9,13 @@ import org.libsdl.app.SDLActivity;
  * (SDL_GetAndroidExternalStoragePath, patch psxrecomp-android.patch), que a SetupActivity preencheu.
  */
 public class BAG2Activity extends SDLActivity {
+    private static final String TAG = "BAG2";
+
+    /* Painel: fica nos 120 Hz nativos. Pedir o modo de 60 Hz (preferredDisplayModeId) foi testado e piorou: o
+     * "60 Hz" da Samsung alterna com 120 por baixo e, com o vsync mandando na cadência, cada troca de buffer
+     * atrasava o jogo (341 intervalos > 25 ms numa partida contra ~20). A solução ficou no game.toml:
+     * vsync = "off" (troca sem bloqueio, só o pacer de relógio de parede), docs/android-apk.md §5. */
+
     @Override
     protected String[] getLibraries() {
         return new String[] { "Bust_A_Groove_2_Recompiled" };

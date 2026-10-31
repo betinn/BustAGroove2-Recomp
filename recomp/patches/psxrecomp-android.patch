@@ -39,8 +39,26 @@ index bfaa49c..5bde9c0 100644
      else()
          if(CMAKE_DL_LIBS)
              target_link_libraries(${target} PRIVATE ${CMAKE_DL_LIBS})
+diff --git a/runtime/src/crash_trace.c b/runtime/src/crash_trace.c
+index 96d52cd..54ee8cc 100644
+--- a/runtime/src/crash_trace.c
++++ b/runtime/src/crash_trace.c
+@@ -848,6 +848,13 @@ const char *g_psx_fatal_reason = NULL;
+ 
+ /* freeze_heartbeat.c — full ring dump with wedge_kind "fatal". */
+ extern void freeze_heartbeat_fatal_dump(const char *reason);
++#if defined(__ANDROID__)
++/* Android: no freeze-style dump on exit. The Mali driver aborts the process
++ * (ubsan type-mismatch in its unload callback) after a normal quit, and each
++ * dump is 100+ MB written to the app's data folder. psx_last_run_report.json
++ * is still written. */
++#define freeze_heartbeat_fatal_dump(reason) ((void)(reason))
++#endif
+ 
+ void psx_fatal_halt(const char *reason) {
+     /* Re-entry guard: a post-mortem TCP command served from the halt
 diff --git a/runtime/src/gpu_gl_renderer.c b/runtime/src/gpu_gl_renderer.c
-index 3a410da..64e996c 100644
+index 3a410da..a8d50a4 100644
 --- a/runtime/src/gpu_gl_renderer.c
 +++ b/runtime/src/gpu_gl_renderer.c
 @@ -103,7 +103,12 @@
@@ -254,10 +272,10 @@ index 3a410da..64e996c 100644
      "  }\n"
 +    "#ifdef PSX_GLES\n"
 +    "  vec3 dst = frag.rgb;\n"
-     "  frag = vec4(rgb, (stp == 1 || u_maskset == 1) ? 1.0 : 0.0);\n"
++    "  frag = vec4(rgb, (stp == 1 || u_maskset == 1) ? 1.0 : 0.0);\n"
 +    "  if (u_semimode == 4) frag.rgb = clamp(rgb + dst * dst_factor, 0.0, 1.0);\n"
 +    "#else\n"
-+    "  frag = vec4(rgb, (stp == 1 || u_maskset == 1) ? 1.0 : 0.0);\n"
+     "  frag = vec4(rgb, (stp == 1 || u_maskset == 1) ? 1.0 : 0.0);\n"
 +    "#endif\n"
      "  blend_factor = vec4(0.0, 0.0, 0.0, dst_factor);\n"
      "}\n";
@@ -300,10 +318,10 @@ index 3a410da..64e996c 100644
 +#if defined(PSX_GLES)
 +    char *es = gles_shader_source(type, src);
 +    if (es) src = es;
-+    p_glShaderSource(s, 1, &src, NULL);
+     p_glShaderSource(s, 1, &src, NULL);
 +    free(es);
 +#else
-     p_glShaderSource(s, 1, &src, NULL);
++    p_glShaderSource(s, 1, &src, NULL);
 +#endif
      p_glCompileShader(s);
      GLint ok = 0; p_glGetShaderiv(s, PSXGL_COMPILE_STATUS, &ok);
@@ -317,8 +335,38 @@ index 3a410da..64e996c 100644
          p_glBindFragDataLocationIndexed(p, 0, 0, "frag");
          p_glBindFragDataLocationIndexed(p, 0, 1, "blend_factor");
      }
+@@ -3745,9 +3898,15 @@ static void tex_draw_passes_ex(int nverts, int semi, int tb_mask, int check,
+          * dual-source factors, so the whole painter-ordered batch is one draw.
+          * Mode 2 needs a different blend equation and stays on the conservative
+          * isolated path below. */
++#if defined(PSX_GLES)
++        /* No dual source: TEX_FS reads the destination (framebuffer fetch) and
++         * adds dst * dst_factor itself, so fixed-function blending stays off. */
++        glDisable(GL_BLEND);
++#else
+         glEnable(GL_BLEND);
+         p_glBlendEquationSeparate(PSXGL_FUNC_ADD, PSXGL_FUNC_ADD);
+         p_glBlendFuncSeparate(GL_ONE, PSXGL_SRC1_ALPHA, GL_ONE, GL_ZERO);
++#endif
+         if (tb_mask) mask_stencil_ex(1, check); else glDisable(GL_STENCIL_TEST);
+         p_glUniform1i(s_uSemipass, 0);
+         glDrawArrays(GL_TRIANGLES, 0, nverts);
+@@ -3775,9 +3934,13 @@ static void tex_draw_passes_ex(int nverts, int semi, int tb_mask, int check,
+             mask_stencil_ex(check ? 1 : tb_mask, check);
+             p_glUniform1i(s_uSemipass, check ? 2 : 0);
+         } else if (!check && semi == 4) {
++#if defined(PSX_GLES)
++            glDisable(GL_BLEND);
++#else
+             glEnable(GL_BLEND);
+             p_glBlendEquationSeparate(PSXGL_FUNC_ADD, PSXGL_FUNC_ADD);
+             p_glBlendFuncSeparate(GL_ONE, PSXGL_SRC1_ALPHA, GL_ONE, GL_ZERO);
++#endif
+             if (tb_mask) mask_stencil_ex(1, check); else glDisable(GL_STENCIL_TEST);
+             p_glUniform1i(s_uSemipass, 0);
+         } else {
 diff --git a/runtime/src/main.cpp b/runtime/src/main.cpp
-index fc42513..5c4c7d2 100644
+index fc42513..ae83765 100644
 --- a/runtime/src/main.cpp
 +++ b/runtime/src/main.cpp
 @@ -2467,6 +2467,15 @@ static void update_adaptive_widescreen() {
@@ -351,7 +399,31 @@ index fc42513..5c4c7d2 100644
  #ifdef _WIN32
      // Authoritative: the real image path, regardless of how we were invoked.
      {
-@@ -17653,9 +17669,60 @@ static void host_pause_service(void) {
+@@ -6173,6 +6189,11 @@ static void axes_to_pad_pair(int16_t vx, int16_t vy, uint8_t* obx, uint8_t* oby,
+  * 1..5 — selects which keybinds.ini section drives a keyboard port. */
+ static uint16_t pad_buttons_for(const PlayerInput& p, int player, bool suppress_stick_axes) {
+     if (p.kind == 1) return pad_from_keyboard(player);
++#if defined(__ANDROID__)
++    /* Android: a "gamepad" seat with no pad connected falls back to the keyboard
++     * map (Bluetooth keyboard, adb keyevents), so player 1 always has a source. */
++    if (p.kind == 2 && !p.handle && player == 1) return pad_from_keyboard(player);
++#endif
+     if (p.kind == 2)
+         return controller_pad_buttons(controller_map_for(p), p.handle,
+                                       suppress_stick_axes, p.deadzone,
+@@ -6697,7 +6718,11 @@ extern "C" int psx_mod_read_local_pad_sticks(uint32_t player,
+ 
+     PlayerInput& p = g_players[player];
+     const bool dev_here = player == 0 && dev_any_input_enabled();
++#if defined(__ANDROID__)
++    const bool attached = p.kind == 1 || (p.kind == 2 && (p.handle || player == 0));
++#else
+     const bool attached = p.kind == 1 || (p.kind == 2 && p.handle);
++#endif
+     if (!psx_mod_local_input_available(player_valid, attached || dev_here,
+                                        netplay, resimulating))
+         return 0;
+@@ -17653,9 +17678,60 @@ static void host_pause_service(void) {
      }
  }
  

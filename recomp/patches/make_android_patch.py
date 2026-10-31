@@ -29,16 +29,18 @@ FILES = [
     "runtime/src/gpu_gl_renderer.c",
     "runtime/src/main.cpp",
     "runtime/src/quality_probe.c",
+    "runtime/src/crash_trace.c",
 ]
 
 
 def patch_files(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         return sorted(set(re.findall(r"^\+\+\+ b/(\S+)", f.read(), re.M)))
 
 
 def git(cwd, *args, **kw):
-    return subprocess.run(["git", "-C", cwd, *args], check=True, capture_output=True, text=True, **kw)
+    # bytes, não texto: o cp1252 do Windows estraga os caracteres UTF-8 dos comentários do framework no diff
+    return subprocess.run(["git", "-C", cwd, *args], check=True, capture_output=True, **kw)
 
 
 def write_lf(dst, data: bytes):
@@ -77,9 +79,9 @@ def main():
                 with open(os.path.join(FW, rel), "rb") as f:
                     write_lf(os.path.join(tmp, rel), f.read())
             diff = git(tmp, "diff", "--no-color", "--", *FILES).stdout
-            with open(OUT, "w", encoding="utf-8", newline="\n") as f:
+            with open(OUT, "wb") as f:
                 f.write(diff)
-            print(f"{OUT}: {diff.count(chr(10))} linhas")
+            print(f"{OUT}: {diff.count(b'\n')} linhas")
             return
         bad = 0
         for rel in files:
