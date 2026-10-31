@@ -217,3 +217,115 @@ peça (`gpu_timers`) não é medido no tablet; a medida é a ocupação da rende
 Rota do 2P no tablet: na primeira tentativa depois do boot o P2 ficou vazio (o `set_input` da porta 2 feito na
 hora da seleção não foi visto); `enter_match_checked` repete pela pausa/QUIT e o harness agora liga a porta 2
 logo depois do `ping`.
+
+## 7. Terceira rodada: o palco do ROBO-Z e a introdução das partidas (2026-10-31)
+
+Relato do usuário depois de jogar bastante: o jogo está bom, mas no **palco do ROBO-Z (chefe final do 1 jogador)** a
+música e o jogo travam muito, impossível passar; e alguns palcos (KITTY-N, KELLY) engasgam de leve na introdução da
+partida (o voo da câmera antes de começar a dançar).
+
+### Palco do ROBO-Z: a render thread presa no driver
+- **Qual palco**: o 241 (heliporto, índice 11 do byte `0x8005FB56`), com o ROBO-Z GOLD gigante em cima do mar e o
+  jogador no helicóptero. No 2P ele sai com `BAG2_UNLOCK=1 BAG2_STAGE_IDX=11 BAG2_MATCH="HEAT ROBO-Z_GOLD 0"`
+  (`game_session.py` aceita `_` no lugar do espaço). O `log.txt` da sessão do usuário (68 min) tinha exatamente isso no
+  fim: render 95–99 %, 45–55 fps por um minuto, e a sessão encerrada ali.
+- **Reproduzido** (`android_check.py`, 2P HEAT × ROBO-Z GOLD no 241): 108 de 237 segundos abaixo de 59,5 (45–52 fps),
+  render 96 %, `hitch_n` 1 502 em 90 s (≈190 quadros atrasados a cada 10 s; nos outros palcos 35–66 por partida
+  inteira), 400–700 underruns a cada 18 s.
+- **O que não era**: desligar personagens, geometria do palco ou pós-efeito (`android_perf.py`, um de cada vez) não
+  mudou nada (render 90–96 % em todas; os personagens originais, pelo renderizador base, caíam a 30 fps); escala
+  interna 3x igual a 5x (`video_set`); sem o espelho da tela larga (`gl_ws_ablate 1`) ou sem trocar de FBO
+  (`gl_ws_ablate 3`) também igual. Janelas seguidas pegam trechos diferentes da música: o A/B confiável foi por
+  **savestate** (o mesmo trecho de 6 s para cada variante, `tools/tests/android_ab.py`; o savestate fica na memória,
+  então só compara dentro da mesma sessão).
+- **Perfil de CPU no aparelho** (`tools/tests/android_profile.py`: `simpleperf`, novo `<profileable android:shell="true"/>` no manifesto; no Samsung só o
+  evento padrão funciona, `cpu-clock`/`task-clock` são recusados): `simpleperf record --app io.github.betinn.bag2 -g
+  --duration 10`, `binary_cache_builder.py -lib game/build-android` e `simpleperf report --symfs binary_cache` no PC
+  (a `.so` sem strip tem os símbolos); `llvm-addr2line` nos endereços de retorno dá a linha do código que chamou o driver.
+  A render thread (≈38 % das amostras do processo) e a thread de comandos do driver (`mali-cpu-comman`, 24 %) estavam
+  presas em duas coisas:
+  1. **`glBindFramebuffer`, 33 %**: cada lote texturizado do renderizador base fazia `hr_begin` (FBO de alta resolução)
+     e `hr_end` (FBO 0). Na Mali (GPU por blocos) trocar de FBO fecha o passo de render (o driver grava os blocos e acorda
+     a thread de comandos). Corrigido no 4º patch, só sob `PSX_GLES`: cache do FBO ligado em `gl_bind_fb_redirect`
+     (ligar o mesmo FBO não chama o driver; apagar FBO e callback de plugin esquecem o cache) e `hr_end` sem voltar ao
+     0 (a apresentação liga o 0 ela mesma). Lote texturizado: 17,5 % → 4,7 % da render thread.
+  2. **`BufferSubData` do buffer de instâncias do palco, 21 %** (`rmk_stage.c`): cada sequência de pacotes do palco
+     (dezenas por quadro, intercaladas com o jogo na ordem de pintor) escrevia num trecho do mesmo buffer, que desenhos
+     ainda não executados liam; a Mali copiava o buffer inteiro a cada escrita (*copy-on-write*,
+     `gpudMiscDisableCOW` no perfil). Agora cada sequência tem um buffer próprio do quadro, enchido por `BufferData`
+     (um conjunto que cresce de 16 em 16 e é reaproveitado no quadro seguinte; o espelho da tela larga reusa o da
+     sequência). Vale para o PC também (55 sequências por OT no 233, 4,5 µs por desenho, sem regressão).
+- **Resultado** no mesmo trecho do savestate: 45 → 60 quadros/s, render 96 % → 51 %, `hitch_n` 115 → 2 a cada 6 s; o
+  original (`0;0;0`) também foi a 60. Partida inteira (`android_check.py robo241_2`, 140 s de música): `hitch_n` 19
+  (pior 29 ms), nenhum segundo abaixo de 59,5 na partida (os 3 do log são da abertura em FMV).
+- **Confirmação, build final** (`android_perf.py robo_final1/2`, duas sessões, 2 janelas de 50 s cada no 241 com
+  HEAT × ROBO-Z GOLD): 59,9 fps de média, mínimo 59,7–59,9, **nenhum segundo abaixo de 59,5, 0 underruns**, jogo 51 %,
+  render 57–61 % (máx 64 %), `hitch_n` 3–7 por janela (pior 28 ms), no nível dos outros palcos. Capturas da partida e
+  dos menus no tablet sem diferença visível (`final_vis_*.png`).
+
+### Introdução das partidas, palco por palco
+- **Medida** (`tools/tests/android_intro.py`): uma sessão, 2P HEAT × COMET com os 18 liberados, uma partida por palco
+  (posições 0..10 da tela de palco, 241 e 245 pelo índice); `heat_hitch` e `stage_stats` zerados no menu, lidos a cada
+  0,5 s até 28 s depois do X na tela de palco (carga + voo da câmera + começo da música); maior intervalo entre vblanks
+  da thread do jogo (> 50 ms costuma ser audível), pior passo de preparo GL dos personagens e do palco, segundos do log
+  abaixo de 59,5 e underruns do áudio. Cada partida recarrega os dois personagens e o palco (a descarga é 3 s depois do
+  último desenho). A primeira linha é sempre a primeira partida da sessão.
+- **Antes** (já com o buffer por sequência): 234 188 ms, 242 126, 235 85, 236 80, 233 60, 237 52; preparo do palco até
+  211 ms num quadro e dos personagens até 95 ms; underruns no 234 (5) e no 242 (3).
+- **Linha do tempo** (234; `heat_hitch`, `stage_stats` e o ponteiro da partida lidos a cada 0,25 s): o ponteiro da partida liga ~6 s depois do X; a carga de CPU do
+  palco (arquivo de 264 MB, mapas de normal, mipmaps) começava aí e o preparo GL caía no voo da câmera: 63 ms (array das
+  camadas) e 158 ms (array dos mapas de normal) → quadros do jogo de 51 e 140 ms.
+- **O que mudou** (núcleo `src/remake/` e plugins; tudo vale para o PC, menos o que diz GLES):
+  1. Criação GL em passos, um por quadro: palco = programa, buffers/texturas pequenas, array das camadas (o array dos
+     mapas de normal já tinha passo próprio); personagem = programa, buffers, sombra no chão, array das camadas, array dos
+     mapas de normal. Pior passo dos personagens 95 → 20–30 ms.
+  2. **GLES: mapas de normal do palco à metade da resolução** (o nível 1 da cadeia de mips feita na CPU vira o nível 0):
+     a alocação do array cai a 1/4 (e a memória de GPU do palco, ~240 MB a menos nos palcos grandes); o relevo à
+     distância de jogo não muda.
+  3. Carga do palco pelo **índice escolhido** (byte `0x8005FB56`, gravado na confirmação): quando ele muda, o asset
+     começa a carregar ~6 s antes, na tela de carregamento. O índice 0 (234) é o valor do boot e o mesmo palco duas vezes
+     não muda o byte: nesses casos vale a regra antiga (carga no primeiro desenho). O overlay do palco não serve de
+     gatilho (só bate quando o ponteiro da partida já ligou).
+  4. Threads de carga (personagens e palco) com `setpriority(10)` no Android: a rodada 2 teve picos isolados de 52–75 ms
+     no 242, 236 e 241 com preparo ≤ 58 ms, que sumiram na rodada 3.
+- `buffer_ms` ficou em 90: com as mudanças nenhum palco teve underrun fora da primeira partida, e subir o buffer atrasa a
+  batida.
+
+| palco | antes: jogo máx / preparo pers. / underruns | em passos: jogo máx / preparo palco | rodada 1: jogo / palco / underruns | rodada 2: idem | rodada 3 (carga em prioridade baixa): jogo / pers. / palco / underruns |
+|---|---|---|---|---|---|
+| 234 ponte de aço | 188 / 95 / 5 | 105 / 124 | 41 / 53 / 0 | 52 / 58 / 0 | 65 / 48 / 70 / 3 |
+| 233 Sushi Planet | 60 / 48 / 0 | 48 / 52 | 38 / 41 / 0 | 38 / 42 / 0 | 34 / 22 / 36 / 0 |
+| 242 parque | 126 / 71 / 3 | 85 / 104 | 36 / 37 / 0 | 62 / 39 / 0 | 39 / 29 / 41 / 0 |
+| 243 fábrica | 49 / 30 / 0 | 48 / 14 | 40 / 41 / 0 | 47 / 38 / 0 | 38 / 9 / 42 / 0 |
+| 232 templo de pedra | 46 / 26 / 0 | 37 / 38 | 35 / 45 / 0 | 37 / 39 / 0 | 38 / 11 / 41 / 0 |
+| 237 cenário de papel | 52 / 23 / 0 | 44 / 55 | 36 / 40 / 0 | 38 / 41 / 0 | 35 / 17 / 41 / 0 |
+| 244 templo oriental | 48 / 51 / 0 | 36 / 29 | 40 / 42 / 0 | 40 / 38 / 0 | 36 / 22 / 38 / 0 |
+| 235 discoteca | 85 / 23 / 0 | 41 / 65 | 40 / 36 / 0 | 39 / 44 / 0 | 36 / 25 / 39 / 0 |
+| 236 rua | 80 / 52 / 0 | 45 / 55 | 35 / 42 / 0 | 75 / 40 / 0 | 39 / 29 / 41 / 0 |
+| 231 navio pirata | 39 / 27 / 0 | 35 / 19 | 41 / 38 / 0 | 36 / 40 / 0 | 35 / 12 / 39 / 0 |
+| 238 estúdio de TV | 36 / 23 / 0 | 40 / 23 | 50 / 42 / 0 | 40 / 35 / 0 | 38 / 19 / 41 / 0 |
+| 241 heliporto (ROBO-Z) | 44 / 28 / 0 | 35 / 28 | 35 / 34 / 0 | 63 / 41 / 0 | 38 / 11 / 37 / 0 |
+| 245 estúdio "Dancing Heroes" | 39 / 28 / 0 | 36 / 14 | 42 / 44 / 0 | 46 / 41 / 0 | 36 / 11 / 39 / 0 |
+
+(ms; "jogo" = maior intervalo entre vblanks na thread do jogo entre o menu e 28 s depois do X; "palco" e "pers." = pior
+passo de preparo GL.) Na rodada 3, 12 dos 13 palcos ficaram em 34–39 ms, sem underrun; os intervalos de 25–35 ms que
+sobram aparecem também nos menus (o ritmo da thread do jogo no tablet, §6), não vêm da carga.
+
+**Exceção: a primeira partida da sessão.** É a única acima de 50 ms nas rodadas 2 e 3 (234: 52 e 65 ms, 0 e 3
+underruns; 41 ms na rodada 1): os três intervalos caem no mesmo instante (15,6 s depois do X), junto com os passos mais
+caros da sessão (programa do personagem 47 ms, do palco 70 ms, contra 20–40 ms nas partidas seguintes). É a primeira
+compilação de shaders e a primeira alocação grande do processo; acontece uma vez por abertura do app. Aquecer isso nos
+menus (programas compilados uma vez e divididos entre os objetos, ou `glProgramBinary` em disco) fica como próximo passo.
+
+KITTY-N e KELLY (citadas no relato): no 2P a tela de palco começa sempre na posição 0 (234), qualquer que seja o 1P
+(`BAG2_INTRO_P1=KITTY-N`/`KELLY` deram 234 nas duas), então os palcos delas não foram identificados por nome; estão entre
+os 13 medidos (todos os palcos de partida do jogo).
+
+### Ferramentas novas e o que fica
+- `tools/tests/android_intro.py` (introdução palco por palco), `android_ab.py` (A/B pelo savestate),
+  `android_profile.py` (simpleperf), `android_perf.py` com `heat_hitch` por janela, `stage_stats z`.
+- A resolução dinâmica aparece ligada no log do tablet ("dynamic resolution on: 3x..8x", superfícies alocadas a 8x)
+  mesmo com `dynamic_resolution = false` no `game.android.toml`: vem do preset (`quality_base = "ultra"`); nem
+  `dynamic_resolution = false` no `settings.toml` nem `PSX_DYNRES=0` desligaram. Não pesou aqui (3x = 5x no ROBO-Z), mas
+  vale olhar se a memória de GPU apertar.
+- Próximo passo da introdução: aquecer shaders e a primeira alocação nos menus (a exceção da primeira partida).

@@ -59,7 +59,7 @@ def main():
                 os.environ.pop('BAG2_STAGE_IDX', None)
             n0 = len(ap.fps_lines(s))
             u0 = ap.underruns(s)
-            hits = {}
+            hits, seen_at = {}, {}
             mc('heat_hitch', 'z')   # janela desde a saída da tela de palco anterior (menu, seleção, palco, carga)
             mc('stage_stats', 'z')
             stop = threading.Event()
@@ -68,6 +68,8 @@ def main():
                 while not stop.is_set():
                     try:
                         for t_s, ms in re.findall(r' ([\d.]+)s:(\d+)ms', mc('heat_hitch')):
+                            if t_s not in hits:
+                                seen_at[t_s] = time.time()
                             hits[t_s] = int(ms)
                     except (OSError, ValueError):
                         pass
@@ -94,6 +96,8 @@ def main():
                 'pos': p, 'palco': cont, 'quem': s.who(),
                 'hitch_n': int(g(r'hitch_n=(\d+)', h)), 'hitch_max_ms': float(g(r'hitch_max_ms=([\d.]+)', h)),
                 'acima_50ms': sorted(v for v in hits.values() if v > 50),
+                # instante (s depois do X na tela de palco, resolução 0,5 s) de cada intervalo > 40 ms
+                'quando': sorted((round(seen_at[k] - t_conf, 1), v) for k, v in hits.items() if v > 40 and k in seen_at),
                 'rt_gap_max_ms': float(g(r'rt_gap_max_ms=([\d.]+)', h)), 'rt_gap_n': int(g(r'rt_gap_n=(\d+)', h)),
                 'prep_n': int(g(r'prep_n=(\d+)', h)), 'prep_max_ms': float(g(r'prep_max_ms=([\d.]+)', h)),
                 'prep_mip_max_ms': float(g(r'prep_mip_max_ms=([\d.]+)', h)),

@@ -205,8 +205,12 @@ GitHub `betinn/Polygonia`) foi o caminho anterior e não é mais mexido.
 ## Próximo passo
 - **Remake visual (prioridade)**: plano completo, fases e estado em `docs/remake-plano.md`. Fases 0–6, 6b e 6c feitas
   (HEAT, palco, os dois jogadores, o elenco, a memória, os palcos pelo caminho novo e os três itens que faltavam). **Fase 7 (Android,
-  APK nativo) em andamento**: estado, medições e pendências em `docs/android-apk.md` §5 e §6 (segunda rodada: cores,
-  controles, engasgos; `heat_hitch` + `tools/tests/android_check.py` medem engasgos por quadro no tablet); depois 8 (abertura).
+  APK nativo) em andamento**: estado, medições e pendências em `docs/android-apk.md` §5, §6 (segunda rodada: cores,
+  controles, engasgos; `heat_hitch` + `tools/tests/android_check.py` medem engasgos por quadro no tablet) e §7 (terceira
+  rodada, 2026-10-31: palco do ROBO-Z a 60 fps, introdução das partidas abaixo de 50 ms nos 13 palcos). Na Mali, o que pesa
+  é CPU do driver, não pixel: escrever num buffer que desenhos pendentes leem (BufferSubData → *copy-on-write*) e trocar
+  de FBO (fecha o passo de render); medir com `tools/tests/android_profile.py` (simpleperf), A/B por savestate com
+  `android_ab.py`, introdução palco por palco com `android_intro.py`; depois 8 (abertura).
 - Fase 6b fechou o render do 236 (+2 na ordem que dava +11), o RTPT em linha (chão do 233, asfalto do 236), a segunda
   volta de dumps, o Phong nas peças curvas, 241 e 245 no jogo, as texturas da VRAM, a janela de textura e a causa do
   HEAT × COMET (driver, não pixel). 13 palcos a 59,9 fps em todos os segundos, 0 underruns, jogo −2 a −5, render −17 a

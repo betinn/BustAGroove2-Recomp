@@ -364,6 +364,12 @@ público). Um código só para PC e Android. Tudo em `docs/android-apk.md`:
   dirigem o jogo no tablet.
 - Estado (2026-10-30): partida 2P HEAT × COMET no 233 no Galaxy Tab S10 Ultra com personagens, palco, pós-efeito,
   texturas HD e 16:9 ligados; medições e o que falta em `docs/android-apk.md` §5.
+- Segunda rodada (2026-10-31, §6): cores (blend dobrado no GLES), P1 no primeiro controle, mipmaps na CPU,
+  `heat_hitch`. Terceira rodada (2026-10-31, §7): o palco do ROBO-Z (241) travava a 45–50 fps com a música
+  engasgando; a render thread passava o quadro no driver (`BufferSubData` no buffer de instâncias do palco, que a Mali
+  copiava inteiro a cada sequência, e trocas de FBO a cada lote). Agora 60 fps e `hitch_n` 19 numa partida inteira;
+  a introdução dos 13 palcos ficou abaixo de 50 ms na thread do jogo (criação GL em passos, mapas de normal do palco à
+  metade no GLES, carga do palco pelo índice escolhido), sem underruns.
 
 ### Caminho descartado: port para o Polygonia (notas mantidas)
 O Polygonia é o DuckStation de 2021 (GPLv3), não o PSXRecomp: não tem plugins nem hook de função.

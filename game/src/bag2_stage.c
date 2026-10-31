@@ -35,6 +35,9 @@
 static double st_now_us(void) { LARGE_INTEGER c, f; QueryPerformanceCounter(&c); QueryPerformanceFrequency(&f); return (double)c.QuadPart * 1e6 / (double)f.QuadPart; }
 #else
 #include <pthread.h>
+#ifdef __ANDROID__
+#include <sys/resource.h>   /* setpriority na thread de carga */
+#endif
 #include <time.h>
 static double st_now_us(void) { struct timespec t; timespec_get(&t, TIME_UTC); return t.tv_sec * 1e6 + t.tv_nsec / 1e3; }
 #endif
@@ -438,7 +441,13 @@ static void load_stage(Stg* s) {
 #ifdef _WIN32
 static DWORD WINAPI stage_load_thread(LPVOID p) { load_stage((Stg*)p); return 0; }
 #else
-static void* stage_load_thread(void* p) { load_stage((Stg*)p); return NULL; }
+static void* stage_load_thread(void* p) {
+#ifdef __ANDROID__
+    setpriority(PRIO_PROCESS, 0, 10);   /* abaixo das threads do jogo e de render (docs/android-apk.md §7) */
+#endif
+    load_stage((Stg*)p);
+    return NULL;
+}
 #endif
 
 static void request_stage(int i) {
