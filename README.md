@@ -6,7 +6,7 @@ as animações, a câmera e a música são as do jogo original.
 
 ![Mesmo quadro: à esquerda o PS1 original, à direita a versão recompilada com o remake](docs/img/comparacao/heat_comet_corte.jpg)
 
-O repositório não contém o jogo. Para jogar é preciso ter o disco original (versão americana, SLUS-01159).
+O repositório não contém o disco original (versão americana, SLUS-01159).
 
 ## O que muda
 
@@ -60,8 +60,7 @@ Detalhes técnicos em [docs/](docs): [plano e estado do remake](docs/remake-plan
 
 ## Jogar
 
-O repositório não distribui o jogo nem o `.exe` pronto. Gere a pasta de jogo pelo [BUILD.md](BUILD.md) (último
-passo: montar uma release). Com a pasta pronta:
+Gere a pasta de jogo pelo [BUILD.md](BUILD.md) (último passo: montar uma release). Com a pasta pronta:
 
 1. Ponha o `.cue` e o `.bin` do seu disco em `disc/`, dentro da pasta (o dump esperado está descrito em
    [disc/README.md](disc/README.md)).
@@ -135,9 +134,3 @@ powershell -File recomp\build.ps1 -Step runtime
 No celular o jogo roda pelo [Polygonia](https://github.com/betinn/Polygonia), fork do DuckStation com boot direto no
 jogo, Vulkan, 4x, PGXP e 16:9. O remake ainda não chegou lá: é a próxima fase do projeto
 ([plano](docs/remake-plano.md)). Detalhes em [docs/android-fork.md](docs/android-fork.md).
-
-## Aviso
-
-Projeto pessoal, sem fins comerciais. Nenhum dado do jogo (imagem do disco, músicas, vídeos, texturas extraídas,
-executável original) está no repositório: tudo é lido do disco do usuário. Bust A Groove 2 e seus personagens
-pertencem aos seus donos.
