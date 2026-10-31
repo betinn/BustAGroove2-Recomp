@@ -169,8 +169,8 @@ class Session:
         """Do menu principal com o cursor em "1player game" (depois do START na abertura ou do `quit_match`) até a
         partida do 2 jogadores começar a carregar. Deixa self.t_match."""
         moves = {'U': UP, 'D': DOWN, 'L': LEFT, 'R': RIGHT}
-        up = {k.upper(): k for k in GRID_2P}
-        p1, p2 = up.get(p1.upper(), p1), up.get(p2.upper(), p2)
+        up = {k.upper(): k for k in GRID_2P}   # "_" no lugar do espaço (BAG2_MATCH="HEAT ROBO-Z_GOLD 0")
+        p1, p2 = (up.get(p.upper().replace('_', ' '), p) for p in (p1, p2))
         for name in (p1, p2):
             if name not in GRID_2P:
                 raise ValueError(f'{name}: não está na grade do 2 jogadores ({", ".join(GRID_2P)})')

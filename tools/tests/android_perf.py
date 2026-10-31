@@ -4,7 +4,8 @@
 Entra numa partida de 2 jogadores (BAG2_MATCH, padrão "HEAT COMET 0") e, para cada variante, roda N segundos e
 relata, das linhas por segundo do log do aparelho (PSX_FRAME_REPORT_MS=1000 pelo manifesto): fps médio e mínimo,
 segundos abaixo de 59,5, emu_busy e render_busy médios e máximos; `audio_stats` antes/depois (underruns = estalos);
-temperatura da bateria (dumpsys battery) no fim de cada janela.
+temperatura da bateria (dumpsys battery) no fim de cada janela; `heat_hitch` zerado no começo e lido no fim de cada
+janela (hitch_n = intervalos > 25 ms entre vblanks na thread do jogo, rt_gap_n = > 45 ms entre desenhos na render).
 
 Variante = "heat_mode;stage_post;stage_geo;escala" (args de cada comando; vazio = não mexe), como no game_perf.py
 mais a escala interna ao vivo (`dynres_force`, dentro do teto alocado na partida: 8x com internal_resolution 1080p):
@@ -67,8 +68,10 @@ def main():
             time.sleep(2)
             n0 = len(fps_lines(s))
             u0 = underruns(s)
+            s.cmd({'cmd': 'mod_cmd', 'name': 'heat_hitch', 'args': 'z'})   # engasgos por quadro só desta janela
             t0 = time.time()
             time.sleep(secs)
+            hitch = s.cmd({'cmd': 'mod_cmd', 'name': 'heat_hitch', 'args': ''}).get('reply', '')
             lines = fps_lines(s)[n0:]
             u1 = underruns(s)
             temp = battery_temp()
@@ -82,9 +85,11 @@ def main():
             ren = [c for _, _, c, _ in vals]
             row = (v, len(vals), sum(fps) / len(fps), min(fps), sum(1 for f in fps if f < 59.5),
                    sum(emu) / len(emu), max(emu), sum(ren) / len(ren), max(ren), u1 - u0, temp, vals[-1][3])
+            hm = {k: re.search(k + r'=([\d.]+)', hitch) for k in ('hitch_n', 'hitch_max_ms', 'rt_gap_n')}
+            row += tuple(float(m.group(1)) if m else -1.0 for m in hm.values())
             rows.append(row)
             print('%-12s s=%3d fps méd %5.1f mín %5.1f <59,5: %2d | jogo %4.1f/%4.1f %% render %4.1f/%4.1f %% | '
-                  'underruns +%d | bateria %.1f °C | escala %dx' % row, flush=True)
+                  'underruns +%d | bateria %.1f °C | escala %dx | hitch_n %d máx %.0f ms rt_gap_n %d' % row, flush=True)
     finally:
         s.stop()
     if rows:

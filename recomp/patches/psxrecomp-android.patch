@@ -58,7 +58,7 @@ index 96d52cd..54ee8cc 100644
  void psx_fatal_halt(const char *reason) {
      /* Re-entry guard: a post-mortem TCP command served from the halt
 diff --git a/runtime/src/gpu_gl_renderer.c b/runtime/src/gpu_gl_renderer.c
-index 3a410da..a8d50a4 100644
+index 3a410da..fa698cd 100644
 --- a/runtime/src/gpu_gl_renderer.c
 +++ b/runtime/src/gpu_gl_renderer.c
 @@ -103,7 +103,12 @@
@@ -147,7 +147,50 @@ index 3a410da..a8d50a4 100644
  #define VRAM_W 1024
  #define VRAM_H 512
  /* GL_MAX_INTERNAL_SCALE (the compile-time ceiling) lives in gpu_render.h; the
-@@ -356,7 +426,13 @@ static int load_modern_gl(void) {
+@@ -327,10 +397,42 @@ static PFN_glBindFramebuffer p_glBindFramebuffer_raw;
+ static int    s_pt_on = 0;               /* redirect active (present thread running) */
+ static volatile int s_pt_interval_gen = 0; /* bumped per swap-interval change */
+ static GLuint pt_target_fbo(void);
++#ifdef PSX_GLES
++/* bag2 (Android): FBO ligado de cada alvo, para não religar o mesmo. Na Mali (GPU por blocos) cada troca de FBO
++ * fecha o passo de render: o driver grava os blocos e acorda a thread de comandos, e o próximo desenho relê tudo.
++ * Cada lote texturizado fazia hr_begin (FBO de alta resolução) e hr_end (FBO 0): com o palco do ROBO-Z (centenas
++ * de lotes por quadro) a render thread passava 1/3 do tempo em glBindFramebuffer (docs/android-apk.md §7).
++ * GL_NONE_FB = desconhecido (depois de um callback de plugin, que liga os seus pelo próprio ponteiro). */
++#define GL_NONE_FB 0xFFFFFFFFu
++static GLuint s_fb_draw = GL_NONE_FB, s_fb_read = GL_NONE_FB;
++static void gl_fb_cache_forget(void) { s_fb_draw = s_fb_read = GL_NONE_FB; }
++#else
++static void gl_fb_cache_forget(void) {}
++#endif
+ static void APIENTRY gl_bind_fb_redirect(GLenum target, GLuint fb) {
+     if (fb == 0 && s_pt_on) fb = pt_target_fbo();
++#ifdef PSX_GLES
++    if (s_pt_on) gl_fb_cache_forget();   /* a fila de apresentação liga os seus por fora (p_glBindFramebuffer_raw) */
++    else if (target == PSXGL_FRAMEBUFFER) {
++        if (s_fb_draw == fb && s_fb_read == fb) return;
++        s_fb_draw = s_fb_read = fb;
++    } else if (target == PSXGL_DRAW_FRAMEBUFFER) {
++        if (s_fb_draw == fb) return;
++        s_fb_draw = fb;
++    } else if (target == PSXGL_READ_FRAMEBUFFER) {
++        if (s_fb_read == fb) return;
++        s_fb_read = fb;
++    }
++#endif
+     p_glBindFramebuffer_raw(target, fb);
+ }
++#ifdef PSX_GLES
++static PFN_glDeleteFramebuffers p_glDeleteFramebuffers_raw;
++static void APIENTRY gl_delete_fb_redirect(GLsizei n, const GLuint *fbs) {
++    gl_fb_cache_forget();
++    p_glDeleteFramebuffers_raw(n, fbs);
++}
++#endif
+ 
+ static int load_modern_gl(void) {
+     int ok = 1;
+@@ -356,7 +458,13 @@ static int load_modern_gl(void) {
      LOAD(p_glBindBuffer, "glBindBuffer");        LOAD(p_glBufferData, "glBufferData");
      LOAD(p_glVertexAttribPointer, "glVertexAttribPointer");
      LOAD(p_glEnableVertexAttribArray, "glEnableVertexAttribArray");
@@ -161,7 +204,23 @@ index 3a410da..a8d50a4 100644
      LOAD(p_glGenFramebuffers, "glGenFramebuffers"); LOAD(p_glBindFramebuffer, "glBindFramebuffer");
      LOAD(p_glDeleteFramebuffers, "glDeleteFramebuffers");
      LOAD(p_glFramebufferTexture2D, "glFramebufferTexture2D");
-@@ -1806,11 +1882,18 @@ static const char *GEO_VS =
+@@ -389,6 +497,15 @@ static int load_modern_gl(void) {
+         p_glBindFramebuffer_raw = p_glBindFramebuffer;
+         p_glBindFramebuffer = gl_bind_fb_redirect;
+     }
++#ifdef PSX_GLES
++    /* contexto novo: o cache de FBO ligado começa desconhecido; apagar um FBO ligado volta o alvo ao 0 e o nome
++     * pode ser reusado, então apagar também esquece o cache */
++    gl_fb_cache_forget();
++    if (p_glDeleteFramebuffers && p_glDeleteFramebuffers != gl_delete_fb_redirect) {
++        p_glDeleteFramebuffers_raw = p_glDeleteFramebuffers;
++        p_glDeleteFramebuffers = gl_delete_fb_redirect;
++    }
++#endif
+ #undef LOAD
+     return ok;
+ }
+@@ -1806,11 +1923,18 @@ static const char *GEO_VS =
      "uniform float u_xscale; /* native-wide 2D-backdrop x-stretch; 1 canonical */\n"
      "uniform float u_xcenter;/* stretch centre in VRAM px; 0 canonical */\n"
      "uniform float u_zbias;  /* PGXP depth: relative near bias of the colour pass */\n"
@@ -182,7 +241,7 @@ index 3a410da..a8d50a4 100644
      "flat out int v_dith;            /* this primitive is dither-eligible */\n"
      "void main(){\n"
      "  v_npos = a_pos;\n"
-@@ -1835,14 +1918,24 @@ static const char *GEO_VS =
+@@ -1835,14 +1959,24 @@ static const char *GEO_VS =
      "    float l = u_xcenter - h, r = u_xcenter + h;\n"
      "    if (xb < l) xb = l + (xb-l)*s; else if (xb > r) xb = r + (xb-r)*s;\n"
      "  } else xb = (xb - u_xcenter)*u_xscale + u_xcenter;\n"
@@ -209,7 +268,7 @@ index 3a410da..a8d50a4 100644
      PSX_DITHER_GLSL
      "void main(){\n"
      "  if (u_bcls != 0) { if (u_bcls == 1 && !(v_b3d > 0.999 || u_badd != 0)) discard; frag = vec4(0.0); return; }\n"
-@@ -1884,7 +1977,14 @@ static const char *TEX_VS =
+@@ -1884,7 +2018,14 @@ static const char *TEX_VS =
      "uniform float u_xscale; /* native-wide 2D-backdrop x-stretch; 1 canonical */\n"
      "uniform float u_xcenter;/* stretch centre in VRAM px; 0 canonical */\n"
      "uniform float u_zbias;  /* PGXP depth: relative near bias of the colour pass */\n"
@@ -224,7 +283,7 @@ index 3a410da..a8d50a4 100644
      "smooth out vec2 v_uv_p;  /* perspective-correct UV (used when v_persp!=0) */\n"
      "flat out int v_persp;\n"
      "flat out ivec2 v_tpage; flat out ivec2 v_clut; flat out int v_depth;\n"
-@@ -1894,8 +1994,6 @@ static const char *TEX_VS =
+@@ -1894,8 +2035,6 @@ static const char *TEX_VS =
      "flat out vec4 v_hd_source; flat out int v_hd_mode;\n"
      "flat out int v_filter;\n"
      "smooth out vec3 v_col_p; flat out int v_cp;\n"
@@ -233,7 +292,7 @@ index 3a410da..a8d50a4 100644
      "void main(){ v_uv = a_uv; v_uv_p = a_uv; v_col = a_col; v_col_p = a_col.rgb;\n"
      "  v_npos = a_pos;\n"
      "  v_persp = (a_q > 0.0) ? 1 : 0;\n"
-@@ -1929,16 +2027,29 @@ static const char *TEX_VS =
+@@ -1929,16 +2068,29 @@ static const char *TEX_VS =
      "  if (sz > 0.5) { zn = 1.0 - 512.0 / (max(sz * (1.0 - u_zbias) - (u_zbias > 0.0 ? 48.0 : 0.0), 1.0) + 256.0); if (a_q <= 0.0 && cp > 0.5) w = sz / 1024.0; }\n"
      "  v_cp = int(cp); v_b3d = sz > 0.5 ? 1.0 : 0.0;\n"
      "  vec2 ndc = vec2((xb+u_shift+u_xoff)/u_xhalf - 1.0, (a_pos.y+u_shift)/256.0 - 1.0);\n"
@@ -266,7 +325,7 @@ index 3a410da..a8d50a4 100644
      "uniform int u_bcls;      /* bloom source pass (gl_postfx.inc): 0 off, 2 clear, 1 mark */\n"
      "flat in ivec2 v_tpage;   /* texture page base, VRAM px */\n"
      "flat in ivec2 v_clut;    /* CLUT base, VRAM px */\n"
-@@ -2182,7 +2293,13 @@ static const char *TEX_FS =
+@@ -2182,7 +2334,13 @@ static const char *TEX_FS =
      "    dst_factor = v_semi == 1 ? 0.5 : 1.0;\n"
      "    if (v_semi == 1) rgb *= 0.5; else if (v_semi == 4) rgb *= 0.25;\n"
      "  }\n"
@@ -280,7 +339,7 @@ index 3a410da..a8d50a4 100644
      "  blend_factor = vec4(0.0, 0.0, 0.0, dst_factor);\n"
      "}\n";
  
-@@ -2256,9 +2373,45 @@ static const char *STENCIL_FS =
+@@ -2256,9 +2414,45 @@ static const char *STENCIL_FS =
      "void main(){ vec4 c=texelFetch(u_src,ivec2(gl_FragCoord.xy)-u_off,0);\n"
      "  if(c.a<0.5) discard; frag=vec4(0.0); }\n";
  
@@ -318,15 +377,15 @@ index 3a410da..a8d50a4 100644
 +#if defined(PSX_GLES)
 +    char *es = gles_shader_source(type, src);
 +    if (es) src = es;
-     p_glShaderSource(s, 1, &src, NULL);
++    p_glShaderSource(s, 1, &src, NULL);
 +    free(es);
 +#else
-+    p_glShaderSource(s, 1, &src, NULL);
+     p_glShaderSource(s, 1, &src, NULL);
 +#endif
      p_glCompileShader(s);
      GLint ok = 0; p_glGetShaderiv(s, PSXGL_COMPILE_STATUS, &ok);
      if (!ok) { char log[1024]; log[0]=0; p_glGetShaderInfoLog(s, sizeof log, NULL, log);
-@@ -2271,7 +2424,7 @@ static GLuint build_program_ex(const char *vs, const char *fs, int dual_source)
+@@ -2271,7 +2465,7 @@ static GLuint build_program_ex(const char *vs, const char *fs, int dual_source)
      if (!v || !f) return 0;
      GLuint p = p_glCreateProgram();
      p_glAttachShader(p, v); p_glAttachShader(p, f);
@@ -335,7 +394,18 @@ index 3a410da..a8d50a4 100644
          p_glBindFragDataLocationIndexed(p, 0, 0, "frag");
          p_glBindFragDataLocationIndexed(p, 0, 1, "blend_factor");
      }
-@@ -3745,9 +3898,15 @@ static void tex_draw_passes_ex(int nverts, int semi, int tb_mask, int check,
+@@ -2386,7 +2580,10 @@ static void hr_end(void) {
+     glDisable(GL_SCISSOR_TEST);
+     p_glBindVertexArray(0);
+     p_glUseProgram(0);
++#ifndef PSX_GLES
+     p_glBindFramebuffer(PSXGL_FRAMEBUFFER, 0);
++#endif   /* GLES: o FBO de alta resolução fica ligado (quem usa o 0 liga ele mesmo); voltar ao 0 fechava o passo de
++            render da Mali a cada lote (gl_bind_fb_redirect) */
+ }
+ 
+ /* PGXP depth state for one draw (G1.14). 0: no depth (the default GL state
+@@ -3745,9 +3942,15 @@ static void tex_draw_passes_ex(int nverts, int semi, int tb_mask, int check,
           * dual-source factors, so the whole painter-ordered batch is one draw.
           * Mode 2 needs a different blend equation and stays on the conservative
           * isolated path below. */
@@ -351,7 +421,7 @@ index 3a410da..a8d50a4 100644
          if (tb_mask) mask_stencil_ex(1, check); else glDisable(GL_STENCIL_TEST);
          p_glUniform1i(s_uSemipass, 0);
          glDrawArrays(GL_TRIANGLES, 0, nverts);
-@@ -3775,9 +3934,13 @@ static void tex_draw_passes_ex(int nverts, int semi, int tb_mask, int check,
+@@ -3775,9 +3978,13 @@ static void tex_draw_passes_ex(int nverts, int semi, int tb_mask, int check,
              mask_stencil_ex(check ? 1 : tb_mask, check);
              p_glUniform1i(s_uSemipass, check ? 2 : 0);
          } else if (!check && semi == 4) {
@@ -365,6 +435,30 @@ index 3a410da..a8d50a4 100644
              if (tb_mask) mask_stencil_ex(1, check); else glDisable(GL_STENCIL_TEST);
              p_glUniform1i(s_uSemipass, 0);
          } else {
+@@ -14538,6 +14745,7 @@ static void glb_host_draw(const int32_t *v) {
+         s_hostdraw_skipped++;
+         t.pass = -1;
+         fn(&t, payload, bytes);
++        gl_fb_cache_forget();   /* o plugin liga os FBOs dele pelo próprio ponteiro */
+         hostdraw_restore(&t);
+         return;
+     }
+@@ -14551,6 +14759,7 @@ static void glb_host_draw(const int32_t *v) {
+     hostdraw_fill_target(&t, s_hr_fbo, 0, s_hr_scale, VRAM_W * s_hr_scale, VRAM_H * s_hr_scale, 0.0f, 512.0f);
+     const uint64_t tm2 = SDL_GetPerformanceCounter();
+     fn(&t, payload, bytes);
++    gl_fb_cache_forget();   /* o plugin liga os FBOs dele pelo próprio ponteiro */
+     const uint64_t tm3 = SDL_GetPerformanceCounter();
+     hostdraw_restore(&t);
+     s_hostdraw_tm[0] += tm1 - tm0; s_hostdraw_tm[1] += tm2 - tm1; s_hostdraw_tm[2] += tm3 - tm2;
+@@ -14570,6 +14779,7 @@ static void glb_host_draw(const int32_t *v) {
+             t.center_x[1] = (g_wide_w - g_wide_off) * s_out_scale;
+         }
+         fn(&t, payload, bytes);
++        gl_fb_cache_forget();   /* o plugin liga os FBOs dele pelo próprio ponteiro */
+         hostdraw_restore(&t);
+         const float q[8] = { (float)x0, (float)y0, (float)x1, (float)y0, (float)x0, (float)y1, (float)x1, (float)y1 };
+         wst_note_draw(g_wide_cur, q, 4, 2, dx, 1.0f, 0.0f, s_mask_check);
 diff --git a/runtime/src/main.cpp b/runtime/src/main.cpp
 index fc42513..ae83765 100644
 --- a/runtime/src/main.cpp

@@ -131,6 +131,12 @@ struct RmkStageGL {
     uint32_t n_tess;                 /* faces curvas (estatística) */
     int geo_w, geo_h, ring;
     uint32_t serial, have_frame, n_inst_cap, inst_used, run_key, run_first, run_n, n_free;
+    /* um buffer de instâncias por sequência do quadro, enchido inteiro por BufferData: BufferSubData num buffer que
+     * desenhos ainda não executados leem faz a Mali copiar o buffer inteiro (copy-on-write) a cada sequência; no
+     * palco do ROBO-Z isso era 1/5 da render thread (docs/android-apk.md §7) */
+    GLuint_* pool;
+    uint32_t pool_n, pool_i;
+    GLuint_ run_vbo;
     float* pos;                      /* posições no espaço da câmera (3 floats por vértice) */
     float* staging;
     SInst* inst;
@@ -337,6 +343,7 @@ void rmk_stage_gl_destroy(RmkStageGL* g) {
         g->DeleteTextures(GEO_RING, g->geo);
         const GLuint_ bf[2] = {g->tri_vbo, g->inst_vbo};
         g->DeleteBuffers(2, bf);
+        if (g->pool_n) g->DeleteBuffers((GLsizei_)g->pool_n, g->pool);
         g->DeleteVertexArrays(1, &g->vao);
         g->DeleteVertexArrays(1, &g->vao_grid);
         const GLuint_ gb[2] = {g->grid_vbo, g->grid_ibo};
@@ -348,6 +355,7 @@ void rmk_stage_gl_destroy(RmkStageGL* g) {
     free(g->staging);
     free(g->inst);
     free(g->seg);
+    free(g->pool);
     free(g->tess);
     free(g->curv);
     free(g->edges);
@@ -767,9 +775,7 @@ void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* f
     g->have_frame = 1;
     g->inst_used = 0;
     g->run_key = 0xFFFFFFFFu;
-    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * g->n_inst_cap), NULL, R_STREAM_DRAW);   /* órfão */
-    g->BindBuffer(R_ARRAY_BUFFER, 0);
+    g->pool_i = 0;
 }
 
 /* Instâncias da sequência, a partir dos pacotes vivos: as faces de cada primitiva, com cor/UV do slot do pacote de
@@ -947,17 +953,25 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
         const int fy = run_fb_y(pk, n);
         if (fy >= 0) fb_capture(g, t, fy);
     }
-    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
     if (key != g->run_key) {   /* sequência nova; o espelho da tela larga repete a anterior */
         const uint32_t m = build_run(g, a, s, pk, n);
-        if (!m) { g->BindBuffer(R_ARRAY_BUFFER, 0); return; }
-        g->BufferSubData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * g->inst_used), (GLsizeiptr_)(sizeof(SInst) * m),
-                         g->inst + g->inst_used);
+        if (!m) return;
+        if (g->pool_i == g->pool_n) {   /* mais sequências neste quadro do que buffers: mais 16 */
+            GLuint_* np = (GLuint_*)realloc(g->pool, sizeof(GLuint_) * (g->pool_n + 16u));
+            if (!np) return;
+            g->pool = np;
+            g->GenBuffers(16, g->pool + g->pool_n);
+            g->pool_n += 16u;
+        }
+        g->run_vbo = g->pool[g->pool_i++];
+        g->BindBuffer(R_ARRAY_BUFFER, g->run_vbo);
+        g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * m), g->inst + g->inst_used, R_STREAM_DRAW);
         g->run_key = key;
         g->run_first = g->inst_used;
         g->run_n = m;
         g->inst_used += m;
     }
+    g->BindBuffer(R_ARRAY_BUFFER, g->run_vbo);   /* os atributos por instância apontam para o buffer da sequência */
     g->Disable(R_DEPTH_TEST);
     g->DepthMask(0);
     g->Disable(R_CULL_FACE);
@@ -1026,7 +1040,7 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
             const int grid = (sg[i] & 128u) != 0;
             const unsigned bl = sg[i] & 127u;
             g->BindVertexArray(grid ? g->vao_grid : g->vao);
-            inst_attribs(g, g->run_first + i);
+            inst_attribs(g, i);
             for (int pass = 0; pass < (bl ? 2 : 1); pass++) {   /* semi: texels opacos, depois os com STP */
                 if (pass == 0) { opaque_blend(g); g->Uniform1i(g->u_semi, bl ? 0 : -1); }
                 else { set_blend(g, bl - 1u); g->ColorMask(1, 1, 1, 0); g->Uniform1i(g->u_semi, 1); }

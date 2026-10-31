@@ -25,6 +25,10 @@
         android:hardwareAccelerated="true"
         android:largeHeap="true">
 
+        <!-- simpleperf pelo adb (record com a opção app = io.github.betinn.bag2) sem build debuggable: perfil das
+             threads de jogo e de render no aparelho (docs/android-apk.md §7). -->
+        <profileable android:shell="true" />
+
         <!-- SDL_ENV.*: a SDLActivity põe no ambiente do processo antes do SDL_main (meta-data do application).
              SDL_ORIENTATIONS: o SDL chama setRequestedOrientation ele mesmo e ignora o screenOrientation do
              manifesto; sem isto o jogo abre em retrato com faixas pretas. PSX_FRAME_REPORT_MS: uma linha
