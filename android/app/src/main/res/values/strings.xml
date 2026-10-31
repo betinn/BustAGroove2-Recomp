@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bust A Groove 2</string>
+    <string name="setup_title">Preparando o jogo</string>
+    <string name="setup_extracting">Copiando os dados do jogo para o aparelho (só na primeira vez)…</string>
+    <string name="setup_external_missing">Esta build não leva os dados do jogo. Envie a pasta pelo adb:\n\nadb push game.toml disc mods bios settings.toml keybinds.ini input.ini\n  /sdcard/Android/data/io.github.betinn.bag2/files/\n\ne abra o app de novo.</string>
+    <string name="setup_error">Falha ao preparar os dados: %1$s</string>
+</resources>

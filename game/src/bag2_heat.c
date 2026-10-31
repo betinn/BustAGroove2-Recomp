@@ -37,6 +37,12 @@
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
+/* Android (PSX_GLES): o núcleo compila os shaders como GLSL ES 3.00. */
+#if defined(PSX_GLES)
+#define BAG2_GLES 1
+#else
+#define BAG2_GLES 0
+#endif
 #include "gpu_timer.h"
 
 #include <math.h>
@@ -52,6 +58,8 @@ static double now_us(void) { LARGE_INTEGER c, f; QueryPerformanceCounter(&c); Qu
 #include <time.h>
 static double now_us(void) { struct timespec t; timespec_get(&t, TIME_UTC); return t.tv_sec * 1e6 + t.tv_nsec / 1e3; }
 #endif
+static void prep_note(double us, int ready);   /* tempo dos passos de preparo GL (heat_hitch) */
+static void rt_gap_note(double now, double draw_us);   /* intervalo entre desenhos na thread de render (heat_hitch) */
 
 #define DRAW_TREE_FN 0x80029D4Cu
 #define NODE_FILL_FN 0x80029588u      /* FUN_80029588(mesh, buffer de pacotes, nó + 0x2C, ...): um osso */
@@ -243,6 +251,7 @@ static void load_char(Chr* c) {
     int ok = a && rmk_asset_load(a, c->path);
     /* mapas de normal das camadas (fase 2, com o STP no alfa): uma vez, na thread de carga */
     if (ok) ok = rmk_asset_build_normals(a, 16.0f);
+    if (ok) ok = rmk_asset_build_mips(a);
     if (ok) ok = a->n_verts <= s_max_verts && max_active_verts(a) <= max_active_verts(&c->t);
     c->load_ms = (now_us() - t0) / 1000.0;
     if (!ok) {
@@ -1119,12 +1128,15 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     Chr* c = &s_ch[ch];
     if (c->state != 2) return;
     if (!c->gl && !c->rt_failed) {
-        c->gl = rmk_gl_create(t->get_proc, 0);
+        c->gl = rmk_gl_create(t->get_proc, BAG2_GLES);
         if (!c->gl) c->rt_failed = 1;
     }
     if (!c->rt_ready && !c->rt_failed) {
         c->rt_prepares++;
-        if (rmk_gl_prepare(c->gl, c->full)) {
+        const double tp0 = now_us();
+        const int ready = rmk_gl_prepare(c->gl, c->full);
+        prep_note(now_us() - tp0, ready);
+        if (ready) {
             c->rt_ready = 1;
             c->gl_bytes = rmk_gl_bytes(c->gl);
             /* as camadas já estão na GPU: a cópia de CPU (~130 MB com os mapas de normal) sai, menos quando o caminho
@@ -1133,6 +1145,8 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
                 RmkAsset* a = c->full;
                 free(a->layers); a->layers = NULL;
                 free(a->nmaps); a->nmaps = NULL;
+                free(a->mips); a->mips = NULL;
+                free(a->nmips); a->nmips = NULL;
                 free(a->stp); a->stp = NULL;
             }
         } else if (*rmk_gl_error(c->gl)) {
@@ -1168,6 +1182,7 @@ static void char_host_draw(const PSXModHostDrawTarget* t, const void* payload, u
     s_rt_draws++;
     c->rt_drawn_us = now_us();
     s_rt_us += c->rt_drawn_us - t0;
+    rt_gap_note(c->rt_drawn_us, c->rt_drawn_us - t0);
 }
 
 /* Fase 6 (src/bag2_stage.c, geometria do palco): as luzes do palco do dançarino desenhado por último (thread do jogo;
@@ -1222,7 +1237,57 @@ int bag2_heat_shadow_views(RmkShadowView* out, int max) {
  * espera a GPU, liga um marcador vazio no fim da OT do quadro (fora da partida ninguém mais liga marcadores; nos
  * menus a OT é a mesma da partida). Só quando o contador de quadros anda: no vídeo de abertura a OT não é usada. */
 static int s_evict = 1;              /* heat_evict 0: nada descarrega (comparação com a fase 4) */
+/* Engasgos (heat_hitch): intervalo entre vblanks do jogo (thread do jogo), que o relatório por segundo esconde (o
+ * pacer recupera os quadros perdidos dentro do mesmo segundo). Tempo de cada passo de preparo GL dos personagens
+ * (prep_note, thread de render): o último passo é o GenerateMipmap do array inteiro. */
+static double s_hitch_max_us, s_hitch_t0, s_prep_max_us, s_prep_mip_us, s_prep_mip_max_us;
+static uint32_t s_hitch_n, s_prep_n;
+static struct { float t_s, ms; } s_hitch_last[8];
+static void prep_note(double us, int ready) {
+    s_prep_n++;
+    if (us > s_prep_max_us) s_prep_max_us = us;
+    if (ready) { s_prep_mip_us = us; if (us > s_prep_mip_max_us) s_prep_mip_max_us = us; }
+}
+/* thread de render: intervalo entre desenhos de host consecutivos (o jogo desenha 30x/s por personagem: ~33 ms é o
+ * normal com um só; com dois, ~16 ms) e duração do maior desenho; separa engasgo do jogo de engasgo do render */
+static double s_rt_last_us, s_rt_gap_max_us, s_rt_draw_max_us;
+static uint32_t s_rt_gap_n;
+static void rt_gap_note(double now, double draw_us) {
+    if (s_rt_last_us > 0) {
+        const double gap = now - s_rt_last_us;
+        if (gap > s_rt_gap_max_us) s_rt_gap_max_us = gap;
+        if (gap > 45e3) s_rt_gap_n++;
+    }
+    if (draw_us > s_rt_draw_max_us) s_rt_draw_max_us = draw_us;
+    s_rt_last_us = now;
+}
+static void hitch_note(double now, double dt_us) {
+    if (dt_us > s_hitch_max_us) s_hitch_max_us = dt_us;
+    if (dt_us > 25e3) {
+        s_hitch_last[s_hitch_n % 8].t_s = (float)((now - s_hitch_t0) / 1e6);
+        s_hitch_last[s_hitch_n % 8].ms = (float)(dt_us / 1e3);
+        s_hitch_n++;
+    }
+}
+static int heat_hitch_cmd(const char* args, char* reply, int cap) {
+    int n = snprintf(reply, cap, "hitch_max_ms=%.1f hitch_n=%u rt_gap_max_ms=%.1f rt_gap_n=%u rt_draw_max_ms=%.1f prep_n=%u "
+                     "prep_max_ms=%.1f prep_mip_ms=%.1f prep_mip_max_ms=%.1f ultimos:",
+                     s_hitch_max_us / 1e3, s_hitch_n, s_rt_gap_max_us / 1e3, s_rt_gap_n, s_rt_draw_max_us / 1e3, s_prep_n,
+                     s_prep_max_us / 1e3, s_prep_mip_us / 1e3, s_prep_mip_max_us / 1e3);
+    for (uint32_t i = s_hitch_n > 8 ? s_hitch_n - 8 : 0; i < s_hitch_n && n < cap - 32; i++)
+        n += snprintf(reply + n, cap - n, " %.1fs:%.0fms", s_hitch_last[i % 8].t_s, s_hitch_last[i % 8].ms);
+    if (args && args[0] == 'z') { s_hitch_max_us = 0; s_hitch_n = 0; s_prep_max_us = 0; s_prep_mip_max_us = 0; s_prep_n = 0;
+                                   s_rt_gap_max_us = 0; s_rt_gap_n = 0; s_rt_draw_max_us = 0; }
+    return 0;
+}
 static void heat_vblank(void) {
+    {
+        static double last_vb;
+        const double t = now_us();
+        if (!s_hitch_t0) s_hitch_t0 = t;
+        if (last_vb > 0) hitch_note(t, t - last_vb);
+        last_vb = t;
+    }
     if (!s_nch) return;
     static uint16_t last_fc;
     static double last_check;
@@ -2142,6 +2207,7 @@ PSX_MOD_CONSTRUCTOR(bag2_heat_register) {
     (void)psx_mod_register_command("heat_light", heat_light_cmd);
     (void)psx_mod_register_command("heat_force", heat_force_cmd);
     (void)psx_mod_register_command("heat_stats", heat_stats_cmd);
+    (void)psx_mod_register_command("heat_hitch", heat_hitch_cmd);
     (void)psx_mod_register_command("heat_face", heat_face_cmd);
     (void)psx_mod_register_command("heat_floor", heat_floor_cmd);
     (void)psx_mod_register_command("heat_chars", heat_chars_cmd);

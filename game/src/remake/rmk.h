@@ -73,6 +73,8 @@ typedef struct {
                                         arquivo, alfa 143, vai para o alfa do mapa de normal na carga) */
     uint8_t* stp;                    /* 1 bit por texel: cor com STP (semitransparente nas faces RMK_MODE_SEMI) */
     uint8_t* nmaps;                  /* mapas de normal das camadas (rmk_asset_build_normals; alfa = STP), ou NULL */
+    uint8_t* mips;                   /* níveis 1.. das camadas (rmk_asset_build_mips): por nível, todas as camadas */
+    uint8_t* nmips;                  /* idem para os mapas de normal, ou NULL */
 } RmkAsset;
 
 /* 1 = ok. Em erro, o asset fica zerado. */
@@ -84,6 +86,13 @@ void rmk_asset_free(RmkAsset* a);
 /* Mapas de normal gerados das camadas (traço preto vira sulco), com o STP no alfa. strength: inclinação por
  * unidade de altura por texel. 1 = ok. */
 int rmk_asset_build_normals(RmkAsset* a, float strength);
+/* Cadeia de mipmaps (caixa 2x2, como o glGenerateMipmap) das camadas e dos mapas de normal, feita na CPU na thread
+ * de carga: o desenho sobe cada nível junto com a camada, em vez de gerar o array inteiro de uma vez no fim (na Mali
+ * do tablet isso parava a render thread ~150 ms num quadro só). Sem ela (mips = NULL) o GL gera como antes. 1 = ok. */
+int rmk_asset_build_mips(RmkAsset* a);
+/* Níveis além do 0 até 1x1 e deslocamento, em bytes, da camada `layer` no nível `level` (1..) em mips/nmips. */
+int rmk_mip_levels(uint32_t tex_size);
+size_t rmk_mip_offset(uint32_t tex_size, uint32_t n_layers, int level, uint32_t layer);
 
 /* ---- pose -------------------------------------------------------------------------------------- */
 typedef struct { float m[9], t[3]; } RmkBone;            /* m = rotação 4.12 / 4096, t = translação */

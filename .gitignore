@@ -49,3 +49,14 @@ game/build/mods/texture-packs/
 **/texture-packs/**/dumps/
 **/texture-packs/**/replacements/
 *.hdres
+
+# Android (docs/android-apk.md): biblioteca nativa, assets empacotados e saídas do Gradle ficam fora do git
+game/build-android/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/jniLibs/
+android/app/src/main/assets/
+android/local.properties
+android/*.apk
+android/app/version.properties

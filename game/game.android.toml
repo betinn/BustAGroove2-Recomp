@@ -1,0 +1,142 @@
+# game.toml do APK Android (docs/android-apk.md). Derivado do game.toml da release v2.0.0-remake; caminhos
+# relativos à pasta de arquivos do app (/sdcard/Android/data/io.github.betinn.bag2/files), onde a SetupActivity
+# extrai disco, BIOS e mods. O que muda em relação ao PC está marcado com "Android:".
+# game.toml — Bust A Groove 2 (USA) para o PSXRecomp (RetroPortingToolKit/psxrecomp).
+# Esquema: <psxrecomp>/docs/config_schema.md
+# Caminhos relativos resolvem a partir da "raiz do projeto" = esta pasta
+# (o loader sobe diretórios até achar CMakeLists.txt/.gitignore/.git).
+#
+# Fatos do cabeçalho PS-X EXE (lidos de extracted/disc/SLUS_011.59):
+#   pc0 = 0x80038270, t_addr = 0x80010000, t_size = 0x4E800, sp = 0x801FFFF0
+#   SYSTEM.CNF: BOOT = cdrom:\SLUS_011.59;1  TCB=4 EVENT=16 STACK=801FFF00
+#
+# Overlays: o jogo NÃO usa o loader do BIOS. Ele mesmo carrega blocos DBI_
+# de dentro de BUST2.BIN, descomprime com uma rotina BPE em 0x80035DC4 e
+# instala em 0x8008F6C0 (função de instalação em 0x8001F7E0). O PSXRecomp
+# trata isso em runtime: captura o código que aparece em RAM, cai no
+# interpretador MIPS e compila via gcc/tcc, guardando em overlay_captures.json
+# (ver docs/EXECUTION_MODEL.md, docs/AOT_SHARDING.md, docs/COMPILING_OVERLAYS.md).
+
+[game]
+name         = "Bust A Groove 2"
+id           = "SLUS-01159"
+players      = 2
+exe          = "../../../extracted/disc/SLUS_011.59"   # só para recompilar (não usado no aparelho)
+disc         = "disc/Bust A Groove 2 (USA).cue"   # release: disco na pasta disc/ ao lado do exe (relativo à pasta do exe)
+load_address = "0x80010000"
+entry_pc     = "0x80038270"
+text_size    = "0x0004F000"   # header diz 0x4E800; psxrecomp-toml arredonda para a página de 4 KiB
+stack_base   = "0x801FFFF0"
+
+[recompiler]
+# seeds/functions.txt: alvos de JAL extraídos pelo psxrecomp-toml + endereços
+# conhecidos (BPE 0x80035DC4, instalador de overlay 0x8001F7E0).
+seeds       = "seeds/functions.txt"
+bios_config = "bios/OpenBIOS.toml"   # perfil de BIOS (modelo de endereços); OpenBIOS é o que roda
+out_dir   = "generated"
+strict    = true
+discovery = "whole-image"
+# Hooks do remake do HEAT (src/bag2_heat.c): entrada de FUN_80029D4C, que desenha a árvore de ossos de
+# um personagem, e LoadImage/MoveImage da libgpu (0x80048234/0x800482F4), por onde o código do personagem
+# troca a expressão do rosto na VRAM. Inertes sem o plugin bag2.heat_remake ativo (notes/remake-visual.md).
+# Remake do palco (src/bag2_stage.c): entrada de FUN_8002BEB4 (atualização de cada personagem, todo quadro de
+# partida), onde o plugin bag2.stage_remake liga o marcador do pós-efeito; FUN_8002A46C (sombra no chão), que o
+# remake do HEAT pula para desenhar a sombra macia dele.
+# Fase 4 (remake dos outros personagens): entrada de FUN_80029588, que monta um osso; os personagens que não são do
+# tipo 0 são desenhados por funções do overlay deles, que chamam esta por osso.
+# Fase 6 (geometria do palco): entrada de DrawOTagEnv (libgpu, 0x800486AC), que o laço principal chama com a OT do
+# quadro pronta; o plugin bag2.stage_remake troca ali as sequências de pacotes dos nós do palco pelo desenho de host.
+# E as funções do executável que transformam vértices para a geometria do código do overlay do palco (chão, fundo):
+# FUN_8001F278 (n vértices) e RotTransPers / RotTransPers3 / RotTransPers4 da libgte (0x800460AC, 0x800460DC,
+# 0x8004619C); o plugin guarda posição e tela de cada vértice e reconhece os pacotes que os usam.
+mod_function_entry_funcs = ["0x80029D4C", "0x80048234", "0x800482F4", "0x8002BEB4", "0x8002A46C", "0x80029588", "0x800486AC", "0x8001F278", "0x800460AC", "0x800460DC", "0x8004619C"]
+# Fase 6b: RTPT/RTPS em linha no código dos overlays de palco (0x801DB000, um por palco no mesmo endereço; o chão do
+# Sushi Planet e peças de outros palcos não passam pelas funções da libgte). O plugin bag2.stage_remake registra um
+# gancho antes de cada uma com a palavra da instrução; o runtime confere a palavra na RAM, então o endereço de um
+# palco não dispara no código de outro. Mudar a lista = regenerar os overlays estáticos (aot_overlay_pipeline.py
+# static, notes/recomp.md).
+mod_instruction_sites = ["0x801DB2B0", "0x801DB2FC", "0x801DB304", "0x801DB31C", "0x801DB348", "0x801DB354", "0x801DB374", "0x801DB3A0", "0x801DB3BC", "0x801DB3DC", "0x801DB40C", "0x801E0304", "0x801E035C", "0x801E1E0C", "0x801E1E64", "0x801E1ED0", "0x801E2868", "0x801E28C0", "0x801E3440", "0x801E3498"]
+
+[runtime]
+window_title = "Bust A Groove 2 Recompiled"
+memcard_dir  = "saves"
+disc_speed   = "2x"
+bios_hle     = false      # LLE do OpenBIOS (mais fiel); true = pula a animação de boot
+overlay_cache = true
+overlay_backend = "auto"
+
+[audio]
+# Buffer de saída do som no PC. O padrão do framework (180 ms) fazia a batida chegar ao ouvido ~190 ms depois
+# da batida que o jogo julga, o que é demais num jogo de ritmo. Com 90 ms são ~120 ms (buffer + dispositivo).
+# 60 ms estala na abertura (vídeo STR: 2023 underruns); 90 ms passou sem nenhum underrun da abertura ao fim da
+# partida (tools/remake/audio_buffer_check.py; notes/recomp.md §13).
+buffer_ms = 90
+
+[video]
+renderer          = "opengl"   # "software" é o fallback/referência (e o que a web usa)
+# Resolução interna: o PS1 desenha a 320x240; "1080p" renderiza a 5x (1200 linhas) e resolve para a
+# janela. Outros valores: native | 720p | 1080p | 1440p | 4k | display (acompanha o monitor).
+internal_resolution        = "1080p"        # Android: 5x (1200 linhas); 9x custa demais na Mali (medido em docs/android-apk.md)
+resolution_reference_lines = 240
+window_width               = 1920          # Android: ignorado (a janela é a tela)
+vsync                      = "off"         # Android: painel de 120 Hz; com "on" a troca de buffer bloqueia a 120 Hz e o
+                                           # batimento com os 59,94 Hz do jogo atrasa um quadro em 8 ms a cada ~7 s (docs/
+                                           # android-apk.md §5). "off" = troca sem bloqueio, só o pacer de relógio de parede,
+                                           # que é o que o PC já faz (vsync do driver desligado sob o DWM).
+render_thread              = true          # GL numa thread própria: stalls do driver não travam o jogo. O remake do HEAT
+                                           # precisa do patch local tools/recomp/patches/psxrecomp-texture-bank-render-thread.patch
+                                           # (sem ele cada troca de banco de textura sincroniza as threads: ~30-40 fps)
+# Geometria/texturas: PGXP corrige o "tremor" dos vértices e a distorção afim das texturas do PS1.
+geometry_correction   = true
+perspective_texturing = true
+pgxp_depth_buffer     = false
+texture_filtering = "xbr"      # nearest (original) | bilinear | xbr (bordas diagonais suavizadas, texels nítidos)
+dithering         = "off"      # sem o padrão 4x4 do PS1 (cor de 24 bits)
+antialiasing_mode = "off"      # o supersampling 9x->1080p já suaviza; FXAA só borraria
+aspect_ratio      = "16:9"     # campo de visão mais largo (GTE projeta mais mundo nas laterais), sem esticar;
+                               # HUD/sprites 2D ficam em 4:3 centralizados ([widescreen] abaixo). "4:3" = original.
+dynamic_resolution = false
+
+# Widescreen "native-wide": o runtime alarga a área de desenho (320 -> 426 px a 16:9) e o GTE
+# projeta mais mundo nas laterais; nada é esticado. Quadros 2D (menus, FMV, BIOS) ficam 4:3.
+[widescreen]
+gte_game_mode   = true        # classifica como jogo qualquer quadro com projeção GTE (jogo 3D);
+                              # sem isso o runtime só reconhece "jogo" por sprite_tag_funcs e alterna 16:9/4:3
+hud_sprt_squash = true        # HUD/sprites 2D em proporção original
+auto_ui_squash  = true
+auto_ui_anchor  = "edges"     # HUD de canto vai para os cantos da tela larga
+auto_ui_size    = "original"
+clear_reveal    = true        # limpa as faixas laterais em trocas de cena (sem lixo de VRAM)
+
+# Presets selecionáveis por PSX_QUALITY ou settings.toml (ver docs/QUALITY_PRESETS.md)
+[quality.ultra]
+[quality.high]
+texture_filtering = "bilinear"
+[quality.medium]
+texture_filtering = "nearest"
+antialiasing = false
+[quality.low]
+texture_filtering = "nearest"
+antialiasing = false
+render_thread = false
+
+[controller]
+default_analog = false
+deadzone       = 12000
+# Android: 2 jogadores local com dois controles Bluetooth. O jogador 1 fica com o primeiro controle e o 2 com o
+# próximo livre: cada porta reserva um aparelho (open_player no runtime). p1_device é obrigatório: o padrão do
+# runtime é "keyboard" (o primeiro controle ia para o P2). Sem nenhum controle, o P1 cai no teclado (patch do
+# Android em pad_buttons_for). Com um controle só, a porta 2 fica sem pad.
+p1_device      = "gamepad"
+p2_device      = "gamepad"
+
+# Regiões para a ferramenta de auditoria (tools/audit_config.py):
+[audit]
+[[audit.regions]]
+name       = "Main executable text"
+rom_start  = "0x800"
+rom_end    = "0x4F000"
+vaddr_base = "0x80010000"
+
+[audit.normalize]
+kseg_mask = "0x1FFFFFFF"
