@@ -14,6 +14,9 @@ Responder e escrever docs/commits em pt-BR. GitHub: `betinn/BustAGroove2-Recomp`
 - (só `releases/README.md` e os textos de cada release desde a v2.0.0: `VERSION.txt`, `game.toml`,
   `settings.toml`, `keybinds.ini`, `input.ini`; nova release = novas exceções no `.gitignore`). `game/build/` é ignorado por `game/.gitignore`.
 - `releases/v1.0.0-estavel/` é backup: **nunca alterar**.
+- **`main` protegida** (ruleset "Proteger main" no GitHub, desde 2026-10-30): push direto, force push e deleção são
+  recusados. Trabalhar num branch, dar push dele e abrir PR (`gh pr create`); `gh pr merge` só quando o usuário pedir.
+  Só a conta `betinn` faz merge.
 - Edições de arquivo: ferramenta Edit ou Python com `encoding='utf-8'` (cp1252 corrompe acentos).
 - Depois de qualquer teste: `Stop-Process -Name Bust_A_Groove_2_Recompiled -Force`.
 
