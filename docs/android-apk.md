@@ -130,6 +130,58 @@ Dois `psx_freeze_dump_*.json` (100–124 MB) apareceram na pasta de dados às 23
 `adb forward tcp:4370` esquecido fez o harness do PC e o do tablet mandarem comandos (`quit`, `press`) ao mesmo
 jogo; apagados, não voltaram. O watchdog de congelamento escreve na pasta de dados: conferir se aparecer.
 
+## 6. Segunda rodada: o que o usuário viu na primeira partida (2026-10-31)
+
+Relato: o primeiro controle caiu no P2 e o segundo não fazia nada; "leves travadas" nos solos no palco do
+STRIKE; menus e ícones da seleção/carregamento claros demais.
+
+### Cores: transparência somada duas vezes no caminho ES
+No lote misto opaco/semitransparente (modo 4) o desktop usa *dual-source blending* (`GL_ONE, GL_SRC1_ALPHA`); no
+ES o shader soma `dst·fator` pelo *framebuffer fetch*, mas o `glEnable(GL_BLEND)` + `glBlendFuncSeparate(…SRC1…)`
+continuava sendo chamado: o enum é inválido no ES, o erro deixava o fator anterior ligado e a GPU somava o destino
+de novo por cima do que o shader já tinha somado. Corrigido (`glDisable(GL_BLEND)` nesse caminho sob `PSX_GLES`);
+seleção de personagens conferida por captura (`android_check.py`).
+
+### Controles: o padrão do runtime é teclado no P1
+`PSX_DEBUG_TOOLS` não vira macro de compilação (só `PSX_NO_DEBUG_TOOLS` quando desligado), então o P1 nascia como
+`"keyboard"` e o primeiro gamepad ia para a porta 2 (`open_player` reserva um aparelho por porta). Agora
+`game.android.toml` tem `p1_device = "gamepad"` e `p2_device = "gamepad"`; no Android (patch, `pad_buttons_for`)
+um assento "gamepad" sem controle cai no teclado, então o P1 sempre tem fonte. Log: `opened controller for slot 1
+(instance 2): PS5 Controller` (DualSense por Bluetooth, mapeamento do SDL, nada a configurar).
+
+### Engasgos: medição por quadro (`heat_hitch`)
+O relatório por segundo esconde um quadro atrasado (o pacer recupera dentro do mesmo segundo). O plugin ganhou
+`heat_hitch`: intervalo entre vblanks do jogo (`hitch_n` = intervalos > 25 ms), intervalo entre desenhos de host
+na render thread (`rt_gap_n` = > 45 ms), tempo do pior desenho e dos passos de preparo GL; `stage_stats` ganhou
+`prep_max_ms`/`prep_mip_ms`. `tools/tests/android_check.py` imprime isso a cada 10 s numa partida com capturas.
+
+Achados no palco do STRIKE (2P STRIKE × HEAT, 150 s):
+- **Entrada da partida**: um passo de preparo do palco de 119–197 ms (alocação dos dois arrays 1024² × n camadas
+  por `TexImage3D`) e o `GenerateMipmap` do array inteiro com 59–63 ms, num quadro cada (fps 44–51 naquele
+  segundo). Os personagens custam 9–13 ms. Feito: mipmaps na CPU na thread de carga (`rmk_asset_build_mips`,
+  enviados nível a nível com cada camada), `glTexStorage3D` (imutável; `TexImage3D` por nível reespecificava a
+  textura na Mali) e o array dos mapas de normal alocado num passo próprio → pior passo 62–80 ms, sem GenerateMipmap;
+  o segundo da entrada ficou em 58,9 fps. A alocação de 250 MB numa chamada ainda custa esses 60–80 ms (uma vez por
+  palco).
+- **Durante a música**: 18–40 intervalos de 25–33 ms por partida no jogo, concentrados nos solos; na render thread
+  os desenhos de host custam no máximo 2,8 ms, mas os intervalos > 45 ms entre eles se acumulam exatamente no
+  trecho dos solos (33 → 62 em 30 s): a câmera fecha num dançarino e o shader por pixel (Phong, mapa de normal,
+  sombra, especular) cobre a tela inteira a 5x; a GPU passa do quadro e o jogo, com 2 quadros em voo, só sente de vez
+  em quando. Isto é o que o usuário sentiu.
+- **4x contra 5x e disco no armazenamento interno**: a 4x (`internal_resolution = 960`) os intervalos > 45 ms da
+  render thread caíram numa rodada (64 → 12) e não na seguinte (73); os do jogo não mudaram (35–66). Ler o disco do
+  armazenamento interno (`/data/user/0/<pacote>/files`, ext4 direto, sem o FUSE do `Android/data`) também não mudou
+  (45 / 40). **A variância entre rodadas idênticas é grande** (mesma config: 35–66 no jogo, 12–73 na render), então
+  uma rodada só não decide nada abaixo de 2×; o que resta (um quadro atrasado a cada ~4–5 s na thread do jogo, de
+  25–30 ms) fica **aberto**, com a ferramenta pronta para a próxima sessão (`heat_hitch`, `android_check.py`).
+  A escala fica em 5x; `internal_resolution = 960` (4x) é o botão para um aparelho mais apertado.
+- O que **não** era: a troca de buffer bloqueante a 120 Hz (`vsync = "off"` não mudou a conta: 33 contra 18–36) e
+  pedir o modo de 60 Hz ao Android (piorou para 341: o "60 Hz" da Samsung alterna com 120 por baixo e, com o vsync
+  mandando na cadência, cada troca atrasava o jogo). Prioridade de thread (`setpriority −8` no jogo e na render)
+  também piorou (180) e foi desfeita. Os `psx_freeze_dump_*.json` de 100+ MB na pasta de dados vinham do `quit`: o
+  driver da Mali aborta o processo no descarregamento (`ubsan: type-mismatch`) e o crash trace escrevia o dump;
+  desligado no Android (patch em `crash_trace.c`).
+
 ### Entrada
 - `[controller]` do `game.android.toml`: P1 `auto` (padrão da build com debug tools: primeiro gamepad SDL) e
   `p2_device = "gamepad"` (o próximo livre: `open_player` reserva um aparelho por porta). O SDL3 enumera os
