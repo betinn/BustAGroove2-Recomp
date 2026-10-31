@@ -11,4 +11,10 @@ atualizados para a estrutura nova, mas eles não são mantidos.
 | `ghidra/` | Análise headless do `SLUS_011.59` com o Ghidra 12.1.4 + `ghidra_psx_ldr` (`run.sh`, `ExportDecomp.java`) | Serviu para mapear o executável; hoje o trabalho é no C gerado |
 | `roadmap.md` | O roteiro original (emulação → recompilação → navegador) | Superado por `docs/remake-plano.md` |
 
+A versão web tinha quatro páginas: `index.html` (EmulatorJS self-hosted, core `pcsx_rearmed` com HLE BIOS),
+`viewer.html` (modelos, texturas e animações em WebGPU), `media.html` (música CD-XA e abertura STR decodificadas em
+TypeScript) e `recomp.html` (o código recompilado pelo PSXRecomp em WebAssembly, renderer software, partida completa a
+60 vblank/s; [docs/recomp.md](../docs/recomp.md) §7 e §9). Rodar: `cd archive/web && npm run dev`, páginas em
+`http://localhost:5173/?dev` (`?dev` usa o caminho do disco em `archive/web/.disc.json`).
+
 O `heat_remake.py` ainda importa `ai_hybrid` quando chamado com o corpo da IA (`ai_body`), opção que não é usada.
