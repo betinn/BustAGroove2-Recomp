@@ -29,7 +29,64 @@ void rmk_asset_free(RmkAsset* a) {
     free(a->layers);
     free(a->stp);
     free(a->nmaps);
+    free(a->mips);
+    free(a->nmips);
     memset(a, 0, sizeof *a);
+}
+
+int rmk_mip_levels(uint32_t s) {
+    int n = 0;
+    while (s > 1) { s >>= 1; n++; }
+    return n;
+}
+
+size_t rmk_mip_offset(uint32_t S, uint32_t nl, int level, uint32_t layer) {
+    size_t off = 0;
+    for (int l = 1; l < level; l++) { const uint32_t s = S >> l; off += (size_t)s * s * 4u * nl; }
+    const uint32_t s = S >> level;
+    return off + (size_t)s * s * 4u * layer;
+}
+
+/* média 2x2 por canal, RGBA8 (o que o glGenerateMipmap faz com alfa não pré-multiplicado) */
+static void mip_box(const uint8_t* src, uint32_t s, uint8_t* dst) {
+    const uint32_t d = s >> 1;
+    for (uint32_t y = 0; y < d; y++) {
+        const uint8_t* r0 = src + (size_t)(2 * y) * s * 4u;
+        const uint8_t* r1 = r0 + (size_t)s * 4u;
+        uint8_t* o = dst + (size_t)y * d * 4u;
+        for (uint32_t x = 0; x < d; x++, r0 += 8, r1 += 8, o += 4)
+            for (int c = 0; c < 4; c++) o[c] = (uint8_t)((r0[c] + r0[4 + c] + r1[c] + r1[4 + c] + 2u) >> 2);
+    }
+}
+
+static uint8_t* build_chain(const uint8_t* base, uint32_t S, uint32_t nl, int L) {
+    uint8_t* buf = (uint8_t*)malloc(rmk_mip_offset(S, nl, L, nl));
+    if (!buf) return NULL;
+    const size_t layer_bytes = (size_t)S * S * 4u;
+    for (uint32_t j = 0; j < nl; j++) {
+        const uint8_t* prev = base + layer_bytes * j;
+        uint32_t ps = S;
+        for (int l = 1; l <= L; l++) {
+            uint8_t* dst = buf + rmk_mip_offset(S, nl, l, j);
+            mip_box(prev, ps, dst);
+            prev = dst; ps >>= 1;
+        }
+    }
+    return buf;
+}
+
+int rmk_asset_build_mips(RmkAsset* a) {
+    const int L = rmk_mip_levels(a->tex_size);
+    free(a->mips); a->mips = NULL;
+    free(a->nmips); a->nmips = NULL;
+    if (!a->n_layers || L == 0 || !a->layers) return 1;
+    a->mips = build_chain(a->layers, a->tex_size, a->n_layers, L);
+    if (!a->mips) return 0;
+    if (a->nmaps) {
+        a->nmips = build_chain(a->nmaps, a->tex_size, a->n_layers, L);
+        if (!a->nmips) { free(a->mips); a->mips = NULL; return 0; }
+    }
+    return 1;
 }
 
 /* Mapas de normal (espaço tangente, RGBA8: xyz * 0,5 + 0,5, alfa = máscara) gerados das camadas HD; a mesma

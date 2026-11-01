@@ -52,9 +52,11 @@ struct RmkGL {
 #define X(ret, name, args) ret(RGLAPI* name) args;
     GL_FUNCS(X)
 #undef X
+    void (RGLAPI* TexStorage3D)(GLenum_, GLsizei_, GLenum_, GLsizei_, GLsizei_, GLsizei_);   /* opcional */
     void (RGLAPI* ClearDepthf)(float);
     void (RGLAPI* ClearDepth)(double);
     int gles, step, ready, failed, has_nmap;   /* has_nmap: mapas de normal na GPU (o asset pode soltar a cópia) */
+    int bstep;   /* passos da criação: programa, buffers, sombra no chão, array das camadas, array dos mapas de normal */
     GLuint_ prog, vao, grid_vbo, grid_ibo, inst_vbo, tex, nmap, geo[GEO_RING], shadow_tex, shadow_fbo;
     float lbasis[3][3], lcenter[4];  /* espaço da luz da sombra do último quadro: u, v, direção; centro, 1/raio */
     int key;                         /* luz principal (a da sombra) do último quadro */
@@ -301,6 +303,7 @@ RmkGL* rmk_gl_create(RmkGetProc get_proc, int gles) {
     if (!(g->name = (ret(RGLAPI*) args)get_proc("gl" #name))) { ok = 0; snprintf(g->err, sizeof g->err, "sem gl%s", #name); }
     GL_FUNCS(X)
 #undef X
+    g->TexStorage3D = (void(RGLAPI*)(GLenum_, GLsizei_, GLenum_, GLsizei_, GLsizei_, GLsizei_))get_proc("glTexStorage3D");
     g->ClearDepthf = (void(RGLAPI*)(float))get_proc("glClearDepthf");
     g->ClearDepth = (void(RGLAPI*)(double))get_proc("glClearDepth");
     if (!ok) g->failed = 1;
@@ -373,6 +376,21 @@ static void inst_attribs(RmkGL* g, uint32_t first) {
 
 /* Grade baricêntrica: ponto (i, j) = (1 - i/L - j/L, i/L, j/L); triângulos com a mesma orientação da face. */
 static int gi(int i, int j) { return i * (RMK_TESS_L + 1) - i * (i - 1) / 2 + j; }
+
+/* Array de camadas RGBA8 com todos os níveis de mipmap: glTexStorage3D (imutável: uma alocação só; na Mali o
+ * TexImage3D nível a nível reespecificava a textura e custava até 200 ms num quadro) ou, sem ele (GL 3.3 sem
+ * ARB_texture_storage), TexImage3D por nível. Com mips da CPU os níveis são enchidos por camada; sem eles o
+ * GenerateMipmap do fim enche os níveis já alocados. */
+static void alloc_array(RmkGL* g, uint32_t S, uint32_t nl, int with_mips) {
+    const int L = rmk_mip_levels(S);
+    if (g->TexStorage3D) {
+        g->TexStorage3D(R_TEXTURE_2D_ARRAY, L + 1, R_RGBA8, (GLsizei_)S, (GLsizei_)S, (GLsizei_)nl);
+        return;
+    }
+    for (int l = 0; l <= (with_mips ? L : 0); l++)
+        g->TexImage3D(R_TEXTURE_2D_ARRAY, l, R_RGBA8, (GLsizei_)(S >> l), (GLsizei_)(S >> l), (GLsizei_)nl, 0, R_RGBA,
+                      R_UNSIGNED_BYTE, NULL);
+}
 
 static int build_buffers(RmkGL* g, const RmkAsset* a) {
     float grid[GRID_PTS * 3];
@@ -448,9 +466,7 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     /* camadas HD: um texture array, enchido uma camada por chamada de rmk_gl_prepare */
     g->GenTextures(1, &g->tex);
     g->ActiveTexture(R_TEXTURE0 + 9);
-    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
-    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size,
-                  (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA, R_UNSIGNED_BYTE, NULL);
+    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);   /* os dois arrays são alocados em passos próprios (bstep 3 e 4) */
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
@@ -460,8 +476,6 @@ static int build_buffers(RmkGL* g, const RmkAsset* a) {
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
     g->has_nmap = a->nmaps != NULL;
     const GLsizei_ ns = a->nmaps ? (GLsizei_)a->tex_size : 1;
-    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, ns, ns, (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA,
-                  R_UNSIGNED_BYTE, NULL);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
@@ -504,13 +518,26 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
     while (g->GetError() != 0) {}
     g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
     g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
-    if (g->step == 0) {
-        if (!build_program(g) || !build_buffers(g, a) || !build_floor(g)) {
+    if (g->step == 0) {   /* criação em passos, um por quadro: juntos custavam até 95 ms num quadro na Mali */
+        int ok = 1;
+        if (g->bstep == 0) ok = build_program(g);
+        else if (g->bstep == 1) ok = build_buffers(g, a);
+        else if (g->bstep == 2) ok = build_floor(g);
+        else {
+            const int is_n = g->bstep == 4;
+            g->ActiveTexture(R_TEXTURE0 + 9);
+            g->BindTexture(R_TEXTURE_2D_ARRAY, is_n ? g->nmap : g->tex);
+            alloc_array(g, is_n && !a->nmaps ? 1u : a->tex_size, a->n_layers ? a->n_layers : 1u,
+                        (is_n ? a->nmips : a->mips) != NULL);
+            g->BindTexture(R_TEXTURE_2D_ARRAY, 0);
+            ok = g->GetError() == 0;
+            if (is_n) g->step = 1;
+        }
+        g->bstep++;
+        if (!ok) {
             if (!g->err[0]) snprintf(g->err, sizeof g->err, "recursos GL: erro 0x%X", g->GetError());
             g->failed = 1;
-            return 0;
         }
-        g->step = 1;
         return 0;
     }
     /* passos: 1..n_layers camadas de cor, depois n_layers mapas de normal (se houver), depois mipmaps */
@@ -523,6 +550,12 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
         g->BindTexture(R_TEXTURE_2D_ARRAY, is_n ? g->nmap : g->tex);
         g->TexSubImage3D(R_TEXTURE_2D_ARRAY, 0, 0, 0, (GLint_)layer, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size, 1,
                          R_RGBA, R_UNSIGNED_BYTE, (is_n ? a->nmaps : a->layers) + bytes * layer);
+        const uint8_t* chain = is_n ? a->nmips : a->mips;
+        if (chain)
+            for (int lv = 1, L = rmk_mip_levels(a->tex_size); lv <= L; lv++)
+                g->TexSubImage3D(R_TEXTURE_2D_ARRAY, lv, 0, 0, (GLint_)layer, (GLsizei_)(a->tex_size >> lv),
+                                 (GLsizei_)(a->tex_size >> lv), 1, R_RGBA, R_UNSIGNED_BYTE,
+                                 chain + rmk_mip_offset(a->tex_size, a->n_layers, lv, layer));
         g->step++;
     } else {
         float an = 0.0f;
@@ -530,7 +563,7 @@ int rmk_gl_prepare(RmkGL* g, const RmkAsset* a) {
         const int aniso = g->GetError() == 0 && an > 1.0f;
         for (int t = 0; t < (nm ? 2 : 1); t++) {
             g->BindTexture(R_TEXTURE_2D_ARRAY, t ? g->nmap : g->tex);
-            g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
+            if (!(t ? a->nmips : a->mips)) g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
             g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR_MIPMAP_LINEAR);
             if (aniso) g->TexParameterf(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAX_ANISOTROPY, an < 8.0f ? an : 8.0f);
         }

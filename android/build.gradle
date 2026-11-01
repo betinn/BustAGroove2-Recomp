@@ -1,0 +1,23 @@
+// Projeto Android do Bust A Groove 2 Recompiled (docs/android-apk.md).
+// O Gradle só empacota: a biblioteca nativa vem pronta de game/build-android (recomp/android/build.sh)
+// e os dados do jogo são postos em app/src/main/assets pelo staging (recomp/android/stage.py).
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

@@ -1606,6 +1606,14 @@ em todos os segundos, 0 underruns.
   asset de palco; partida no 234 em 16:9 com o HUD por cima; no fim da música o asset descarrega (estado 0).
 - Cartões de memória: md5 `8a250fe6206a1537011166866b509ebd` nos dois antes e depois.
 
+## Fase 7: Android, APK nativo (2026-10-30)
+Técnica, decisões e medições em `docs/android-apk.md`. O que importa para o remake: o núcleo `src/remake/` (rmk_gl,
+rmk_stage, rmk_post) compilou e rodou como GLSL ES 3.00 na Mali-G720 sem nenhuma mudança (a flag `gles` dos
+`*_create` existia desde a fase 1; os plugins passam `PSX_GLES`); o renderizador do framework ganhou um caminho
+GLES 3.2 no 4º patch. No tablet (Galaxy Tab S10 Ultra) a partida 2P no 233 com tudo ligado fica em 59,9 fps a 5x,
+render 39–90 % ao longo da música, 0 underruns; como no PC, o remake custa menos à render thread do que o original
+(67 % contra 86 % no mesmo trecho).
+
 ## Fase 0 no jogo: pacotes GT3 (`src/bag2_heat.c`, hoje fallback)
 **Hook.** `FUN_80029D4C` recebe em `$a0` o nó raiz de um personagem e desenha a árvore de ossos
 (`FUN_80029C6C`: filho em +0x94, irmão em +0x98; +0x6C = MATRIX câmera×osso já pronta para o GTE, +0x8C =

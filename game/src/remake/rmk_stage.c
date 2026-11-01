@@ -114,7 +114,8 @@ struct RmkStageGL {
 #define X(ret, name, args) ret(RGLAPI* name) args;
     GL_FUNCS(X)
 #undef X
-    int gles, step, ready, failed, has_nmap;
+    void (RGLAPI* TexStorage3D)(GLenum_, GLsizei_, GLenum_, GLsizei_, GLsizei_, GLsizei_);   /* opcional */
+    int gles, step, ready, failed, has_nmap, nmap_alloc, bstep;   /* bstep: passos da criação (programa, buffers, array) */
     GLuint_ prog, vao, tri_vbo, inst_vbo, tex, nmap, geo[GEO_RING], smp_shadow;
     GLuint_ vtab;                    /* variantes afins (.stg v3): 2 texels RGBA32F por variante, k e b (unidade 11) */
     uint32_t n_var;
@@ -130,6 +131,12 @@ struct RmkStageGL {
     uint32_t n_tess;                 /* faces curvas (estatística) */
     int geo_w, geo_h, ring;
     uint32_t serial, have_frame, n_inst_cap, inst_used, run_key, run_first, run_n, n_free;
+    /* um buffer de instâncias por sequência do quadro, enchido inteiro por BufferData: BufferSubData num buffer que
+     * desenhos ainda não executados leem faz a Mali copiar o buffer inteiro (copy-on-write) a cada sequência; no
+     * palco do ROBO-Z isso era 1/5 da render thread (docs/android-apk.md §7) */
+    GLuint_* pool;
+    uint32_t pool_n, pool_i;
+    GLuint_ run_vbo;
     float* pos;                      /* posições no espaço da câmera (3 floats por vértice) */
     float* staging;
     SInst* inst;
@@ -336,6 +343,7 @@ void rmk_stage_gl_destroy(RmkStageGL* g) {
         g->DeleteTextures(GEO_RING, g->geo);
         const GLuint_ bf[2] = {g->tri_vbo, g->inst_vbo};
         g->DeleteBuffers(2, bf);
+        if (g->pool_n) g->DeleteBuffers((GLsizei_)g->pool_n, g->pool);
         g->DeleteVertexArrays(1, &g->vao);
         g->DeleteVertexArrays(1, &g->vao_grid);
         const GLuint_ gb[2] = {g->grid_vbo, g->grid_ibo};
@@ -347,6 +355,7 @@ void rmk_stage_gl_destroy(RmkStageGL* g) {
     free(g->staging);
     free(g->inst);
     free(g->seg);
+    free(g->pool);
     free(g->tess);
     free(g->curv);
     free(g->edges);
@@ -362,6 +371,7 @@ RmkStageGL* rmk_stage_gl_create(RmkGetProc get_proc, int gles) {
     if (!(g->name = (ret(RGLAPI*) args)get_proc("gl" #name))) { ok = 0; snprintf(g->err, sizeof g->err, "sem gl%s", #name); }
     GL_FUNCS(X)
 #undef X
+    g->TexStorage3D = (void(RGLAPI*)(GLenum_, GLsizei_, GLenum_, GLsizei_, GLsizei_, GLsizei_))get_proc("glTexStorage3D");
     if (!ok) g->failed = 1;
     return g;
 }
@@ -485,7 +495,24 @@ static void classify_tess(RmkStageGL* g, const RmkAsset* a, uint64_t done) {
     g->n_tess = nt;
 }
 
-static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
+/* Array de camadas RGBA8 com todos os níveis de mipmap: glTexStorage3D (imutável: uma alocação só; na Mali o
+ * TexImage3D nível a nível reespecificava a textura e custava até 200 ms num quadro) ou, sem ele (GL 3.3 sem
+ * ARB_texture_storage), TexImage3D por nível. Com mips da CPU os níveis são enchidos por camada; sem eles o
+ * GenerateMipmap do fim enche os níveis já alocados. */
+static void alloc_array(RmkStageGL* g, uint32_t S, uint32_t nl, int with_mips) {
+    const int L = rmk_mip_levels(S);
+    if (g->TexStorage3D) {
+        g->TexStorage3D(R_TEXTURE_2D_ARRAY, L + 1, R_RGBA8, (GLsizei_)S, (GLsizei_)S, (GLsizei_)nl);
+        return;
+    }
+    for (int l = 0; l <= (with_mips ? L : 0); l++)
+        g->TexImage3D(R_TEXTURE_2D_ARRAY, l, R_RGBA8, (GLsizei_)(S >> l), (GLsizei_)(S >> l), (GLsizei_)nl, 0, R_RGBA,
+                      R_UNSIGNED_BYTE, NULL);
+}
+
+/* Criação em três passos de rmk_stage_gl_prepare, um por quadro (juntos custavam até 211 ms num quadro na Mali, na
+ * introdução da partida): programa (compilar e ligar), buffers e texturas pequenas, e a alocação do array das camadas. */
+static int build_prog(RmkStageGL* g) {
     GLuint_ vs = compile(g, R_VERTEX_SHADER, VS), fs = vs ? compile(g, R_FRAGMENT_SHADER, FS) : 0;
     if (!vs || !fs) return 0;
     g->prog = g->CreateProgram();
@@ -515,6 +542,10 @@ static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     g->u_sv[0] = g->GetUniformLocation(g->prog, "u_sv[0]");
     g->u_sd[0] = g->GetUniformLocation(g->prog, "u_sd[0]");
     g->u_sc[0] = g->GetUniformLocation(g->prog, "u_sc[0]");
+    return 1;
+}
+
+static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     /* um triângulo por instância: os cantos são as baricêntricas (1,0,0), (0,1,0), (0,0,1) */
     static const float tri[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     g->n_inst_cap = 2u * a->n_tris + 64u;
@@ -578,19 +609,17 @@ static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     g->BindTexture(R_TEXTURE_2D, 0);
     g->GenTextures(1, &g->tex);
     g->ActiveTexture(R_TEXTURE0 + 9);
-    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
-    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size,
-                  (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA, R_UNSIGNED_BYTE, NULL);
+    g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);   /* o array é alocado no passo seguinte (bstep 2) */
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_T, R_CLAMP_TO_EDGE);
+    /* o array dos mapas de normal (mesmo tamanho) é alocado só no passo em que a primeira camada dele sobe
+     * (alloc_nmap no prepare): os dois juntos custavam 119 ms num quadro na Mali */
     g->GenTextures(1, &g->nmap);
     g->BindTexture(R_TEXTURE_2D_ARRAY, g->nmap);
     g->has_nmap = a->nmaps != NULL;
-    const GLsizei_ ns = a->nmaps ? (GLsizei_)a->tex_size : 1;
-    g->TexImage3D(R_TEXTURE_2D_ARRAY, 0, R_RGBA8, ns, ns, (GLsizei_)(a->n_layers ? a->n_layers : 1), 0, R_RGBA,
-                  R_UNSIGNED_BYTE, NULL);
+    if (!g->has_nmap) alloc_array(g, 1u, a->n_layers ? a->n_layers : 1u, 0);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAG_FILTER, R_LINEAR);
     g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_WRAP_S, R_CLAMP_TO_EDGE);
@@ -629,10 +658,13 @@ static int build(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
         free(tab);
     }
     const uint64_t layer = (uint64_t)a->tex_size * a->tex_size * 4u * (a->n_layers ? a->n_layers : 1u);
+    const uint64_t ns = a->nmaps ? (g->gles && a->nmips && a->tex_size >= 64u ? a->tex_size / 2u : a->tex_size) : 1u;
     g->bytes += layer * 4u / 3u + (uint64_t)ns * ns * 4u * (a->n_layers ? a->n_layers : 1u) * 4u / 3u +
                 (uint64_t)GEO_RING * g->geo_w * g->geo_h * 16u + sizeof(SInst) * g->n_inst_cap;
     return g->GetError() == 0;
 }
+
+static int nmap_half(const RmkStageGL* g, const RmkAsset* a) { return g->gles && a->nmips && a->tex_size >= 64u; }
 
 int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     if (!g || g->failed) return 0;
@@ -641,12 +673,22 @@ int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
     g->PixelStorei(R_UNPACK_ALIGNMENT, 4);
     g->PixelStorei(R_UNPACK_ROW_LENGTH, 0);
     if (g->step == 0) {
-        if (!build(g, a, s)) {
+        int ok = 1;
+        if (g->bstep == 0) ok = build_prog(g);
+        else if (g->bstep == 1) ok = build(g, a, s);
+        else {
+            g->ActiveTexture(R_TEXTURE0 + 9);
+            g->BindTexture(R_TEXTURE_2D_ARRAY, g->tex);
+            alloc_array(g, a->tex_size, a->n_layers ? a->n_layers : 1u, a->mips != NULL);
+            g->BindTexture(R_TEXTURE_2D_ARRAY, 0);
+            ok = g->GetError() == 0;
+            g->step = 1;
+        }
+        g->bstep++;
+        if (!ok) {
             if (!g->err[0]) snprintf(g->err, sizeof g->err, "palco: recursos GL, erro 0x%X", g->GetError());
             g->failed = 1;
-            return 0;
         }
-        g->step = 1;
         return 0;
     }
     g->ActiveTexture(R_TEXTURE0 + 9);
@@ -656,8 +698,23 @@ int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
         const int is_n = k >= a->n_layers;
         const uint32_t l = is_n ? k - a->n_layers : k;
         g->BindTexture(R_TEXTURE_2D_ARRAY, is_n ? g->nmap : g->tex);
-        g->TexSubImage3D(R_TEXTURE_2D_ARRAY, 0, 0, 0, (GLint_)l, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size, 1,
-                         R_RGBA, R_UNSIGNED_BYTE, (is_n ? a->nmaps : a->layers) + bytes * l);
+        /* GLES: mapas de normal à metade (o nível 1 da cadeia da CPU vira o 0): a alocação do array cai a 1/4 (no 234,
+         * 158 ms num quadro na Mali, na introdução) e o relevo quase não muda (docs/android-apk.md §7) */
+        const int half = is_n && nmap_half(g, a);
+        if (is_n && l == 0 && !g->nmap_alloc) {   /* alloc_nmap: o array dos mapas de normal, num passo só dele */
+            alloc_array(g, half ? a->tex_size >> 1 : a->tex_size, a->n_layers, a->nmips != NULL);
+            g->nmap_alloc = 1;
+            return 0;   /* a camada sobe no próximo passo */
+        }
+        if (!half)
+            g->TexSubImage3D(R_TEXTURE_2D_ARRAY, 0, 0, 0, (GLint_)l, (GLsizei_)a->tex_size, (GLsizei_)a->tex_size, 1,
+                             R_RGBA, R_UNSIGNED_BYTE, (is_n ? a->nmaps : a->layers) + bytes * l);
+        const uint8_t* chain = is_n ? a->nmips : a->mips;
+        if (chain)
+            for (int lv = 1, L = rmk_mip_levels(a->tex_size); lv <= L; lv++)
+                g->TexSubImage3D(R_TEXTURE_2D_ARRAY, half ? lv - 1 : lv, 0, 0, (GLint_)l, (GLsizei_)(a->tex_size >> lv),
+                                 (GLsizei_)(a->tex_size >> lv), 1, R_RGBA, R_UNSIGNED_BYTE,
+                                 chain + rmk_mip_offset(a->tex_size, a->n_layers, lv, l));
         g->step++;
     } else {
         float an = 0.0f;
@@ -665,7 +722,7 @@ int rmk_stage_gl_prepare(RmkStageGL* g, const RmkAsset* a, const RmkStage* s) {
         const int aniso = g->GetError() == 0 && an > 1.0f;
         for (int t = 0; t < (nm ? 2 : 1); t++) {
             g->BindTexture(R_TEXTURE_2D_ARRAY, t ? g->nmap : g->tex);
-            g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
+            if (!(t ? a->nmips : a->mips)) g->GenerateMipmap(R_TEXTURE_2D_ARRAY);
             g->TexParameteri(R_TEXTURE_2D_ARRAY, R_TEXTURE_MIN_FILTER, R_LINEAR_MIPMAP_LINEAR);
             if (aniso) g->TexParameterf(R_TEXTURE_2D_ARRAY, R_TEXTURE_MAX_ANISOTROPY, an < 8.0f ? an : 8.0f);
         }
@@ -739,9 +796,7 @@ void rmk_stage_gl_frame(RmkStageGL* g, const RmkAsset* a, const RmkStageFrame* f
     g->have_frame = 1;
     g->inst_used = 0;
     g->run_key = 0xFFFFFFFFu;
-    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
-    g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * g->n_inst_cap), NULL, R_STREAM_DRAW);   /* órfão */
-    g->BindBuffer(R_ARRAY_BUFFER, 0);
+    g->pool_i = 0;
 }
 
 /* Instâncias da sequência, a partir dos pacotes vivos: as faces de cada primitiva, com cor/UV do slot do pacote de
@@ -919,17 +974,25 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
         const int fy = run_fb_y(pk, n);
         if (fy >= 0) fb_capture(g, t, fy);
     }
-    g->BindBuffer(R_ARRAY_BUFFER, g->inst_vbo);
     if (key != g->run_key) {   /* sequência nova; o espelho da tela larga repete a anterior */
         const uint32_t m = build_run(g, a, s, pk, n);
-        if (!m) { g->BindBuffer(R_ARRAY_BUFFER, 0); return; }
-        g->BufferSubData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * g->inst_used), (GLsizeiptr_)(sizeof(SInst) * m),
-                         g->inst + g->inst_used);
+        if (!m) return;
+        if (g->pool_i == g->pool_n) {   /* mais sequências neste quadro do que buffers: mais 16 */
+            GLuint_* np = (GLuint_*)realloc(g->pool, sizeof(GLuint_) * (g->pool_n + 16u));
+            if (!np) return;
+            g->pool = np;
+            g->GenBuffers(16, g->pool + g->pool_n);
+            g->pool_n += 16u;
+        }
+        g->run_vbo = g->pool[g->pool_i++];
+        g->BindBuffer(R_ARRAY_BUFFER, g->run_vbo);
+        g->BufferData(R_ARRAY_BUFFER, (GLsizeiptr_)(sizeof(SInst) * m), g->inst + g->inst_used, R_STREAM_DRAW);
         g->run_key = key;
         g->run_first = g->inst_used;
         g->run_n = m;
         g->inst_used += m;
     }
+    g->BindBuffer(R_ARRAY_BUFFER, g->run_vbo);   /* os atributos por instância apontam para o buffer da sequência */
     g->Disable(R_DEPTH_TEST);
     g->DepthMask(0);
     g->Disable(R_CULL_FACE);
@@ -998,7 +1061,7 @@ void rmk_stage_gl_draw(RmkStageGL* g, const RmkAsset* a, const RmkStage* s, cons
             const int grid = (sg[i] & 128u) != 0;
             const unsigned bl = sg[i] & 127u;
             g->BindVertexArray(grid ? g->vao_grid : g->vao);
-            inst_attribs(g, g->run_first + i);
+            inst_attribs(g, i);
             for (int pass = 0; pass < (bl ? 2 : 1); pass++) {   /* semi: texels opacos, depois os com STP */
                 if (pass == 0) { opaque_blend(g); g->Uniform1i(g->u_semi, bl ? 0 : -1); }
                 else { set_blend(g, bl - 1u); g->ColorMask(1, 1, 1, 0); g->Uniform1i(g->u_semi, 1); }

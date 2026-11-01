@@ -18,6 +18,12 @@
 #include "mod_plugins.h"
 #include "cpu_state.h"
 #include "remake/rmk.h"
+/* Android (PSX_GLES): o núcleo compila os shaders como GLSL ES 3.00. */
+#if defined(PSX_GLES)
+#define BAG2_GLES 1
+#else
+#define BAG2_GLES 0
+#endif
 #include "gpu_timer.h"
 
 #include <math.h>
@@ -29,9 +35,15 @@
 static double st_now_us(void) { LARGE_INTEGER c, f; QueryPerformanceCounter(&c); QueryPerformanceFrequency(&f); return (double)c.QuadPart * 1e6 / (double)f.QuadPart; }
 #else
 #include <pthread.h>
+#ifdef __ANDROID__
+#include <sys/resource.h>   /* setpriority na thread de carga */
+#endif
 #include <time.h>
 static double st_now_us(void) { struct timespec t; timespec_get(&t, TIME_UTC); return t.tv_sec * 1e6 + t.tv_nsec / 1e3; }
 #endif
+
+/* tempo do passo de preparo GL do palco na thread de render (stage_stats): o último é o GenerateMipmap do array */
+static double s_prep_max_us, s_prep_mip_us;
 
 #define CHAR_UPDATE_FN 0x8002BEB4u   /* FUN_8002BEB4: atualização/desenho de um personagem */
 #define MATCH_PTR 0x8008A2C8u        /* != 0 só em partida */
@@ -203,7 +215,7 @@ static void stage_char_update(struct CPUState* cpu, uint32_t address) {
 static void stage_host_draw(const PSXModHostDrawTarget* t, const void* payload, uint32_t bytes) {
     const double t0 = st_now_us();
     if (!s_post && !s_failed) {
-        s_post = rmk_post_create(t->get_proc, 0);
+        s_post = rmk_post_create(t->get_proc, BAG2_GLES);
         if (!s_post) s_failed = 1;
     }
     if (!s_ready && !s_failed) {
@@ -415,6 +427,7 @@ static void load_stage(Stg* s) {
     RmkAsset* a = (RmkAsset*)calloc(1, sizeof *a);
     int ok = a && rmk_asset_load(a, s->bin) && a->n_bones >= (int)s->t.n_nodes;
     if (ok) ok = rmk_asset_build_normals(a, 16.0f);
+    if (ok) ok = rmk_asset_build_mips(a);
     s->load_ms = (st_now_us() - t0) / 1000.0;
     if (!ok) {
         if (a) { rmk_asset_free(a); free(a); }
@@ -428,7 +441,13 @@ static void load_stage(Stg* s) {
 #ifdef _WIN32
 static DWORD WINAPI stage_load_thread(LPVOID p) { load_stage((Stg*)p); return 0; }
 #else
-static void* stage_load_thread(void* p) { load_stage((Stg*)p); return NULL; }
+static void* stage_load_thread(void* p) {
+#ifdef __ANDROID__
+    setpriority(PRIO_PROCESS, 0, 10);   /* abaixo das threads do jogo e de render (docs/android-apk.md §7) */
+#endif
+    load_stage((Stg*)p);
+    return NULL;
+}
 #endif
 
 static void request_stage(int i) {
@@ -461,6 +480,10 @@ static int overlay_stage(void) {
     return -1;
 }
 
+/* Índice do palco escolhido (byte; docs/formats.md "Palcos: conteúdo e desenho") e o container de cada um */
+#define STAGE_IDX_ADDR 0x8005FB56u
+static const uint32_t k_idx_container[13] = {234, 243, 233, 244, 236, 242, 238, 237, 235, 231, 232, 241, 245};
+
 /* VBlank (thread do jogo), 4 vezes por segundo: qual palco está na RAM numa partida (FUN_800326F8 instala o overlay e
  * liga o ponteiro da partida, que não volta a zero depois do QUIT); o asset carrega quando o jogo desenha os nós dele
  * (o voo da câmera antes do "Ready" cobre a carga e o preparo) e descarrega 3 s depois que ele para de desenhar
@@ -475,6 +498,23 @@ static void geo_vblank(void) {
     if (cur != s_cur) { s_cur = cur; s_model = 0; s_neg_i = 0; memset(s_neg, 0, sizeof s_neg); }
     /* ligado ou não (stage_geo 0, comparação), o asset fica carregado enquanto o jogo desenha o palco */
     if (s_cur >= 0 && now - s_seen_us < 1e6) request_stage(s_cur);
+    /* Palco escolhido (byte do índice, gravado na confirmação da tela de palco, ~6 s antes da partida começar): a
+     * carga e o preparo GL começam na tela de carregamento, e não no voo da câmera da introdução, onde a alocação dos
+     * arrays (60-160 ms num quadro na Mali) engasgava a música (docs/android-apk.md §7). O overlay só bate com o
+     * ponteiro da partida já ligado. Mantido por até 30 s sem desenho; a primeira leitura (boot) não conta e o mesmo
+     * índice de novo cai na regra de cima. */
+    static int idx_prev = -2, early = -1;
+    static double early_t;
+    const uint32_t w = rd32(STAGE_IDX_ADDR & ~3u);
+    const int idx = (int)((w >> (8u * (STAGE_IDX_ADDR & 3u))) & 0xFFu);
+    if (idx != idx_prev && idx_prev != -2 && idx < (int)(sizeof k_idx_container / sizeof k_idx_container[0])) {
+        early = -1;
+        for (int i = 0; i < s_nst; i++)
+            if (s_st[i].t.container == k_idx_container[idx]) { early = i; early_t = now; }
+        if (early >= 0) psx_mod_counter_add("bag2_stage.geo_load_early", 1);
+    }
+    idx_prev = idx;
+    if (early >= 0 && now - early_t < 30e6) request_stage(early);
     for (int i = 0; i < s_nst; i++) {
         Stg* s = &s_st[i];
         if (s->state == 2 && (i != s_cur || now - s_seen_us > 3e6) && now - s->last_use_us > 3e6) {
@@ -1400,17 +1440,24 @@ static void geo_host_draw(const PSXModHostDrawTarget* t, const void* payload, ui
     Stg* s = &s_st[i];
     if (s->state != 2) return;
     if (!s->gl && !s->rt_failed) {
-        s->gl = rmk_stage_gl_create(t->get_proc, 0);
+        s->gl = rmk_stage_gl_create(t->get_proc, BAG2_GLES);
         if (!s->gl) s->rt_failed = 1;
     }
     if (!s->rt_ready && !s->rt_failed) {
         s->rt_prepares++;
-        if (rmk_stage_gl_prepare(s->gl, s->full, &s->t)) {
+        const double tp0 = st_now_us();
+        const int ready = rmk_stage_gl_prepare(s->gl, s->full, &s->t);
+        const double tp = st_now_us() - tp0;
+        if (tp > s_prep_max_us) s_prep_max_us = tp;
+        if (ready) s_prep_mip_us = tp;
+        if (ready) {
             s->rt_ready = 1;
             s->gl_bytes = rmk_stage_gl_bytes(s->gl);
             RmkAsset* a = s->full;   /* as camadas estão na GPU: a cópia de CPU sai (malha e faces ficam) */
             free(a->layers); a->layers = NULL;
             free(a->nmaps); a->nmaps = NULL;
+            free(a->mips); a->mips = NULL;
+            free(a->nmips); a->nmips = NULL;
             free(a->stp); a->stp = NULL;
         } else if (*rmk_stage_gl_error(s->gl)) {
             fprintf(stdout, "bag2_stage: geometria do palco desligada: %s\n", rmk_stage_gl_error(s->gl));
@@ -1600,7 +1647,7 @@ static int gpu_timers_cmd(const char* args, char* reply, int cap) {
 }
 
 static int stage_stats_cmd(const char* args, char* reply, int cap) {
-    (void)args;
+    if (args && args[0] == 'z') { s_prep_max_us = 0; s_prep_mip_us = 0; }   /* zera o preparo (android_intro.py) */
     static uint32_t d0;
     static double u0;
     const uint32_t d = s_draws;
@@ -1608,12 +1655,13 @@ static int stage_stats_cmd(const char* args, char* reply, int cap) {
     static uint64_t g_ns0, g_n0;
     uint64_t g_cnt = 0;
     const double g_us = gt_take(&s_gt, &g_ns0, &g_n0, &g_cnt);
-    snprintf(reply, cap, "gpu_us=%.0f gpu_n=%llu draws=%u us_per_draw=%.1f prepares=%u ready=%d failed=%d err=%s | ultimo passo=%d escala=%d "
+    int n = snprintf(reply, cap, "gpu_us=%.0f gpu_n=%llu draws=%u us_per_draw=%.1f prepares=%u ready=%d failed=%d err=%s | ultimo passo=%d escala=%d "
              "fbo=%d area=%d,%d,%d,%d vp=%d,%d,%d,%d passos0=%d passos1=%d faixa=%dx%d trocas=%d", g_us, (unsigned long long)g_cnt, d - d0,
              d > d0 ? (u - u0) / (double)(d - d0) : 0.0, s_prepares, s_ready, s_failed, s_post ? rmk_post_error(s_post) : "",
              s_last_pass, s_last_scale, s_last_fbo, s_last_area[0], s_last_area[1], s_last_area[2], s_last_area[3],
              s_last_vp[0], s_last_vp[1], s_last_vp[2], s_last_vp[3], s_pass_count[0], s_pass_count[1], s_band_w, s_band_h,
              s_band_changes);
+    n += snprintf(reply + n, cap - n, " prep_max_ms=%.1f prep_mip_ms=%.1f", s_prep_max_us / 1e3, s_prep_mip_us / 1e3);
     d0 = d; u0 = u;
     return 0;
 }
